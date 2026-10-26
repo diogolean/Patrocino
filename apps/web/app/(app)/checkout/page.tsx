@@ -309,7 +309,7 @@ function CheckoutContent() {
               {paying ? "Confirmando..." : "Simular pagamento"}
             </Button>
           )}
-          <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">{checkoutFoot(realCheckout, methods.expay, methods.stripe)}</p>
+          <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">{checkoutFoot(methods.expay, methods.stripe)}</p>
         </div>
       </section>
       {pixOpen && <ExpayCheckoutModal
@@ -350,8 +350,7 @@ function checkoutLead(real: boolean, expay: boolean, stripe: boolean) {
   return "Pague com cartão. A cobrança é real.";
 }
 
-function checkoutFoot(real: boolean, expay: boolean, stripe: boolean) {
-  if (!real) return "Ao continuar, você confirma o pagamento neste navegador.";
+function checkoutFoot(expay: boolean, stripe: boolean) {
   if (expay && stripe) return "O Pix abre o código na hora. O cartão é confirmado pela Stripe.";
   if (stripe) return "O cartão é confirmado pela Stripe.";
   return "O Pix abre o código na hora.";
