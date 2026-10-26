@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 async function signIn(page: import("@playwright/test").Page, email: string) {
-  await page.context().clearCookies();
+  await page.request.post("/api/session/logout");
   await page.goto("/auth?route=sign-in");
   await page.getByLabel("Email ou CPF").fill(email);
   await page.locator('input[name="password"]').fill("mimelux123");
@@ -16,7 +16,7 @@ test("an admin updates another creator plan and checkout shows the new price", a
   await page.getByTestId("admin-studio-search").fill("Luna");
   const creator = page.getByTestId("admin-studio-creator");
   await expect(creator.locator("option", { hasText: "Luna Ferraz" })).toHaveCount(1);
-  await creator.selectOption({ label: /Luna Ferraz/ });
+  await creator.selectOption({ label: "Luna Ferraz (@lunaferraz)" });
 
   const monthly = page.locator('[data-testid="creator-plan"][data-months="1"]');
   await expect(monthly).toBeVisible();
@@ -37,7 +37,7 @@ test("an admin updates another creator plan and checkout shows the new price", a
   await page.goto("/admin");
   await page.getByTestId("admin-studio-search").fill("Luna");
   await expect(page.getByTestId("admin-studio-creator").locator("option", { hasText: "Luna Ferraz" })).toHaveCount(1);
-  await page.getByTestId("admin-studio-creator").selectOption({ label: /Luna Ferraz/ });
+  await page.getByTestId("admin-studio-creator").selectOption({ label: "Luna Ferraz (@lunaferraz)" });
   const restore = page.locator('[data-testid="creator-plan"][data-months="1"]');
   await restore.getByTestId("plan-price-1").fill(original);
   await restore.getByTestId("plan-save-1").click();
