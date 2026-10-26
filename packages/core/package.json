@@ -15,6 +15,10 @@
     "./expay": {
       "types": "./dist/expay.d.ts",
       "default": "./dist/expay.js"
+    },
+    "./stripe": {
+      "types": "./dist/stripe.d.ts",
+      "default": "./dist/stripe.js"
     }
   },
   "dependencies": {

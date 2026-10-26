@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Check,
   Clock3,
+  CreditCard,
   LoaderCircle,
   LockKeyhole,
   ShieldCheck,
@@ -18,6 +19,7 @@ import { paymentGateway } from "@/lib/payments";
 import { mockDelay, readDemo, writeDemo } from "@/lib/demo-store";
 import { toast } from "sonner";
 import { ExpayCheckoutModal } from "@/components/expay-checkout-modal";
+import { StripeCheckoutModal } from "@/components/stripe-checkout-modal";
 
 function DemoPaymentGraphic({ seed }: { seed: string }) {
   const cells = useMemo(() => {
@@ -73,8 +75,10 @@ function CheckoutContent() {
             : post?.price || 990;
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [paidVia, setPaidVia] = useState<"demo" | "pix" | "card">("demo");
   const [pixOpen, setPixOpen] = useState(false);
-  const [provider, setProvider] = useState<"demo" | "expay">("demo");
+  const [cardOpen, setCardOpen] = useState(false);
+  const [methods, setMethods] = useState({ expay: false, stripe: false, stripePublishableKey: "" });
   const returnPath = search.get("return")?.startsWith("/") ? search.get("return")! : `/creator/${creator.username}`;
   const purpose: "subscription" | "post" | "message" | "pack" | "special_request" =
     kind === "subscription" || kind === "message" || kind === "pack" || kind === "special_request" ? kind : "post";
@@ -83,8 +87,13 @@ function CheckoutContent() {
     let cancel = false;
     fetch("/api/payments/provider")
       .then((response) => response.json())
-      .then((payload: { provider?: string }) => {
-        if (!cancel && payload.provider === "expay") setProvider("expay");
+      .then((payload: { expay?: boolean; stripe?: boolean; stripePublishableKey?: string | null }) => {
+        if (cancel) return;
+        setMethods({
+          expay: payload.expay === true,
+          stripe: payload.stripe === true,
+          stripePublishableKey: payload.stripePublishableKey ?? "",
+        });
       })
       .catch(() => undefined);
     return () => {
@@ -92,7 +101,9 @@ function CheckoutContent() {
     };
   }, []);
 
-  function grantLocalAccess() {
+  const realCheckout = methods.expay || methods.stripe;
+
+  function grantLocalAccess(via: "demo" | "pix" | "card" = "demo") {
     const state = readDemo();
     const transactionKind =
       kind === "subscription"
@@ -127,6 +138,7 @@ function CheckoutContent() {
         ...commissionPatch,
       });
     }
+    setPaidVia(via);
     setPaid(true);
     toast.success(kind === "subscription" ? "Assinatura ativada!" : "Conteúdo desbloqueado!");
   }
@@ -150,11 +162,11 @@ function CheckoutContent() {
       <div className="grid min-h-[calc(100dvh-64px)] place-items-center px-5">
         <div className="w-full max-w-md rounded-[32px] border border-black/5 bg-white/70 p-8 text-center shadow-2xl dark:bg-white/5">
           <span className="mx-auto grid size-20 place-items-center rounded-full bg-emerald-500/15 text-emerald-600"><Check className="size-9" strokeWidth={3} /></span>
-          <p className="mt-6 text-xs font-black uppercase tracking-[.2em] text-emerald-600">{provider === "expay" ? "Pagamento confirmado" : "Pagamento simulado"}</p>
+          <p className="mt-6 text-xs font-black uppercase tracking-[.2em] text-emerald-600">{paidVia === "demo" ? "Pagamento simulado" : "Pagamento confirmado"}</p>
           <h1 className="mt-2 text-2xl font-extrabold tracking-[-.04em]">{kind === "subscription" ? "Você faz parte!" : specialRequest ? "Pedido confirmado" : "Conteúdo liberado"}</h1>
           <p className="mt-3 text-xs leading-5 text-muted">{kind === "subscription" ? `Sua assinatura de ${creator.name} está ativa neste navegador.` : "A experiência já está disponível para você neste navegador."}</p>
           <Button size="lg" className="mt-7 w-full" onClick={() => router.push(returnPath)}>Ver agora <Sparkles className="size-4" /></Button>
-          {provider !== "expay" && <p className="mt-4 text-[9px] text-muted">Nenhuma cobrança real foi realizada.</p>}
+          {paidVia === "demo" && <p className="mt-4 text-[9px] text-muted">Nenhuma cobrança real foi realizada.</p>}
         </div>
       </div>
     );
@@ -167,7 +179,7 @@ function CheckoutContent() {
         <Logo compact />
         <p className="mt-10 text-[10px] font-black uppercase tracking-[.2em] text-primary-strong">Checkout protegido</p>
         <h1 className="mt-2 text-3xl font-extrabold tracking-[-.05em]">{kind === "subscription" ? "Falta pouco para fazer parte." : "Uma experiência só sua."}</h1>
-        <p className="mt-4 max-w-md text-sm leading-6 text-muted">Finalize com Pix. Este é um ambiente de demonstração: o QR é fictício e o botão apenas simula a confirmação.</p>
+        <p className="mt-4 max-w-md text-sm leading-6 text-muted">{realCheckout ? (methods.expay && methods.stripe ? "Escolha Pix ou cartão. Os dois cobram de verdade." : methods.expay ? "Pague com Pix. A cobrança é real." : "Pague com cartão. A cobrança é real.") : "Finalize com Pix. Este é um ambiente de demonstração: o QR é fictício e o botão apenas simula a confirmação."}</p>
 
         <div className="mt-7 flex items-center gap-4 rounded-[24px] border border-black/5 bg-white/60 p-4 dark:bg-white/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -176,33 +188,58 @@ function CheckoutContent() {
           <p className="text-sm font-black">{brl(amount)}</p>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
-          <Pill><ShieldCheck className="mr-1 size-3" /> Ambiente demo</Pill>
-          <Pill><LockKeyhole className="mr-1 size-3" /> Sem cobrança real</Pill>
+          {realCheckout ? (
+            <>
+              {methods.expay && <Pill><ShieldCheck className="mr-1 size-3" /> Pix</Pill>}
+              {methods.stripe && <Pill><CreditCard className="mr-1 size-3" /> Cartão</Pill>}
+            </>
+          ) : (
+            <>
+              <Pill><ShieldCheck className="mr-1 size-3" /> Ambiente demo</Pill>
+              <Pill><LockKeyhole className="mr-1 size-3" /> Sem cobrança real</Pill>
+            </>
+          )}
         </div>
       </section>
 
       <section className="overflow-hidden rounded-[34px] border border-black/5 bg-white/75 shadow-[0_30px_90px_rgba(32,32,39,.12)] dark:bg-white/5">
         <div className="flex items-center justify-between border-b border-black/5 p-5 sm:px-7">
-          <div><p className="text-xs font-extrabold">Pague com Pix</p><p className="mt-1 text-[9px] text-muted">Confirmação instantânea no ambiente real</p></div>
+          <div><p className="text-xs font-extrabold">{realCheckout ? "Forma de pagamento" : "Pague com Pix"}</p><p className="mt-1 text-[9px] text-muted">{methods.expay && methods.stripe ? "Pix e cartão, lado a lado" : realCheckout ? "Cobrança real" : "Confirmação instantânea no ambiente real"}</p></div>
           <span className="grid size-10 place-items-center rounded-2xl bg-primary/20"><Sparkles className="size-5 text-primary-strong" /></span>
         </div>
         <div className="grid place-items-center p-6 sm:p-8">
-          <DemoPaymentGraphic seed={`${kind}-${id}-${amount}`} />
-          <div className="mt-5 flex items-center gap-2 text-[10px] font-semibold text-muted"><Clock3 className="size-3.5" /> Tela ilustrativa · sem código Pix real</div>
-          <div className="mt-5 w-full max-w-sm rounded-2xl bg-surface/65 p-3 text-center text-[9px] font-semibold text-muted dark:bg-white/5">
-            Checkout em modo de demonstração
-          </div>
-          {provider === "expay" ? (
-            <Button size="lg" className="mt-5 w-full max-w-sm" onClick={() => setPixOpen(true)}>
-              Pagar com Pix
-            </Button>
+          {!realCheckout && (
+            <>
+              <DemoPaymentGraphic seed={`${kind}-${id}-${amount}`} />
+              <div className="mt-5 flex items-center gap-2 text-[10px] font-semibold text-muted"><Clock3 className="size-3.5" /> Tela ilustrativa · sem código Pix real</div>
+              <div className="mt-5 w-full max-w-sm rounded-2xl bg-surface/65 p-3 text-center text-[9px] font-semibold text-muted dark:bg-white/5">
+                Checkout em modo de demonstração
+              </div>
+            </>
+          )}
+          {realCheckout && (
+            <p className="mb-2 text-3xl font-black tracking-[-.04em]">{brl(amount)}</p>
+          )}
+          {realCheckout ? (
+            <div className="mt-5 grid w-full max-w-sm grid-cols-2 gap-3">
+              {methods.expay && (
+                <Button size="lg" className={methods.stripe ? "w-full" : "col-span-2 w-full"} onClick={() => setPixOpen(true)}>
+                  Pagar com Pix
+                </Button>
+              )}
+              {methods.stripe && (
+                <Button size="lg" variant="outline" className={methods.expay ? "w-full" : "col-span-2 w-full"} onClick={() => setCardOpen(true)}>
+                  <CreditCard className="size-4" /> Cartão
+                </Button>
+              )}
+            </div>
           ) : (
             <Button size="lg" className="mt-5 w-full max-w-sm" onClick={simulate} disabled={paying}>
               {paying ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}
               {paying ? "Confirmando..." : "Simular pagamento"}
             </Button>
           )}
-          <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">Ao continuar, você confirma que entende que este checkout é apenas uma simulação de produto.</p>
+          <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">{realCheckout ? "O Pix abre o código na hora. O cartão é confirmado pela Stripe." : "Ao continuar, você confirma que entende que este checkout é apenas uma simulação de produto."}</p>
         </div>
       </section>
       {pixOpen && <ExpayCheckoutModal
@@ -217,7 +254,19 @@ function CheckoutContent() {
         onClose={() => setPixOpen(false)}
         onPaid={() => {
           setPixOpen(false);
-          if (!paid) grantLocalAccess();
+          if (!paid) grantLocalAccess("pix");
+        }}
+      />}
+      {cardOpen && <StripeCheckoutModal
+        amountCents={amount}
+        title={kind === "subscription" ? `Assinatura de ${creator.name}` : `Conteúdo de ${creator.name}`}
+        description={kind === "subscription" ? `Assinatura de ${creator.name}` : `Conteúdo de ${creator.name}`}
+        idempotencyKey={`${purpose}-${creator.id}-${id}`}
+        publishableKey={methods.stripePublishableKey}
+        onClose={() => setCardOpen(false)}
+        onPaid={() => {
+          setCardOpen(false);
+          if (!paid) grantLocalAccess("card");
         }}
       />}
     </div>

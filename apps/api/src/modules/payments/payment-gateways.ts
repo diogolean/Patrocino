@@ -11,7 +11,7 @@ function usable(value: string | undefined) {
 export function readStripeSecret(env: Env = process.env) {
   const key = usable(env.STRIPE_SECRET_KEY);
   if (!key) return { ok: false as const, reason: "missing" };
-  const live = key.startsWith("sk_live_");
+  const live = key.startsWith("sk_live_") || key.startsWith("rk_live_");
   if (live && env.STRIPE_ALLOW_LIVE !== "true") return { ok: false as const, reason: "live_disabled" };
   if (!live && !key.startsWith("sk_test_")) return { ok: false as const, reason: "invalid" };
   return { ok: true as const, key, live };

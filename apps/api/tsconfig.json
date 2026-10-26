@@ -14,6 +14,7 @@
       "@mimelux/core/legal": ["../../packages/core/dist/legal.d.ts"],
       "@mimelux/core/monetization": ["../../packages/core/dist/monetization.d.ts"],
       "@mimelux/core/expay": ["../../packages/core/dist/expay.d.ts"],
+      "@mimelux/core/stripe": ["../../packages/core/dist/stripe.d.ts"],
       "@mimelux/db/runtime": ["../../packages/db/dist/index.d.ts"]
     },
     "incremental": true,

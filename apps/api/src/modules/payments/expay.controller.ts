@@ -33,6 +33,7 @@ import {
   refundAndSync,
   syncChargeFromExpay,
 } from "@mimelux/core/expay";
+import { paymentMethodsEnabled } from "@mimelux/core/stripe";
 import { createPrismaPaymentStore } from "./expay-store";
 
 const createSchema = z.object({
@@ -51,7 +52,7 @@ const createSchema = z.object({
 });
 
 function expayEnabled() {
-  return (process.env.PAYMENTS_PROVIDER ?? "demo") === "expay";
+  return paymentMethodsEnabled().expay;
 }
 
 function client() {

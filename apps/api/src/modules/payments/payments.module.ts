@@ -1,10 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Module, Param, Post, RawBodyRequest, Req, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, Get, Headers, HttpCode, HttpException, Module, Param, Post, RawBodyRequest, Req, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import Stripe from "stripe";
 import type { Request } from "express";
+import { paymentMethodsEnabled } from "@mimelux/core/stripe";
 import { requireUser } from "../auth/require-user";
-import { readStripePublishable, readStripeSecret, readStripeWebhookSecret } from "./payment-gateways";
+import { paymentProvider, readStripePublishable, readStripeSecret, readStripeWebhookSecret } from "./payment-gateways";
 import { handleStripeEvent, startPlanCheckout } from "./billing";
 import { ExpayPaymentsController } from "./expay.controller";
 
@@ -13,6 +14,12 @@ const checkoutSchema = z.strictObject({
   provider: z.enum(["stripe", "pix", "crypto"]).default("stripe"),
   creatorId: z.string().min(1),
   planId: z.string().min(1),
+});
+const cardIntentSchema = z.strictObject({
+  provider: z.literal("stripe"),
+  purchaseId: z.string().min(1),
+  amountCents: z.number().int().positive(),
+  description: z.string().min(1),
 });
 
 function parseCheckout(body: unknown) {
@@ -39,6 +46,25 @@ class PaymentsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create a purchase from a database plan and start checkout" })
   async createCheckout(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
+    const intent = cardIntentSchema.safeParse(body);
+    if (intent.success) {
+      if (!paymentMethodsEnabled().stripe) throw new ConflictException("Stripe is not enabled.");
+      try {
+        return await paymentProvider("stripe").createCheckout({
+          purchaseId: intent.data.purchaseId,
+          amountCents: intent.data.amountCents,
+          currency: "brl",
+          description: intent.data.description,
+        });
+      } catch (error) {
+        if (error instanceof HttpException) throw error;
+        const message = error instanceof Error ? error.message : "";
+        if (!message || /secret|token|rk_|sk_/i.test(message)) {
+          throw new ServiceUnavailableException("Stripe is not configured.");
+        }
+        throw new ServiceUnavailableException(message);
+      }
+    }
     const user = await requireUser(authorization);
     const input = parseCheckout(body);
     return startPlanCheckout(user, input);

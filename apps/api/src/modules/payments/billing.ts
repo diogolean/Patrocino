@@ -523,13 +523,17 @@ async function withEvent(
     where: { provider_providerId: { provider: "stripe", providerId: eventId } },
   });
   if (existing) return { duplicate: true as const };
+  const linkedPurchase = purchaseId
+    ? await database.purchase.findUnique({ where: { id: purchaseId }, select: { id: true } })
+    : null;
+  const storedPurchaseId = linkedPurchase ? purchaseId : undefined;
   try {
     await database.$transaction(async (tx) => {
       await tx.paymentEvent.create({
         data: {
           provider: "stripe",
           providerId: eventId,
-          purchaseId,
+          purchaseId: storedPurchaseId,
           eventType,
           payload: payload as Prisma.InputJsonValue,
           processedAt: new Date(),
@@ -694,11 +698,16 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
   if (event.type === "payment_intent.succeeded") {
     const purchaseId = meta.purchaseId;
     if (!purchaseId) return { processed: false, reason: "missing_purchase_id" };
+    const purchase = await database.purchase.findUnique({ where: { id: purchaseId } });
+    if (!purchase) {
+      const result = await withEvent(event.id, event.type, event, undefined, async () => undefined);
+      return { processed: false, reason: "unknown_purchase", ...result };
+    }
     const result = await withEvent(event.id, event.type, event, purchaseId, async (tx) => {
-      const purchase = await tx.purchase.findUnique({ where: { id: purchaseId } });
-      if (!purchase || (meta.userId && meta.userId !== purchase.buyerId)) return;
-      await tx.purchase.update({ where: { id: purchase.id }, data: { providerRef: text(object.id) ?? purchase.providerRef } });
-      await settlePurchase(tx, purchase.id, event.id);
+      const current = await tx.purchase.findUnique({ where: { id: purchaseId } });
+      if (!current || (meta.userId && meta.userId !== current.buyerId)) return;
+      await tx.purchase.update({ where: { id: current.id }, data: { providerRef: text(object.id) ?? current.providerRef } });
+      await settlePurchase(tx, current.id, event.id);
     });
     return { processed: true, ...result };
   }
