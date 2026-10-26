@@ -19,6 +19,7 @@ import { Button, Pill } from "@mimelux/ui";
 import { brl, creators, dashboardMetrics, posts } from "@/lib/gateway";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 import { useRoleGuard } from "@/lib/use-role-guard";
+import { CreatorStudio } from "@/components/creator-studio";
 import { MediaManager } from "@/components/media-manager";
 import { toast } from "sonner";
 
@@ -162,16 +163,9 @@ export default function DashboardPage() {
 
       <section className="mt-5 grid gap-5 lg:grid-cols-2">
         <div className="rounded-[28px] border border-black/5 bg-white/65 p-5 dark:bg-white/5 sm:p-6">
-          <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-primary/15"><Tag className="size-4 text-primary-strong" /></span><div><h2 className="text-sm font-extrabold">Preços e ofertas</h2><p className="text-[9px] text-muted">Configuração local para a demonstração</p></div></div>
-          <label className="mt-5 block text-[10px] font-bold text-muted">Preço mensal (R$)
-            <input data-testid="monthly-price" type="number" min={1} value={monetization.monthlyPriceCents / 100} onChange={(event) => setMonetization({ ...monetization, monthlyPriceCents: Math.round(Number(event.target.value) * 100) })} className="mt-2 h-11 w-full rounded-2xl border border-black/10 bg-surface/60 px-3 text-xs" />
-          </label>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {(["3", "6", "12"] as const).map((months) => (
-              <label key={months} className="text-[10px] font-bold text-muted">Desconto · {months} meses
-                <input type="number" min={0} max={95} value={monetization.bundleDiscounts[months]} onChange={(event) => setMonetization({ ...monetization, bundleDiscounts: { ...monetization.bundleDiscounts, [months]: Number(event.target.value) } })} className="mt-2 h-10 w-full rounded-2xl border border-black/10 bg-surface/60 px-3 text-xs" />
-              </label>
-            ))}
+          <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-primary/15"><Tag className="size-4 text-primary-strong" /></span><div><h2 className="text-sm font-extrabold">Preços e ofertas</h2><p className="text-[9px] text-muted">Planos salvos na conta. A promoção abaixo continua neste navegador.</p></div></div>
+          <div className="mt-5">
+            <CreatorStudio />
           </div>
           <div className="mt-5 rounded-[22px] bg-surface/60 p-4 dark:bg-white/5">
             <label className="flex items-center justify-between text-xs font-bold">Promoção ativa <input type="checkbox" checked={monetization.promotion.active} onChange={(event) => setMonetization({ ...monetization, promotion: { ...monetization.promotion, active: event.target.checked } })} /></label>
