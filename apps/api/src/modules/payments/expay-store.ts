@@ -11,6 +11,22 @@ import {
   type ReceiptRecord,
 } from "@mimelux/core/expay";
 
+function toReceipt(row: {
+  providerEventId: string;
+  providerChargeId: string;
+  eventType: string;
+  environment: string;
+  processedAt: Date | null;
+}): ReceiptRecord {
+  return {
+    providerEventId: row.providerEventId,
+    providerChargeId: row.providerChargeId,
+    eventType: row.eventType,
+    environment: row.environment === "test" ? "test" : "prod",
+    processedAt: row.processedAt?.toISOString() ?? null,
+  };
+}
+
 function isUnique(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
@@ -148,17 +164,14 @@ export function createPrismaPaymentStore(): PaymentStore {
       await syncSubscription(row);
       return toCharge(row);
     },
-    async findReceipt(eventId) {
+    async findReceipt(eventId, environment) {
       const row = await database.paymentWebhookReceipt.findUnique({
-        where: { provider_providerEventId: { provider: "expay", providerEventId: eventId } },
+        where: {
+          provider_providerEventId_environment: { provider: "expay", providerEventId: eventId, environment },
+        },
       });
       if (!row) return null;
-      return {
-        providerEventId: row.providerEventId,
-        providerChargeId: row.providerChargeId,
-        eventType: row.eventType,
-        processedAt: row.processedAt?.toISOString() ?? null,
-      } satisfies ReceiptRecord;
+      return toReceipt(row);
     },
     async insertReceipt(receipt) {
       try {
@@ -168,28 +181,25 @@ export function createPrismaPaymentStore(): PaymentStore {
             providerEventId: receipt.providerEventId,
             providerChargeId: receipt.providerChargeId,
             eventType: receipt.eventType,
+            environment: receipt.environment,
             payload: receipt.payload as Prisma.InputJsonValue,
             processedAt: receipt.processedAt ? new Date(receipt.processedAt) : null,
           },
         });
-        return {
-          providerEventId: row.providerEventId,
-          providerChargeId: row.providerChargeId,
-          eventType: row.eventType,
-          processedAt: row.processedAt?.toISOString() ?? null,
-        };
+        return toReceipt(row);
       } catch (error) {
         if (!isUnique(error)) throw error;
         const existing = await database.paymentWebhookReceipt.findUnique({
-          where: { provider_providerEventId: { provider: "expay", providerEventId: receipt.providerEventId } },
+          where: {
+            provider_providerEventId_environment: {
+              provider: "expay",
+              providerEventId: receipt.providerEventId,
+              environment: receipt.environment,
+            },
+          },
         });
         if (!existing) throw error;
-        return {
-          providerEventId: existing.providerEventId,
-          providerChargeId: existing.providerChargeId,
-          eventType: existing.eventType,
-          processedAt: existing.processedAt?.toISOString() ?? null,
-        };
+        return toReceipt(existing);
       }
     },
     async saveMandate(mandate) {

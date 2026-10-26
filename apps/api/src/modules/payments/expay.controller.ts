@@ -26,7 +26,9 @@ import {
   createExpayClient,
   createOneOffPixCharge,
   createSubscriptionPix,
+  acceptExpayTestEvents,
   processExpayWebhook,
+  readExpayWebhookSecrets,
   readSignatureHeader,
   refundAndSync,
   syncChargeFromExpay,
@@ -150,10 +152,10 @@ export class ExpayPaymentsController {
 
   @Post("payments/expay/webhook")
   @HttpCode(200)
-  @ApiOperation({ summary: "ExPay webhook. Access changes only after GET /charges/{id}." })
+  @ApiOperation({ summary: "ExPay webhook. Access changes only after GET /charges/{id}, and only for the prod secret unless test events are accepted." })
   async webhook(@Req() request: RawBodyRequest<Request>) {
-    const secret = process.env.EXPAY_WEBHOOK_SECRET;
-    if (!secret) throw new ServiceUnavailableException("Webhook secret is not configured.");
+    const secrets = readExpayWebhookSecrets();
+    if (!secrets.test && !secrets.prod) throw new ServiceUnavailableException("Webhook secret is not configured.");
     const headerName = process.env.EXPAY_WEBHOOK_SIGNATURE_HEADER || EXPAY_SIGNATURE_HEADER_DEFAULT;
     const rawBody = request.rawBody?.toString("utf8") ?? "";
     const signature = readSignatureHeader(request.headers as Record<string, string | string[] | undefined>, headerName);
@@ -161,7 +163,8 @@ export class ExpayPaymentsController {
       const result = await processExpayWebhook({
         rawBody,
         signature,
-        secret,
+        secrets,
+        acceptTestEvents: acceptExpayTestEvents(),
         client: client(),
         store: createPrismaPaymentStore(),
       });

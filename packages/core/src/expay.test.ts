@@ -2,18 +2,24 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   EXPAY_SIGNATURE_HEADER_DEFAULT,
+  acceptExpayTestEvents,
   createExpayClient,
   createMemoryPaymentStore,
   createOneOffPixCharge,
   createSubscriptionPix,
+  matchExpayWebhookEnvironment,
   processExpayWebhook,
+  readExpayWebhookSecrets,
   readSignatureHeader,
   refundAndSync,
   verifyExpayWebhookSignature,
   type ChargeDraft,
+  type ExpayWebhookSecrets,
 } from "./expay";
 
-const secret = "whsec_test_only";
+const secret = "whsec_prod_only";
+const testSecret = "whsec_test_only";
+const secrets: ExpayWebhookSecrets = { test: testSecret, prod: secret };
 
 const draft: ChargeDraft = {
   buyerId: "fan-1",
@@ -26,8 +32,8 @@ const draft: ChargeDraft = {
   idempotencyKey: "post-fan-1-post-9",
 };
 
-function sign(body: string) {
-  return createHmac("sha256", secret).update(body).digest("hex");
+function sign(body: string, key = secret) {
+  return createHmac("sha256", key).update(body).digest("hex");
 }
 
 function fakeExpay(handler: (url: string, init: RequestInit) => { status?: number; body: unknown }) {
@@ -269,12 +275,13 @@ describe("ExPay webhooks", () => {
       type: "charge.paid",
       data: { id: "ch_100", status: "pending" },
     });
-    const first = await processExpayWebhook({ rawBody: raw, signature: sign(raw), secret, client, store });
-    const second = await processExpayWebhook({ rawBody: raw, signature: sign(raw), secret, client, store });
+    const first = await processExpayWebhook({ rawBody: raw, signature: sign(raw), secrets, acceptTestEvents: false, client, store });
+    const second = await processExpayWebhook({ rawBody: raw, signature: sign(raw), secrets, acceptTestEvents: false, client, store });
 
-    expect(first).toMatchObject({ accepted: true, processed: true, status: "paid" });
-    expect(second).toMatchObject({ accepted: true, duplicate: true });
+    expect(first).toMatchObject({ accepted: true, processed: true, status: "paid", environment: "prod", accessApplied: true });
+    expect(second).toMatchObject({ accepted: true, duplicate: true, environment: "prod", accessApplied: false });
     expect(store.charges()[0]).toMatchObject({ status: "paid", accessActive: true });
+    expect(store.receipts()[0]).toMatchObject({ environment: "prod", providerEventId: "evt_paid" });
     expect(fake.calls.filter((call) => call.url.endsWith("/charges/ch_100"))).toHaveLength(1);
   });
 
@@ -283,8 +290,9 @@ describe("ExPay webhooks", () => {
     const fake = paidClient("pending");
     const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
     const raw = JSON.stringify({ id: "evt_early", type: "charge.paid", data: { id: "ch_100", status: "paid" } });
-    const result = await processExpayWebhook({ rawBody: raw, signature: sign(raw), secret, client, store });
+    const result = await processExpayWebhook({ rawBody: raw, signature: sign(raw), secrets, acceptTestEvents: false, client, store });
     expect(result.status).toBe("pending");
+    expect(result.environment).toBe("prod");
     expect(store.charges()[0]?.accessActive).toBe(false);
   });
 
@@ -293,7 +301,7 @@ describe("ExPay webhooks", () => {
     const fake = paidClient("paid");
     const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
     const raw = JSON.stringify({ id: "evt_bad", type: "charge.paid", data: { id: "ch_100" } });
-    const result = await processExpayWebhook({ rawBody: raw, signature: "nope", secret, client, store });
+    const result = await processExpayWebhook({ rawBody: raw, signature: "nope", secrets, acceptTestEvents: false, client, store });
     expect(result).toEqual({ accepted: false, reason: "invalid_signature" });
     expect(fake.calls).toHaveLength(0);
     expect(store.charges()[0]?.accessActive).toBe(false);
@@ -305,7 +313,8 @@ describe("ExPay webhooks", () => {
     await processExpayWebhook({
       rawBody: JSON.stringify({ id: "evt_paid", type: "charge.paid", data: { id: "ch_100" } }),
       signature: sign(JSON.stringify({ id: "evt_paid", type: "charge.paid", data: { id: "ch_100" } })),
-      secret,
+      secrets,
+      acceptTestEvents: false,
       client: createExpayClient({ apiKey: "test_key", fetchImpl: paid.fetchImpl }),
       store,
     });
@@ -315,7 +324,8 @@ describe("ExPay webhooks", () => {
     const result = await processExpayWebhook({
       rawBody: raw,
       signature: sign(raw),
-      secret,
+      secrets,
+      acceptTestEvents: false,
       client: createExpayClient({ apiKey: "test_key", fetchImpl: refunded.fetchImpl }),
       store,
     });
@@ -333,5 +343,125 @@ describe("ExPay webhooks", () => {
     const refund = admin.calls.find((call) => call.url.endsWith("/charges/ch_100/refund") && call.init.method === "POST");
     expect(refund).toBeTruthy();
     expect(JSON.parse(String(refund?.init.body))).toEqual({});
+  });
+
+  it("records a test signature without granting access, and still re-fetches the charge", async () => {
+    const store = await seedPending();
+    const fake = paidClient("paid");
+    const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
+    const raw = JSON.stringify({ id: "evt_test", type: "charge.paid", data: { id: "ch_100", status: "paid" } });
+    const result = await processExpayWebhook({
+      rawBody: raw,
+      signature: sign(raw, testSecret),
+      secrets,
+      acceptTestEvents: false,
+      client,
+      store,
+    });
+    const replay = await processExpayWebhook({
+      rawBody: raw,
+      signature: sign(raw, testSecret),
+      secrets,
+      acceptTestEvents: false,
+      client,
+      store,
+    });
+
+    expect(result).toMatchObject({ accepted: true, processed: true, environment: "test", accessApplied: false, status: "paid" });
+    expect(replay).toMatchObject({ accepted: true, duplicate: true, environment: "test" });
+    expect(store.charges()[0]).toMatchObject({ status: "pending", accessActive: false });
+    expect(store.receipts()).toEqual([
+      expect.objectContaining({ providerEventId: "evt_test", environment: "test" }),
+    ]);
+    expect(fake.calls.filter((call) => call.url.endsWith("/charges/ch_100"))).toHaveLength(1);
+  });
+
+  it("grants access for a test signature only when test events are accepted", async () => {
+    const store = await seedPending();
+    const fake = paidClient("paid");
+    const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
+    const raw = JSON.stringify({ id: "evt_test_ok", type: "charge.paid", data: { id: "ch_100" } });
+    const result = await processExpayWebhook({
+      rawBody: raw,
+      signature: sign(raw, testSecret),
+      secrets,
+      acceptTestEvents: true,
+      client,
+      store,
+    });
+    expect(result).toMatchObject({ environment: "test", accessApplied: true, status: "paid" });
+    expect(store.charges()[0]).toMatchObject({ status: "paid", accessActive: true });
+  });
+
+  it("does not let a test refund revoke access that a prod event granted", async () => {
+    const store = await seedPending();
+    const paid = paidClient("paid");
+    const rawPaid = JSON.stringify({ id: "evt_paid", type: "charge.paid", data: { id: "ch_100" } });
+    await processExpayWebhook({
+      rawBody: rawPaid,
+      signature: sign(rawPaid),
+      secrets,
+      acceptTestEvents: false,
+      client: createExpayClient({ apiKey: "test_key", fetchImpl: paid.fetchImpl }),
+      store,
+    });
+
+    const refunded = paidClient("refunded");
+    const raw = JSON.stringify({ id: "evt_test_refund", type: "charge.refunded", data: { id: "ch_100", status: "refunded" } });
+    const result = await processExpayWebhook({
+      rawBody: raw,
+      signature: sign(raw, testSecret),
+      secrets,
+      acceptTestEvents: false,
+      client: createExpayClient({ apiKey: "test_key", fetchImpl: refunded.fetchImpl }),
+      store,
+    });
+    expect(result).toMatchObject({ environment: "test", accessApplied: false, status: "refunded" });
+    expect(store.charges()[0]).toMatchObject({ status: "paid", accessActive: true });
+    expect(refunded.calls.filter((call) => call.url.endsWith("/charges/ch_100"))).toHaveLength(1);
+  });
+
+  it("still grants access when the same event id arrives later with the prod secret", async () => {
+    const store = await seedPending();
+    const fake = paidClient("paid");
+    const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
+    const raw = JSON.stringify({ id: "evt_shared", type: "charge.paid", data: { id: "ch_100" } });
+    await processExpayWebhook({
+      rawBody: raw,
+      signature: sign(raw, testSecret),
+      secrets,
+      acceptTestEvents: false,
+      client,
+      store,
+    });
+    const prod = await processExpayWebhook({
+      rawBody: raw,
+      signature: sign(raw),
+      secrets,
+      acceptTestEvents: false,
+      client,
+      store,
+    });
+    expect(prod).toMatchObject({ environment: "prod", accessApplied: true, status: "paid" });
+    expect(store.charges()[0]).toMatchObject({ status: "paid", accessActive: true });
+    expect(store.receipts().map((receipt) => receipt.environment).sort()).toEqual(["prod", "test"]);
+    expect(fake.calls.filter((call) => call.url.endsWith("/charges/ch_100"))).toHaveLength(2);
+  });
+
+  it("tells the signing environment apart and keeps test access off in production by default", () => {
+    const body = JSON.stringify({ id: "evt_env", type: "charge.paid", data: { id: "ch_100" } });
+    expect(matchExpayWebhookEnvironment(body, sign(body), secrets)).toBe("prod");
+    expect(matchExpayWebhookEnvironment(body, sign(body, testSecret), secrets)).toBe("test");
+    expect(matchExpayWebhookEnvironment(body, sign(body), { test: secret, prod: secret })).toBe("prod");
+    expect(matchExpayWebhookEnvironment(body, "nope", secrets)).toBeNull();
+    expect(readExpayWebhookSecrets({ EXPAY_WEBHOOK_SECRET_TEST: " a ", EXPAY_WEBHOOK_SECRET_PROD: " " })).toEqual({
+      test: "a",
+      prod: undefined,
+    });
+    expect(acceptExpayTestEvents({ EXPAY_ACCEPT_TEST_EVENTS: "true", NODE_ENV: "production" })).toBe(true);
+    expect(acceptExpayTestEvents({ EXPAY_ACCEPT_TEST_EVENTS: "false", NODE_ENV: "development" })).toBe(false);
+    expect(acceptExpayTestEvents({ NODE_ENV: "production" })).toBe(false);
+    expect(acceptExpayTestEvents({})).toBe(false);
+    expect(acceptExpayTestEvents({ NODE_ENV: "development" })).toBe(true);
   });
 });

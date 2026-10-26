@@ -11,6 +11,9 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
  * spec (HMAC is described only for the provider ingress). Default guess remains
  * `X-Expay-Signature`, overridable with EXPAY_WEBHOOK_SIGNATURE_HEADER.
  * Verification is HMAC-SHA256 of the raw body, hex or base64, optional `sha256=` prefix.
+ * Test and production share one URL and are told apart by EXPAY_WEBHOOK_SECRET_TEST
+ * and EXPAY_WEBHOOK_SECRET_PROD. Only a prod match grants access, unless
+ * EXPAY_ACCEPT_TEST_EVENTS=true. When that flag is unset it is false in production.
  */
 
 export const EXPAY_DEFAULT_BASE_URL = "https://api.expaybrasil.com/api/v1";
@@ -61,10 +64,14 @@ export type ChargeRecord = {
   accessActive: boolean;
 };
 
+export const webhookEnvironments = ["test", "prod"] as const;
+export type WebhookEnvironment = (typeof webhookEnvironments)[number];
+
 export type ReceiptRecord = {
   providerEventId: string;
   providerChargeId: string;
   eventType: string;
+  environment: WebhookEnvironment;
   processedAt: string | null;
 };
 
@@ -82,7 +89,7 @@ export interface PaymentStore {
   findByProviderChargeId(id: string): Promise<ChargeRecord | null>;
   insertCharge(charge: ChargeRecord): Promise<ChargeRecord>;
   saveStatus(providerChargeId: string, status: ChargeStatus, accessActive: boolean): Promise<ChargeRecord>;
-  findReceipt(eventId: string): Promise<ReceiptRecord | null>;
+  findReceipt(eventId: string, environment: WebhookEnvironment): Promise<ReceiptRecord | null>;
   insertReceipt(receipt: ReceiptRecord & { payload: unknown }): Promise<ReceiptRecord>;
   saveMandate(mandate: MandateRecord): Promise<void>;
 }
@@ -288,43 +295,87 @@ export type WebhookResult = {
   processed?: boolean;
   reason?: string;
   status?: ChargeStatus;
+  environment?: WebhookEnvironment;
+  accessApplied?: boolean;
+};
+
+export type ExpayWebhookSecrets = {
+  test?: string;
+  prod?: string;
 };
 
 /**
- * Verifies the signature, ignores a duplicate event id, then re-fetches
- * GET /charges/{id} and applies only that status.
- * A duplicate is ignored before the re-fetch so a replay cannot grant access twice.
- * A new event always re-fetches before any unlock or revoke.
+ * A request is accepted when it matches either signing secret. Prod wins when
+ * both match, so a shared secret is not recorded as test.
+ * Access changes only for prod, unless acceptTestEvents is set.
+ * A duplicate for that same environment is ignored before the re-fetch.
+ * Every newly accepted event re-fetches GET /charges/{id} and trusts only that status.
  */
 export async function processExpayWebhook(input: {
   rawBody: string;
   signature: string | undefined;
-  secret: string;
+  secrets: ExpayWebhookSecrets;
+  acceptTestEvents: boolean;
   client: ExpayClient;
   store: PaymentStore;
 }): Promise<WebhookResult> {
-  if (!verifyExpayWebhookSignature(input.rawBody, input.signature, input.secret)) {
-    return { accepted: false, reason: "invalid_signature" };
-  }
+  const environment = matchExpayWebhookEnvironment(input.rawBody, input.signature, input.secrets);
+  if (!environment) return { accepted: false, reason: "invalid_signature" };
   const event = parseWebhookEvent(input.rawBody);
   if (!event) return { accepted: false, reason: "invalid_payload" };
-  const receipt = await input.store.findReceipt(event.id);
-  if (receipt?.processedAt) return { accepted: true, duplicate: true, status: undefined };
+  const receipt = await input.store.findReceipt(event.id, environment);
+  if (receipt?.processedAt) return { accepted: true, duplicate: true, environment, accessApplied: false };
 
   const remote = await input.client.getCharge(event.chargeId);
   const local = await input.store.findByProviderChargeId(event.chargeId);
   if (!local) {
-    return { accepted: true, processed: false, reason: "unknown_charge" };
+    return { accepted: true, processed: false, reason: "unknown_charge", environment, accessApplied: false };
   }
-  const updated = await applyTrustedStatus(input.store, local, remote.status);
+  const accessApplied = environment === "prod" || input.acceptTestEvents;
+  const updated = accessApplied ? await applyTrustedStatus(input.store, local, remote.status) : local;
   await input.store.insertReceipt({
     providerEventId: event.id,
     providerChargeId: event.chargeId,
     eventType: event.type,
+    environment,
     processedAt: new Date().toISOString(),
     payload: event.payload,
   });
-  return { accepted: true, processed: true, duplicate: false, status: updated.status };
+  return {
+    accepted: true,
+    processed: true,
+    duplicate: false,
+    status: accessApplied ? updated.status : remote.status,
+    environment,
+    accessApplied,
+  };
+}
+
+export function readExpayWebhookSecrets(env: NodeJS.ProcessEnv = process.env): ExpayWebhookSecrets {
+  return {
+    test: blankToUndefined(env.EXPAY_WEBHOOK_SECRET_TEST),
+    prod: blankToUndefined(env.EXPAY_WEBHOOK_SECRET_PROD),
+  };
+}
+
+/** Unset follows NODE_ENV: false in production and when NODE_ENV is missing. */
+export function acceptExpayTestEvents(env: NodeJS.ProcessEnv = process.env) {
+  const flag = env.EXPAY_ACCEPT_TEST_EVENTS?.trim();
+  if (flag === "true") return true;
+  if (flag === "false") return false;
+  return Boolean(env.NODE_ENV) && env.NODE_ENV !== "production";
+}
+
+export function matchExpayWebhookEnvironment(
+  rawBody: string,
+  signature: string | undefined,
+  secrets: ExpayWebhookSecrets,
+): WebhookEnvironment | null {
+  const prod = Boolean(secrets.prod) && verifyExpayWebhookSignature(rawBody, signature, secrets.prod ?? "");
+  const test = Boolean(secrets.test) && verifyExpayWebhookSignature(rawBody, signature, secrets.test ?? "");
+  if (prod) return "prod";
+  if (test) return "test";
+  return null;
 }
 
 export async function applyTrustedStatus(store: PaymentStore, charge: ChargeRecord, status: ChargeStatus) {
@@ -412,7 +463,10 @@ export function normalizeStatus(value: string | null): ChargeStatus | null {
   return null;
 }
 
-export function createMemoryPaymentStore(): PaymentStore & { charges: () => ChargeRecord[] } {
+export function createMemoryPaymentStore(): PaymentStore & {
+  charges: () => ChargeRecord[];
+  receipts: () => ReceiptRecord[];
+} {
   const charges = new Map<string, ChargeRecord>();
   const byKey = new Map<string, string>();
   const receipts = new Map<string, ReceiptRecord>();
@@ -420,6 +474,7 @@ export function createMemoryPaymentStore(): PaymentStore & { charges: () => Char
 
   return {
     charges: () => [...charges.values()],
+    receipts: () => [...receipts.values()],
     async findByIdempotency(key) {
       const id = byKey.get(key);
       return id ? charges.get(id) ?? null : null;
@@ -441,19 +496,21 @@ export function createMemoryPaymentStore(): PaymentStore & { charges: () => Char
       charges.set(providerChargeId, next);
       return next;
     },
-    async findReceipt(eventId) {
-      return receipts.get(eventId) ?? null;
+    async findReceipt(eventId, environment) {
+      return receipts.get(receiptKey(environment, eventId)) ?? null;
     },
     async insertReceipt(receipt) {
-      const existing = receipts.get(receipt.providerEventId);
+      const key = receiptKey(receipt.environment, receipt.providerEventId);
+      const existing = receipts.get(key);
       if (existing) return existing;
       const stored = {
         providerEventId: receipt.providerEventId,
         providerChargeId: receipt.providerChargeId,
         eventType: receipt.eventType,
+        environment: receipt.environment,
         processedAt: receipt.processedAt,
       };
-      receipts.set(receipt.providerEventId, stored);
+      receipts.set(key, stored);
       return stored;
     },
     async saveMandate(mandate) {
@@ -519,6 +576,15 @@ function errorMessage(payload: unknown, status: number) {
   const message = body ? pickString(body, ["error_message", "message", "error"]) : null;
   if (!message || message.length > 180 || /key|secret|token/i.test(message)) return `ExPay request failed (${status}).`;
   return message;
+}
+
+function receiptKey(environment: WebhookEnvironment, eventId: string) {
+  return `${environment}:${eventId}`;
+}
+
+function blankToUndefined(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function fixedEqual(expected: string, provided: string) {

@@ -429,11 +429,12 @@ model PaymentWebhookReceipt {
   providerEventId  String
   providerChargeId String
   eventType        String
+  environment      String
   payload          Json
   processedAt      DateTime?
   createdAt        DateTime  @default(now())
 
-  @@unique([provider, providerEventId])
+  @@unique([provider, providerEventId, environment])
   @@index([providerChargeId])
   @@map("payment_webhook_receipts")
 }
