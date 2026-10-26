@@ -395,6 +395,64 @@ model LedgerEntry {
   @@map("ledger_entries")
 }
 
+model PaymentRecord {
+  id               String    @id @default(cuid())
+  provider         String    @default("expay")
+  providerChargeId String    @unique
+  buyerId          String
+  creatorId        String
+  purpose          String
+  subjectId        String
+  description      String
+  amountCents      Int
+  currency         String    @default("BRL")
+  status           String
+  billingMode      String
+  mandateId        String?
+  copiaECola       String?
+  qrCode           String?
+  idempotencyKey   String    @unique
+  accessActive     Boolean   @default(false)
+  paidAt           DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([buyerId, purpose, subjectId])
+  @@index([status])
+  @@map("payment_records")
+}
+
+model PaymentWebhookReceipt {
+  id               String    @id @default(cuid())
+  provider         String    @default("expay")
+  providerEventId  String
+  providerChargeId String
+  eventType        String
+  payload          Json
+  processedAt      DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([providerChargeId])
+  @@map("payment_webhook_receipts")
+}
+
+model PixMandateRecord {
+  id                String   @id @default(cuid())
+  providerMandateId String   @unique
+  buyerId           String
+  creatorId         String
+  subjectId         String
+  amountCents       Int
+  status            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([buyerId, creatorId])
+  @@map("pix_mandate_records")
+}
+
 model PaymentEvent {
   id          String    @id @default(cuid())
   provider    String

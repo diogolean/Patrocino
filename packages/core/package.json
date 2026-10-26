@@ -11,6 +11,10 @@
     "./monetization": {
       "types": "./dist/monetization.d.ts",
       "default": "./dist/monetization.js"
+    },
+    "./expay": {
+      "types": "./dist/expay.d.ts",
+      "default": "./dist/expay.js"
     }
   },
   "dependencies": {

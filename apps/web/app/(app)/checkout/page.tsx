@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Check,
@@ -17,6 +17,7 @@ import { commissionForSale } from "@/lib/affiliates";
 import { paymentGateway } from "@/lib/payments";
 import { mockDelay, readDemo, writeDemo } from "@/lib/demo-store";
 import { toast } from "sonner";
+import { ExpayCheckoutModal } from "@/components/expay-checkout-modal";
 
 function DemoPaymentGraphic({ seed }: { seed: string }) {
   const cells = useMemo(() => {
@@ -72,18 +73,26 @@ function CheckoutContent() {
             : post?.price || 990;
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [pixOpen, setPixOpen] = useState(false);
+  const [provider, setProvider] = useState<"demo" | "expay">("demo");
   const returnPath = search.get("return")?.startsWith("/") ? search.get("return")! : `/creator/${creator.username}`;
+  const purpose: "subscription" | "post" | "message" | "pack" | "special_request" =
+    kind === "subscription" || kind === "message" || kind === "pack" || kind === "special_request" ? kind : "post";
 
-  async function simulate() {
-    setPaying(true);
-    await mockDelay(900);
-    await paymentGateway.recordConfirmedPayment({
-      provider: "pix",
-      amountCents: amount,
-      currency: "BRL",
-      description: kind,
-      idempotencyKey: `${kind}-${creator.id}-${id}`,
-    });
+  useEffect(() => {
+    let cancel = false;
+    fetch("/api/payments/provider")
+      .then((response) => response.json())
+      .then((payload: { provider?: string }) => {
+        if (!cancel && payload.provider === "expay") setProvider("expay");
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  function grantLocalAccess() {
     const state = readDemo();
     const transactionKind =
       kind === "subscription"
@@ -118,9 +127,22 @@ function CheckoutContent() {
         ...commissionPatch,
       });
     }
-    setPaying(false);
     setPaid(true);
     toast.success(kind === "subscription" ? "Assinatura ativada!" : "Conteúdo desbloqueado!");
+  }
+
+  async function simulate() {
+    setPaying(true);
+    await mockDelay(900);
+    await paymentGateway.recordConfirmedPayment({
+      provider: "pix",
+      amountCents: amount,
+      currency: "BRL",
+      description: kind,
+      idempotencyKey: `${kind}-${creator.id}-${id}`,
+    });
+    grantLocalAccess();
+    setPaying(false);
   }
 
   if (paid) {
@@ -128,11 +150,11 @@ function CheckoutContent() {
       <div className="grid min-h-[calc(100dvh-64px)] place-items-center px-5">
         <div className="w-full max-w-md rounded-[32px] border border-black/5 bg-white/70 p-8 text-center shadow-2xl dark:bg-white/5">
           <span className="mx-auto grid size-20 place-items-center rounded-full bg-emerald-500/15 text-emerald-600"><Check className="size-9" strokeWidth={3} /></span>
-          <p className="mt-6 text-xs font-black uppercase tracking-[.2em] text-emerald-600">Pagamento simulado</p>
+          <p className="mt-6 text-xs font-black uppercase tracking-[.2em] text-emerald-600">{provider === "expay" ? "Pagamento confirmado" : "Pagamento simulado"}</p>
           <h1 className="mt-2 text-2xl font-extrabold tracking-[-.04em]">{kind === "subscription" ? "Você faz parte!" : specialRequest ? "Pedido confirmado" : "Conteúdo liberado"}</h1>
           <p className="mt-3 text-xs leading-5 text-muted">{kind === "subscription" ? `Sua assinatura de ${creator.name} está ativa neste navegador.` : "A experiência já está disponível para você neste navegador."}</p>
           <Button size="lg" className="mt-7 w-full" onClick={() => router.push(returnPath)}>Ver agora <Sparkles className="size-4" /></Button>
-          <p className="mt-4 text-[9px] text-muted">Nenhuma cobrança real foi realizada.</p>
+          {provider !== "expay" && <p className="mt-4 text-[9px] text-muted">Nenhuma cobrança real foi realizada.</p>}
         </div>
       </div>
     );
@@ -170,13 +192,34 @@ function CheckoutContent() {
           <div className="mt-5 w-full max-w-sm rounded-2xl bg-surface/65 p-3 text-center text-[9px] font-semibold text-muted dark:bg-white/5">
             Checkout em modo de demonstração
           </div>
-          <Button size="lg" className="mt-5 w-full max-w-sm" onClick={simulate} disabled={paying}>
-            {paying ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}
-            {paying ? "Confirmando..." : "Simular pagamento"}
-          </Button>
+          {provider === "expay" ? (
+            <Button size="lg" className="mt-5 w-full max-w-sm" onClick={() => setPixOpen(true)}>
+              Pagar com Pix
+            </Button>
+          ) : (
+            <Button size="lg" className="mt-5 w-full max-w-sm" onClick={simulate} disabled={paying}>
+              {paying ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}
+              {paying ? "Confirmando..." : "Simular pagamento"}
+            </Button>
+          )}
           <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">Ao continuar, você confirma que entende que este checkout é apenas uma simulação de produto.</p>
         </div>
       </section>
+      {pixOpen && <ExpayCheckoutModal
+        amountCents={amount}
+        title={kind === "subscription" ? `Assinatura de ${creator.name}` : `Conteúdo de ${creator.name}`}
+        purpose={purpose}
+        buyerId="demo-fan"
+        creatorId={creator.id}
+        subjectId={kind === "subscription" ? plan.id : id}
+        description={kind === "subscription" ? `Assinatura de ${creator.name}` : `Conteúdo de ${creator.name}`}
+        idempotencyKey={`${purpose}-${creator.id}-${id}`}
+        onClose={() => setPixOpen(false)}
+        onPaid={() => {
+          setPixOpen(false);
+          if (!paid) grantLocalAccess();
+        }}
+      />}
     </div>
   );
 }

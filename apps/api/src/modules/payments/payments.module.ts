@@ -6,6 +6,7 @@ import type { Request } from "express";
 import { requireUser } from "../auth/require-user";
 import { readStripePublishable, readStripeSecret, readStripeWebhookSecret } from "./payment-gateways";
 import { handleStripeEvent, startPlanCheckout } from "./billing";
+import { ExpayPaymentsController } from "./expay.controller";
 
 const demoPurchaseSchema = z.object({ mode: z.literal("demo") });
 const checkoutSchema = z.strictObject({
@@ -86,5 +87,5 @@ class PaymentsController {
   }
 }
 
-@Module({ controllers: [PaymentsController] })
+@Module({ controllers: [PaymentsController, ExpayPaymentsController] })
 export class PaymentsModule {}
