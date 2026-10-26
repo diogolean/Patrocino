@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, LoaderCircle, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@mimelux/ui";
+import { Input } from "@/components/ui/input";
 
 type ChargeView = {
   chargeId: string;
@@ -40,12 +41,16 @@ export function ExpayCheckoutModal({
   onClose: () => void;
   onPaid: () => void;
 }) {
+  const asksForDocument = purpose === "subscription";
+  const [documentInput, setDocumentInput] = useState("");
+  const [payerDocument, setPayerDocument] = useState<string | null>(asksForDocument ? null : "");
   const [charge, setCharge] = useState<ChargeView | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3334/v1";
 
   useEffect(() => {
+    if (payerDocument === null) return;
     let stop = false;
     const controller = new AbortController();
 
@@ -63,7 +68,11 @@ export function ExpayCheckoutModal({
             amountCents,
             description,
             idempotencyKey,
-            customer: { name: "Apoiador", email: "fan@patrocino.com" },
+            customer: {
+              name: "Apoiador",
+              email: "fan@patrocino.com",
+              ...(payerDocument ? { document: payerDocument } : {}),
+            },
           }),
         });
         const payload = (await response.json().catch(() => ({}))) as Partial<ChargeView> & { message?: string };
@@ -82,7 +91,7 @@ export function ExpayCheckoutModal({
       stop = true;
       controller.abort();
     };
-  }, [amountCents, apiBase, buyerId, creatorId, purpose, subjectId, description, idempotencyKey]);
+  }, [amountCents, apiBase, buyerId, creatorId, purpose, subjectId, description, idempotencyKey, payerDocument]);
 
   useEffect(() => {
     if (!charge?.chargeId || terminal.has(charge.status)) return;
@@ -116,6 +125,16 @@ export function ExpayCheckoutModal({
   const copia = charge?.copiaECola;
   const paid = charge?.status === "paid" || charge?.accessActive;
 
+  function generatePix() {
+    const cleaned = documentInput.replace(/\D/g, "");
+    if (cleaned && cleaned.length !== 11 && cleaned.length !== 14) {
+      setError("Informe um CPF com 11 dígitos ou um CNPJ com 14, ou deixe em branco para pagar só este mês.");
+      return;
+    }
+    setError("");
+    setPayerDocument(cleaned);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/55 sm:items-center sm:p-6" role="presentation">
       <div
@@ -136,7 +155,36 @@ export function ExpayCheckoutModal({
 
         {error && <p className="mt-5 rounded-2xl bg-accent/15 px-4 py-3 text-sm text-accent-strong">{error}</p>}
 
-        {!charge && !error && (
+        {asksForDocument && payerDocument !== null && error && !charge && (
+          <Button type="button" variant="outline" className="mt-3 w-full" onClick={() => { setError(""); setPayerDocument(null); }}>
+            Tentar de novo
+          </Button>
+        )}
+
+        {payerDocument === null && (
+          <form
+            className="mt-5 space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              generatePix();
+            }}
+          >
+            <label htmlFor="expay-document" className="block text-sm font-semibold">CPF ou CNPJ do pagador</label>
+            <Input
+              id="expay-document"
+              inputMode="numeric"
+              autoComplete="off"
+              value={documentInput}
+              onChange={(event) => setDocumentInput(event.target.value)}
+              placeholder="000.000.000-00"
+              className="h-12 rounded-2xl px-4 text-base"
+            />
+            <p className="text-xs leading-5 text-muted">Sem ele, o Pix automático não abre e o mês segue avulso.</p>
+            <Button type="submit" className="w-full">Gerar Pix</Button>
+          </form>
+        )}
+
+        {payerDocument !== null && !charge && !error && (
           <div className="grid place-items-center py-16 text-muted">
             <LoaderCircle className="size-6 animate-spin" />
             <p className="mt-3 text-xs">Gerando o código Pix</p>

@@ -1,19 +1,16 @@
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 /**
- * ExPay Brasil client and webhook processor.
+ * ExPay Brasil client (Gateway Core API 1.0.0, docs/expay-openapi.json).
  *
- * The OpenAPI document was not in the workspace, so request and response
- * field names are isolated below. Endpoints, the X-API-Key header, Idempotency-Key
- * on POST /charges, and X-Request-Id follow the integration notes.
+ * Amounts on the wire are reais (99.5), not cents. Pix copia-e-cola is
+ * `pix_data.copy_paste` and the EMV payload is `pix_data.qr_code`.
+ * Refunds are POST /charges/{id}/refund. Pix Automático frequency is `mensal`.
  *
- * TODO-to-confirm: webhook signature header. The default guess is
- * `X-Expay-Signature`. Override with EXPAY_WEBHOOK_SIGNATURE_HEADER.
- * The check is HMAC-SHA256 of the raw body. Hex (optional `sha256=` prefix)
- * and base64 digests are both accepted.
- *
- * TODO-to-confirm: admin refunds call POST /charges/{id}/refunds.
- * Pix Automático uses POST /pix-automatico/mandatos and POST /pix-automatico/cobrancas.
+ * TODO-to-confirm: the merchant webhook signature header is not in the OpenAPI
+ * spec (HMAC is described only for the provider ingress). Default guess remains
+ * `X-Expay-Signature`, overridable with EXPAY_WEBHOOK_SIGNATURE_HEADER.
+ * Verification is HMAC-SHA256 of the raw body, hex or base64, optional `sha256=` prefix.
  */
 
 export const EXPAY_DEFAULT_BASE_URL = "https://api.expaybrasil.com/api/v1";
@@ -105,6 +102,7 @@ export type ExpayClient = {
   getCharge(chargeId: string): Promise<ParsedCharge>;
   refundCharge(chargeId: string): Promise<void>;
   createMandate(draft: ChargeDraft): Promise<ParsedMandate>;
+  getMandate(mandateId: string): Promise<ParsedMandate>;
   createMandateCharge(mandateId: string, draft: ChargeDraft): Promise<ParsedCharge>;
 };
 
@@ -123,15 +121,17 @@ export type ParsedMandate = {
 
 type FetchLike = typeof fetch;
 
+export function amountReais(amountCents: number) {
+  return Number((amountCents / 100).toFixed(2));
+}
+
 export function createExpayClient(config: {
   apiKey: string;
   baseUrl?: string;
   fetchImpl?: FetchLike;
-  notificationUrl?: string;
 }): ExpayClient {
   const baseUrl = (config.baseUrl || EXPAY_DEFAULT_BASE_URL).replace(/\/$/, "");
   const fetchImpl = config.fetchImpl ?? fetch;
-  const notificationUrl = config.notificationUrl ?? EXPAY_WEBHOOK_URL;
 
   async function send(method: "GET" | "POST", path: string, body?: unknown, idempotencyKey?: string) {
     const headers: Record<string, string> = {
@@ -156,31 +156,28 @@ export function createExpayClient(config: {
 
   return {
     createCharge(draft) {
-      return send("POST", "/charges", chargeRequestBody(draft, notificationUrl), draft.idempotencyKey).then((payload) => {
-        const charge = parseCharge(payload);
-        if (!charge) throw new ExpayError("ExPay returned a charge without an id.", 502);
-        return charge;
-      });
+      return send("POST", "/charges", chargeRequestBody(draft), draft.idempotencyKey).then((payload) => requireCharge(payload));
     },
     getCharge(chargeId) {
-      return send("GET", `/charges/${encodeURIComponent(chargeId)}`).then((payload) => {
-        const charge = parseCharge(payload);
-        if (!charge) throw new ExpayError("ExPay returned a charge without an id.", 502);
-        return charge;
-      });
+      return send("GET", `/charges/${encodeURIComponent(chargeId)}`).then((payload) => requireCharge(payload));
     },
     async refundCharge(chargeId) {
-      await send("POST", `/charges/${encodeURIComponent(chargeId)}/refunds`, {}, `refund:${chargeId}`);
+      await send("POST", `/charges/${encodeURIComponent(chargeId)}/refund`, {}, `refund:${chargeId}`);
     },
     createMandate(draft) {
-      return send("POST", "/pix-automatico/mandatos", mandateRequestBody(draft, notificationUrl), `${draft.idempotencyKey}:mandate`).then(
-        (payload) => {
-          const mandate = parseMandate(payload);
-          if (!mandate) throw new ExpayError("ExPay returned a mandate without an id.", 502);
-          if (isMandateFailure(mandate.status)) throw new ExpayError("ExPay rejected the Pix Automático mandate.", 422);
-          return mandate;
-        },
-      );
+      return send("POST", "/pix-automatico/mandatos", mandateRequestBody(draft), `${draft.idempotencyKey}:mandate`).then((payload) => {
+        const mandate = parseMandate(payload);
+        if (!mandate) throw new ExpayError("ExPay returned a mandate without an id.", 502);
+        if (isMandateFailure(mandate.status)) throw new ExpayError("ExPay rejected the Pix Automático mandate.", 422);
+        return mandate;
+      });
+    },
+    getMandate(mandateId) {
+      return send("GET", `/pix-automatico/mandatos/${encodeURIComponent(mandateId)}`).then((payload) => {
+        const mandate = parseMandate(payload);
+        if (!mandate) throw new ExpayError("ExPay returned a mandate without an id.", 502);
+        return mandate;
+      });
     },
     createMandateCharge(mandateId, draft) {
       return send(
@@ -188,62 +185,51 @@ export function createExpayClient(config: {
         "/pix-automatico/cobrancas",
         {
           mandate_id: mandateId,
-          amount: draft.amountCents,
-          currency: "BRL",
+          amount: amountReais(draft.amountCents),
           description: draft.description,
-          notification_url: notificationUrl,
-          metadata: metadata(draft),
         },
         `${draft.idempotencyKey}:cobranca`,
-      ).then((payload) => {
-        const charge = parseCharge(payload);
-        if (!charge) throw new ExpayError("ExPay returned a collection without an id.", 502);
-        return charge;
-      });
+      ).then((payload) => requireCharge(payload));
     },
   };
 }
 
-export function chargeRequestBody(draft: ChargeDraft, notificationUrl = EXPAY_WEBHOOK_URL) {
+function requireCharge(payload: unknown) {
+  const charge = parseCharge(payload);
+  if (!charge) throw new ExpayError("ExPay returned a charge without an id.", 502);
+  return charge;
+}
+
+export function chargeRequestBody(draft: ChargeDraft) {
+  const document = digits(draft.customer.document);
   return {
-    amount: draft.amountCents,
+    amount: amountReais(draft.amountCents),
     currency: "BRL",
     payment_method: "pix",
+    reference: draft.idempotencyKey.slice(0, 255),
+    customer: {
+      name: draft.customer.name,
+      email: draft.customer.email,
+      ...(document ? { document } : {}),
+    },
+  };
+}
+
+export function mandateRequestBody(draft: ChargeDraft) {
+  const document = digits(draft.customer.document);
+  if (!document) throw new ExpayError("Pix Automático requires the payer document.", 422);
+  return {
+    customer_name: draft.customer.name,
+    customer_document: document,
+    amount: amountReais(draft.amountCents),
+    frequency: "mensal",
     description: draft.description,
-    notification_url: notificationUrl,
-    customer: customerBody(draft.customer),
-    metadata: metadata(draft),
   };
 }
 
-export function mandateRequestBody(draft: ChargeDraft, notificationUrl = EXPAY_WEBHOOK_URL) {
-  return {
-    amount: draft.amountCents,
-    currency: "BRL",
-    frequency: "monthly",
-    description: draft.description,
-    notification_url: notificationUrl,
-    customer: customerBody(draft.customer),
-    metadata: metadata(draft),
-  };
-}
-
-function customerBody(customer: ChargeCustomer) {
-  return {
-    name: customer.name,
-    email: customer.email,
-    document: customer.document?.replace(/\D/g, "") || undefined,
-  };
-}
-
-function metadata(draft: ChargeDraft) {
-  return {
-    buyerId: draft.buyerId,
-    creatorId: draft.creatorId,
-    purpose: draft.purpose,
-    subjectId: draft.subjectId,
-    idempotencyKey: draft.idempotencyKey,
-  };
+function digits(value: string | undefined) {
+  const cleaned = value?.replace(/\D/g, "") ?? "";
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 export async function createOneOffPixCharge(client: ExpayClient, store: PaymentStore, draft: ChargeDraft) {
@@ -253,20 +239,28 @@ export async function createOneOffPixCharge(client: ExpayClient, store: PaymentS
   return store.insertCharge(toRecord(draft, created, "pix_one_off", null));
 }
 
+function isAuthorizedMandate(status: string) {
+  return ["authorized", "active", "autorizado"].includes(status.trim().toLowerCase());
+}
+
 export async function createSubscriptionPix(client: ExpayClient, store: PaymentStore, draft: ChargeDraft) {
   const existing = await store.findByIdempotency(draft.idempotencyKey);
   if (existing) return existing;
   try {
+    if (!digits(draft.customer.document)) throw new ExpayError("Pix Automático requires the payer document.", 422);
     const mandate = await client.createMandate(draft);
+    const current = await client.getMandate(mandate.id);
     await store.saveMandate({
       providerMandateId: mandate.id,
       buyerId: draft.buyerId,
       creatorId: draft.creatorId,
       subjectId: draft.subjectId,
       amountCents: draft.amountCents,
-      status: mandate.status,
+      status: current.status,
     });
-    const created = mandate.charge ?? (await client.createMandateCharge(mandate.id, draft));
+    if (!isAuthorizedMandate(current.status)) throw new ExpayError("Pix Automático mandate is not authorized yet.", 409);
+    const billed = await client.createMandateCharge(mandate.id, draft);
+    const created = billed.copiaECola ? billed : await client.getCharge(billed.id);
     return store.insertCharge(toRecord(draft, created, "pix_automatico", mandate.id));
   } catch {
     const created = await client.createCharge(draft);
@@ -360,14 +354,17 @@ export function parseCharge(payload: unknown): ParsedCharge | null {
   const body = unwrapCharge(payload);
   if (!body) return null;
   const id = pickString(body, ["id", "charge_id", "chargeId"]);
-  const status = normalizeStatus(pickString(body, ["status"]));
+  const status = normalizeStatus(pickString(body, ["status"])) ?? (id ? "pending" : null);
   if (!id || !status) return null;
-  const pix = asRecord(body.pix) ?? asRecord(body.payment) ?? {};
+  const pix = asRecord(body.pix_data) ?? asRecord(body.pix) ?? {};
+  const copyPaste = pickString(pix, ["copy_paste", "copia_e_cola", "copiaECola"]);
+  const emv = pickString(pix, ["qr_code"]);
+  const image = pickString(pix, ["qr_code_base64"]);
   return {
     id,
     status,
-    copiaECola: pickString(pix, ["copia_e_cola", "copiaECola", "emv", "qr_code_text", "brcode", "payload"]),
-    qrCode: pickString(pix, ["qr_code", "qrCode", "qr_code_base64", "qr_code_url", "image"]),
+    copiaECola: copyPaste ?? (emv && !emv.startsWith("data:") ? emv : null),
+    qrCode: image ? (image.startsWith("data:") ? image : `data:image/png;base64,${image}`) : null,
   };
 }
 
@@ -390,12 +387,15 @@ export function parseWebhookEvent(rawBody: string): { id: string; type: string; 
   if (!body) return null;
   const data = asRecord(body.data) ?? {};
   const object = asRecord(data.object) ?? {};
-  const id = pickString(body, ["id", "event_id", "eventId"]);
-  const type = pickString(body, ["type", "event", "name"]);
+  const charge = asRecord(body.charge) ?? {};
   const chargeId =
     pickString(data, ["id", "charge_id", "chargeId"]) ??
     pickString(object, ["id", "charge_id", "chargeId"]) ??
+    pickString(charge, ["id", "charge_id", "chargeId"]) ??
     pickString(body, ["charge_id", "chargeId"]);
+  const status = normalizeStatus(pickString(body, ["status"]) ?? pickString(data, ["status"]) ?? pickString(charge, ["status"]));
+  const type = pickString(body, ["type", "event", "event_type", "name"]) ?? (status ? `charge.${status}` : null);
+  const id = pickString(body, ["id", "event_id", "eventId"]) ?? (type && chargeId ? createHash("sha256").update(rawBody).digest("hex") : null);
   if (!id || !type || !chargeId) return null;
   return { id, type, chargeId, payload };
 }

@@ -48,10 +48,19 @@ function fakeExpay(handler: (url: string, init: RequestInit) => { status?: numbe
 describe("ExPay charges", () => {
   it("creates a Pix charge with the auth, idempotency, and request headers", async () => {
     const fake = fakeExpay(() => ({
+      status: 201,
       body: {
         id: "ch_100",
+        charge_id: "ch_100",
         status: "pending",
-        pix: { copia_e_cola: "00020126580014br.gov.bcb.pix", qr_code: "data:image/png;base64,aaa" },
+        amount: 19.9,
+        currency: "BRL",
+        payment_method: "pix",
+        pix_data: {
+          qr_code: "00020126580014br.gov.bcb.pix",
+          qr_code_base64: "aaa",
+          copy_paste: "00020126580014br.gov.bcb.pix",
+        },
       },
     }));
     const client = createExpayClient({
@@ -64,6 +73,7 @@ describe("ExPay charges", () => {
 
     expect(charge.providerChargeId).toBe("ch_100");
     expect(charge.copiaECola).toContain("br.gov.bcb.pix");
+    expect(charge.qrCode).toBe("data:image/png;base64,aaa");
     expect(charge.billingMode).toBe("pix_one_off");
     expect(charge.accessActive).toBe(false);
     expect(fake.calls).toHaveLength(1);
@@ -74,10 +84,22 @@ describe("ExPay charges", () => {
     expect(headers["X-API-Key"]).toBe("test_key");
     expect(headers["Idempotency-Key"]).toBe(draft.idempotencyKey);
     expect(headers["X-Request-Id"]).toMatch(/[0-9a-f-]{36}/);
-    const body = JSON.parse(String(call.init.body)) as { amount: number; customer: { document: string }; notification_url: string };
-    expect(body.amount).toBe(1990);
-    expect(body.customer.document).toBe("12345678909");
-    expect(body.notification_url).toBe("https://patrocino.com/v1/payments/expay/webhook");
+    const body = JSON.parse(String(call.init.body)) as {
+      amount: number;
+      currency: string;
+      payment_method: string;
+      reference: string;
+      customer: { name: string; email: string; document: string };
+      notification_url?: string;
+    };
+    expect(body).toEqual({
+      amount: 19.9,
+      currency: "BRL",
+      payment_method: "pix",
+      reference: draft.idempotencyKey,
+      customer: { name: "Apoiador", email: "fan@example.com", document: "12345678909" },
+    });
+    expect(body.notification_url).toBeUndefined();
     expect(globalThis.fetch).not.toBe(fake.fetchImpl);
   });
 
@@ -85,7 +107,12 @@ describe("ExPay charges", () => {
     const fake = fakeExpay((url) => {
       if (url.endsWith("/pix-automatico/mandatos")) return { status: 422, body: { message: "mandate unavailable" } };
       return {
-        body: { id: "ch_month", status: "waiting_payment", pix: { emv: "00020126fallback" } },
+        status: 201,
+        body: {
+          id: "ch_month",
+          status: "pending",
+          pix_data: { qr_code: "00020126fallback", copy_paste: "00020126fallback" },
+        },
       };
     });
     const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
@@ -101,14 +128,58 @@ describe("ExPay charges", () => {
     ]);
   });
 
-  it("keeps Pix Automático when the mandate returns its first charge", async () => {
-    const fake = fakeExpay(() => ({
-      body: {
-        id: "mdt_1",
-        status: "pending",
-        charge: { id: "ch_auto", status: "pending", pix: { qr_code_text: "00020126auto" } },
-      },
-    }));
+  it("falls back to a monthly Pix when the mandate is not authorized yet", async () => {
+    const fake = fakeExpay((url, init) => {
+      if (url.endsWith("/pix-automatico/mandatos") && init.method === "POST") {
+        return { status: 201, body: { mandate_id: "mandate-abc123" } };
+      }
+      if (url.includes("/pix-automatico/mandatos/")) {
+        return { body: { mandate_id: "mandate-abc123", status: "pending" } };
+      }
+      return {
+        status: 201,
+        body: { id: "ch_month", status: "pending", pix_data: { copy_paste: "00020126pending" } },
+      };
+    });
+    const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
+    const charge = await createSubscriptionPix(client, createMemoryPaymentStore(), {
+      ...draft,
+      purpose: "subscription",
+      subjectId: "plan-2",
+      idempotencyKey: "sub-pending",
+    });
+    expect(charge.billingMode).toBe("pix_monthly_fallback");
+    expect(charge.copiaECola).toBe("00020126pending");
+    expect(fake.calls.map((call) => call.url)).toEqual([
+      "https://api.expaybrasil.com/api/v1/pix-automatico/mandatos",
+      "https://api.expaybrasil.com/api/v1/pix-automatico/mandatos/mandate-abc123",
+      "https://api.expaybrasil.com/api/v1/charges",
+    ]);
+  });
+
+  it("charges an authorized Pix Automático mandate and loads the Pix payload", async () => {
+    const fake = fakeExpay((url, init) => {
+      if (url.endsWith("/pix-automatico/mandatos") && init.method === "POST") {
+        return { status: 201, body: { mandate_id: "mandate-abc123" } };
+      }
+      if (url.endsWith("/pix-automatico/mandatos/mandate-abc123")) {
+        return { body: { mandate_id: "mandate-abc123", status: "authorized" } };
+      }
+      if (url.endsWith("/pix-automatico/cobrancas")) {
+        return { status: 201, body: { charge_id: "charge-xyz789" } };
+      }
+      return {
+        body: {
+          id: "charge-xyz789",
+          status: "pending",
+          pix_data: {
+            qr_code: "00020126auto",
+            qr_code_base64: "aaa",
+            copy_paste: "00020126auto",
+          },
+        },
+      };
+    });
     const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
     const charge = await createSubscriptionPix(client, createMemoryPaymentStore(), {
       ...draft,
@@ -116,23 +187,62 @@ describe("ExPay charges", () => {
       idempotencyKey: "sub-1",
     });
     expect(charge.billingMode).toBe("pix_automatico");
-    expect(charge.mandateId).toBe("mdt_1");
-    expect(fake.calls).toHaveLength(1);
-    expect(fake.calls[0]!.url).toContain("/pix-automatico/mandatos");
+    expect(charge.mandateId).toBe("mandate-abc123");
+    expect(charge.providerChargeId).toBe("charge-xyz789");
+    expect(charge.copiaECola).toBe("00020126auto");
+    expect(charge.qrCode).toBe("data:image/png;base64,aaa");
+    expect(fake.calls.map((call) => call.url)).toEqual([
+      "https://api.expaybrasil.com/api/v1/pix-automatico/mandatos",
+      "https://api.expaybrasil.com/api/v1/pix-automatico/mandatos/mandate-abc123",
+      "https://api.expaybrasil.com/api/v1/pix-automatico/cobrancas",
+      "https://api.expaybrasil.com/api/v1/charges/charge-xyz789",
+    ]);
+    const mandate = JSON.parse(String(fake.calls[0]!.init.body)) as Record<string, unknown>;
+    expect(mandate).toEqual({
+      customer_name: "Apoiador",
+      customer_document: "12345678909",
+      amount: 19.9,
+      frequency: "mensal",
+      description: "Conteúdo exclusivo",
+    });
+    const billed = JSON.parse(String(fake.calls[2]!.init.body)) as Record<string, unknown>;
+    expect(billed).toEqual({
+      mandate_id: "mandate-abc123",
+      amount: 19.9,
+      description: "Conteúdo exclusivo",
+    });
+  });
+
+  it("uses a monthly Pix when the payer document is missing", async () => {
+    const fake = fakeExpay(() => ({
+      status: 201,
+      body: { id: "ch_nodoc", status: "pending", pix_data: { copy_paste: "00020126nodoc" } },
+    }));
+    const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
+    const charge = await createSubscriptionPix(client, createMemoryPaymentStore(), {
+      ...draft,
+      purpose: "subscription",
+      customer: { name: "Apoiador", email: "fan@example.com" },
+      idempotencyKey: "sub-nodoc",
+    });
+    expect(charge.billingMode).toBe("pix_monthly_fallback");
+    expect(fake.calls.map((call) => call.url)).toEqual(["https://api.expaybrasil.com/api/v1/charges"]);
   });
 });
 
 describe("ExPay webhooks", () => {
   function paidClient(status: string) {
     return fakeExpay((url, init) => {
-      if (init.method === "POST" && url.endsWith("/refunds")) return { body: { id: "re_1" } };
-      return { body: { id: "ch_100", status, pix: { copia_e_cola: "00020126" } } };
+      if (init.method === "POST" && url.endsWith("/refund")) {
+        return { body: { message: "Charge refunded successfully", charge: { id: "ch_100", status } } };
+      }
+      return { body: { id: "ch_100", status, pix_data: { copy_paste: "00020126" } } };
     });
   }
 
   async function seedPending() {
     const fake = fakeExpay(() => ({
-      body: { id: "ch_100", status: "pending", pix: { copia_e_cola: "00020126" } },
+      body: { id: "ch_100", status: "pending", pix_data: { copy_paste: "00020126" } },
     }));
     const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
     const store = createMemoryPaymentStore();
@@ -220,6 +330,8 @@ describe("ExPay webhooks", () => {
     );
     expect(revoked.accessActive).toBe(false);
     expect(revoked.status).toBe("canceled");
-    expect(admin.calls.some((call) => call.url.endsWith("/charges/ch_100/refunds") && call.init.method === "POST")).toBe(true);
+    const refund = admin.calls.find((call) => call.url.endsWith("/charges/ch_100/refund") && call.init.method === "POST");
+    expect(refund).toBeTruthy();
+    expect(JSON.parse(String(refund?.init.body))).toEqual({});
   });
 });
