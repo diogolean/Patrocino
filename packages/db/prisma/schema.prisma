@@ -59,6 +59,7 @@ enum ContentVisibility {
   FREE
   SUBSCRIBERS
   PPV
+  SUBSCRIBER_PPV
 }
 
 enum MediaKind {
@@ -156,6 +157,7 @@ model Creator {
   ownership            OwnershipType    @default(HOUSE)
   creatorShareBps      Int?
   affiliateCommissionBps Int?
+  defaultVideoPriceCents Int            @default(100)
   isDemo               Boolean          @default(false)
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
@@ -248,6 +250,7 @@ model Post {
   isDemo      Boolean           @default(false)
   publishedAt DateTime?
   deletedAt   DateTime?
+  contentHash String?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   media       Media[]
@@ -256,6 +259,7 @@ model Post {
   packItems   ContentPackItem[]
   comments    PostComment[]
 
+  @@unique([creatorId, contentHash])
   @@index([creatorId, publishedAt])
   @@map("posts")
 }

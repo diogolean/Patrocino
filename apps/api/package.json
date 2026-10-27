@@ -7,7 +7,8 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "media:import": "node dist/media-import.js"
   },
   "dependencies": {
     "@mimelux/core": "workspace:*",

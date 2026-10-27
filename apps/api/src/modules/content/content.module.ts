@@ -4,11 +4,11 @@ import { database } from "@mimelux/db/runtime";
 import { z } from "zod";
 import { assertOwnsCreator, ownsCreator } from "../access/creator-scope";
 import { optionalUser, requireUser } from "../auth/require-user";
-import { viewerHasAccess } from "../payments/billing";
+import { viewerCanReadPost } from "../media/entitlement";
 
 const createPostSchema = z.object({
   caption: z.string().min(1).max(500),
-  visibility: z.enum(["free", "subscriber", "ppv"]),
+  visibility: z.enum(["free", "subscriber", "ppv", "subscriber_ppv"]),
   mediaIds: z.array(z.string()).min(1),
   priceCents: z.number().int().positive().optional(),
 });
@@ -51,21 +51,12 @@ class ContentController {
       include: { media: true },
     });
     if (!post || post.deletedAt) return { item: null, id, source: "api-shell" };
-    const subscriberOnly = post.visibility === "SUBSCRIBERS";
-    const payPerView = post.visibility === "PPV";
     const viewer = await optionalUser(authorization);
-    let access = !subscriberOnly && !payPerView;
-    if (viewer && (await ownsCreator(viewer, post.creatorId))) access = true;
-    else if (subscriberOnly) access = viewer ? await viewerHasAccess(viewer.id, post.creatorId) : false;
-    else if (payPerView) {
-      access = viewer
-        ? Boolean(
-            await database.purchase.findFirst({
-              where: { buyerId: viewer.id, postId: post.id, status: "PAID" },
-            }),
-          )
-        : false;
-    }
+    const access = await viewerCanReadPost({
+      user: viewer,
+      owns: viewer ? await ownsCreator(viewer, post.creatorId) : false,
+      post,
+    });
     return {
       item: {
         id: post.id,

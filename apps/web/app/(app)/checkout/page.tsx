@@ -53,7 +53,8 @@ function CheckoutContent() {
   const kind = search.get("kind") || "subscription";
   const id = search.get("id") || "luna-ferraz";
   const creatorId = kind === "subscription" ? id : search.get("creator") || "luna-ferraz";
-  const creator = creators.find((item) => item.id === creatorId) || creators[0]!;
+  const creator = creators.find((item) => item.id === creatorId || item.username === creatorId) || creators[0]!;
+  const quoteCreatorId = kind === "subscription" ? creator.username : search.get("creator") || creator.username;
   const post = posts.find((item) => item.id === id);
   const message = kind === "message";
   const pack = kind === "pack";
@@ -103,7 +104,7 @@ function CheckoutContent() {
 
   const realCheckout = methods.expay || methods.stripe;
   const subjectId = kind === "subscription" ? plan.id : id;
-  const quoteKey = realCheckout ? `${creator.username}:${purpose}:${subjectId}` : "";
+  const quoteKey = realCheckout ? `${quoteCreatorId}:${purpose}:${subjectId}` : "";
   const [quote, setQuote] = useState<{ key: string; cents: number | null; error: string }>({ key: "", cents: null, error: "" });
   if (quote.key !== quoteKey) {
     setQuote({ key: quoteKey, cents: null, error: "" });
@@ -123,7 +124,7 @@ function CheckoutContent() {
     fetch("/api/payments/quote", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ creatorId: creator.username, purpose, subjectId }),
+      body: JSON.stringify({ creatorId: quoteCreatorId, purpose, subjectId }),
     })
       .then(async (response) => {
         const payload = (await response.json().catch(() => ({}))) as { amountCents?: number; message?: string };
@@ -144,7 +145,7 @@ function CheckoutContent() {
     return () => {
       cancel = true;
     };
-  }, [quoteKey, creator.username, purpose, subjectId]);
+  }, [quoteKey, quoteCreatorId, purpose, subjectId]);
 
   function grantLocalAccess(via: "demo" | "pix" | "card" = "demo") {
     const state = readDemo();
@@ -289,7 +290,7 @@ function CheckoutContent() {
       {pixOpen && <ExpayCheckoutModal
         title={kind === "subscription" ? `Assinatura de ${creator.name}` : `Conteúdo de ${creator.name}`}
         purpose={purpose}
-        creatorId={creator.username}
+        creatorId={quoteCreatorId}
         subjectId={subjectId}
         idempotencyKey={pixKey}
         onAmount={rememberAmount}
@@ -302,7 +303,7 @@ function CheckoutContent() {
       {cardOpen && <StripeCheckoutModal
         title={kind === "subscription" ? `Assinatura de ${creator.name}` : `Conteúdo de ${creator.name}`}
         purpose={purpose}
-        creatorId={creator.username}
+        creatorId={quoteCreatorId}
         subjectId={subjectId}
         idempotencyKey={cardKey}
         publishableKey={methods.stripePublishableKey}

@@ -1,8 +1,9 @@
-import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Prisma, database } from "@mimelux/db/runtime";
 import { applyPromotion, planChargeCents, type PromotionRule } from "@mimelux/core/monetization";
 import type { ChargeDraft, PaymentPurpose } from "@mimelux/core/expay";
 import { z } from "zod";
+import { fanSubscribed } from "../media/entitlement";
 
 const purposes = ["subscription", "post", "message", "pack", "special_request"] as const;
 
@@ -150,6 +151,9 @@ export async function quoteCharge(
       },
     });
     if (!post?.priceCents) throw unavailable();
+    if (post.visibility === "SUBSCRIBER_PPV" && !(await fanSubscribed(user.id, creator.id))) {
+      throw new ForbiddenException("An active subscription is required.");
+    }
     return {
       buyerId: user.id,
       creatorId: creator.id,

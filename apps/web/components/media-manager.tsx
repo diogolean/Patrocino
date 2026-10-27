@@ -3,7 +3,7 @@
 import { ChangeEvent, DragEvent, FormEvent, useCallback, useEffect, useState } from "react";
 import { Button } from "@mimelux/ui";
 
-export type MediaVisibility = "free" | "subscribers" | "ppv";
+export type MediaVisibility = "free" | "subscribers" | "ppv" | "subscriber_ppv";
 
 export type MediaLibraryItem = {
   id: string;
@@ -41,7 +41,12 @@ const labels: Record<MediaVisibility, string> = {
   free: "Gratuito",
   subscribers: "Somente assinantes",
   ppv: "Pago por visualização",
+  subscriber_ppv: "Vídeo para assinantes",
 };
+
+function pricedVisibility(visibility: MediaVisibility) {
+  return visibility === "ppv" || visibility === "subscriber_ppv";
+}
 
 function browserFileUrl(fileUrl: string | null) {
   if (!fileUrl) return null;
@@ -177,7 +182,7 @@ async function uploadFile(
     body: JSON.stringify({
       caption: fields.caption.trim() || undefined,
       visibility: fields.visibility,
-      priceCents: fields.visibility === "ppv" ? fields.priceCents : null,
+      priceCents: pricedVisibility(fields.visibility) ? fields.priceCents : null,
       publishedAt: fields.publishedAt,
     }),
   });
@@ -206,6 +211,8 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
   const [visibility, setVisibility] = useState<MediaVisibility>("subscribers");
   const [price, setPrice] = useState("");
   const [publishedAt, setPublishedAt] = useState("");
+  const [defaultPrice, setDefaultPrice] = useState("1.00");
+  const [defaultPriceCents, setDefaultPriceCents] = useState(100);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [loadedAt, setLoadedAt] = useState(0);
 
@@ -214,12 +221,20 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
     setError("");
     const path = creatorId ? `/api/media/items?creatorId=${encodeURIComponent(creatorId)}` : "/api/media/items";
     const response = await fetch(path, { cache: "no-store" });
-    const data = (await response.json().catch(() => ({}))) as { items?: MediaLibraryItem[]; message?: string };
+    const data = (await response.json().catch(() => ({}))) as {
+      items?: MediaLibraryItem[];
+      defaultVideoPriceCents?: number;
+      message?: string;
+    };
     if (!response.ok || !data.items) {
       setError(data.message || "Não foi possível carregar a mídia.");
       setItems([]);
       setLoading(false);
       return;
+    }
+    if (typeof data.defaultVideoPriceCents === "number" && data.defaultVideoPriceCents > 0) {
+      setDefaultPriceCents(data.defaultVideoPriceCents);
+      setDefaultPrice(reais(data.defaultVideoPriceCents) || "1.00");
     }
     setItems(data.items);
     setDrafts(Object.fromEntries(data.items.map((item) => [item.id, draftFor(item)])));
@@ -292,6 +307,11 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
     event.preventDefault();
     const draft = drafts[item.id];
     if (!draft) return;
+    const nextPrice = pricedVisibility(draft.visibility) ? centsFromInput(draft.price) : null;
+    if (draft.visibility === "ppv" && !nextPrice) {
+      setError("Informe o preço da visualização avulsa.");
+      return;
+    }
     setError("");
     const response = await fetch(`/api/media/items/${encodeURIComponent(item.id)}`, {
       method: "PATCH",
@@ -299,7 +319,7 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
       body: JSON.stringify({
         caption: draft.caption,
         visibility: draft.visibility,
-        priceCents: draft.visibility === "ppv" ? centsFromInput(draft.price) : null,
+        priceCents: nextPrice,
         publishedAt: fromLocalInput(draft.publishedAt),
       }),
     });
@@ -311,6 +331,27 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
     const saved = data.item;
     setItems((current) => current.map((entry) => (entry.id === saved.id ? saved : entry)));
     setDrafts((current) => ({ ...current, [saved.id]: draftFor(saved) }));
+  }
+
+  async function saveDefaultPrice() {
+    const cents = centsFromInput(defaultPrice);
+    if (!cents) {
+      setError("Informe o preço padrão do vídeo.");
+      return;
+    }
+    setError("");
+    const response = await fetch("/api/media/video-price", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ creatorId, defaultVideoPriceCents: cents }),
+    });
+    const data = (await response.json().catch(() => ({}))) as { defaultVideoPriceCents?: number; message?: string };
+    if (!response.ok || typeof data.defaultVideoPriceCents !== "number") {
+      setError(data.message || "Não foi possível salvar o preço padrão.");
+      return;
+    }
+    setDefaultPriceCents(data.defaultVideoPriceCents);
+    setDefaultPrice(reais(data.defaultVideoPriceCents) || "1.00");
   }
 
   async function remove(item: MediaLibraryItem) {
@@ -356,6 +397,31 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
         </div>
       </div>
 
+      <form
+        className="mt-4 flex flex-col gap-3 rounded-[24px] border border-border bg-background p-4 sm:flex-row sm:items-end"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void saveDefaultPrice();
+        }}
+      >
+        <label className="block flex-1 text-xs font-bold uppercase tracking-wide text-muted">
+          Preço padrão do vídeo (R$)
+          <input
+            data-testid="default-video-price"
+            inputMode="decimal"
+            value={defaultPrice}
+            onChange={(event) => setDefaultPrice(event.target.value)}
+            className="mt-2 h-11 w-full rounded-full border border-border bg-elevated px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-primary"
+          />
+        </label>
+        <Button type="submit" size="sm" data-testid="default-video-price-save">
+          Salvar padrão
+        </Button>
+        <p className="text-xs font-medium normal-case tracking-normal text-muted sm:max-w-xs sm:pb-2">
+          Vídeos para assinantes sem preço próprio usam este valor. O padrão de teste é R$ 1,00.
+        </p>
+      </form>
+
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="block text-xs font-bold uppercase tracking-wide text-muted">
           Legenda do lote
@@ -376,18 +442,24 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
             <option value="subscribers">Somente assinantes</option>
             <option value="free">Gratuito</option>
             <option value="ppv">Pago por visualização</option>
+            <option value="subscriber_ppv">Vídeo para assinantes</option>
           </select>
         </label>
-        {visibility === "ppv" && (
+        {pricedVisibility(visibility) && (
           <label className="block text-xs font-bold uppercase tracking-wide text-muted">
             Preço (R$)
             <input
               inputMode="decimal"
               value={price}
               onChange={(event) => setPrice(event.target.value)}
-              placeholder="19,90"
+              placeholder={visibility === "subscriber_ppv" ? reais(defaultPriceCents) || "1,00" : "19,90"}
               className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-primary"
             />
+            {visibility === "subscriber_ppv" && (
+              <span className="mt-2 block font-medium normal-case tracking-normal">
+                Em branco usa o preço padrão (R$ {(reais(defaultPriceCents) || "1.00").replace(".", ",")}).
+              </span>
+            )}
           </label>
         )}
         <label className="block text-xs font-bold uppercase tracking-wide text-muted">
@@ -501,17 +573,25 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
                         <option value="subscribers">Somente assinantes</option>
                         <option value="free">Gratuito</option>
                         <option value="ppv">Pago por visualização</option>
+                        <option value="subscriber_ppv">Vídeo para assinantes</option>
                       </select>
                     </label>
-                    {draft.visibility === "ppv" && (
+                    {pricedVisibility(draft.visibility) && (
                       <label className="block text-xs font-bold uppercase tracking-wide text-muted">
                         Preço (R$)
                         <input
+                          data-testid="media-item-price"
                           inputMode="decimal"
                           value={draft.price}
+                          placeholder={draft.visibility === "subscriber_ppv" ? reais(defaultPriceCents) || "1,00" : "19,90"}
                           onChange={(event) => updateDraft(item.id, { price: event.target.value })}
                           className="mt-2 h-11 w-full rounded-full border border-border bg-elevated px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-primary"
                         />
+                        {draft.visibility === "subscriber_ppv" && (
+                          <span className="mt-2 block font-medium normal-case tracking-normal">
+                            Em branco usa o preço padrão.
+                          </span>
+                        )}
                       </label>
                     )}
                     <label className="block text-xs font-bold uppercase tracking-wide text-muted">

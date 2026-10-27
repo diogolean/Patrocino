@@ -26,13 +26,13 @@ import { mkdir, open, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { requireUser } from "../auth/require-user";
-import { viewerHasAccess } from "../payments/billing";
+import { optionalUser, requireUser } from "../auth/require-user";
 import { writePosterAndPreview } from "./derivatives";
+import { fanSubscribed, paidPostPurchase, resolveVideoPrice, viewerCanReadPost } from "./entitlement";
 import { chunkSizeBytes, declaredMimeMatches, detectFile, maxBytes } from "./sniff";
 import { assembleChunks, openStorage, receivedChunkIndexes, type DiskStorage } from "./storage";
 
-const visibilitySchema = z.enum(["free", "subscribers", "ppv"]);
+const visibilitySchema = z.enum(["free", "subscribers", "ppv", "subscriber_ppv"]);
 
 const startSchema = z.object({
   creatorId: z.string().min(1).optional(),
@@ -61,9 +61,14 @@ const orderSchema = z.object({
   ids: z.array(z.string().min(1)).min(1),
 });
 
+const videoPriceSchema = z.object({
+  creatorId: z.string().min(1).optional(),
+  defaultVideoPriceCents: z.number().int().positive().max(10_000_000),
+});
+
 type Manager = {
   user: { id: string; role: string };
-  creator: { id: string; userId: string };
+  creator: { id: string; userId: string; defaultVideoPriceCents: number };
   admin: boolean;
 };
 
@@ -74,21 +79,19 @@ function safeFilename(name: string) {
 function toVisibility(value: z.infer<typeof visibilitySchema>) {
   if (value === "free") return "FREE" as const;
   if (value === "ppv") return "PPV" as const;
+  if (value === "subscriber_ppv") return "SUBSCRIBER_PPV" as const;
   return "SUBSCRIBERS" as const;
 }
 
 function fromVisibility(value: string) {
   if (value === "FREE") return "free";
   if (value === "PPV") return "ppv";
+  if (value === "SUBSCRIBER_PPV") return "subscriber_ppv";
   return "subscribers";
 }
 
 function isLocked(visibility: string) {
   return visibility !== "FREE";
-}
-
-function isLive(post: { deletedAt: Date | null; publishedAt: Date | null }) {
-  return !post.deletedAt && (!post.publishedAt || post.publishedAt.getTime() <= Date.now());
 }
 
 function pipeStream(stream: ReadStream, response: Response) {
@@ -133,7 +136,7 @@ async function audit(actorId: string, action: string, entityId: string, metadata
 @ApiTags("media")
 @ApiBearerAuth()
 @Controller()
-class MediaController {
+export class MediaController {
   private storagePromise: Promise<DiskStorage> | null = null;
 
   private storage() {
@@ -171,7 +174,75 @@ class MediaController {
       include: { media: { orderBy: { createdAt: "asc" } } },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     });
-    return { items: posts.map((post) => this.present(post, true)) };
+    return {
+      items: posts.map((post) => this.present(post, true)),
+      defaultVideoPriceCents: actor.creator.defaultVideoPriceCents,
+    };
+  }
+
+  @Patch("media/video-price")
+  async videoPrice(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
+    const parsed = videoPriceSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    const actor = await this.manager(authorization, parsed.data.creatorId);
+    const creator = await database.creator.update({
+      where: { id: actor.creator.id },
+      data: { defaultVideoPriceCents: parsed.data.defaultVideoPriceCents },
+    });
+    if (actor.admin) {
+      await database.auditLog.create({
+        data: {
+          actorId: actor.user.id,
+          action: "media.default_video_price",
+          entityType: "creator",
+          entityId: creator.id,
+          metadata: { defaultVideoPriceCents: creator.defaultVideoPriceCents },
+        },
+      });
+    }
+    return { defaultVideoPriceCents: creator.defaultVideoPriceCents };
+  }
+
+  @Get("creators/:key/subscriber-videos")
+  async subscriberVideos(@Param("key") key: string, @Headers("authorization") authorization?: string) {
+    const viewer = await optionalUser(authorization);
+    const keys = Array.from(new Set([key, key.replace(/-/g, "")]));
+    const creator = await database.creator.findFirst({
+      where: {
+        status: "ACTIVE",
+        OR: [{ id: { in: keys } }, { user: { profile: { is: { username: { in: keys } } } } }],
+      },
+    });
+    if (!creator) return { items: [], subscribed: false };
+    const subscribed = viewer ? await fanSubscribed(viewer.id, creator.id) : false;
+    const posts = await database.post.findMany({
+      where: {
+        creatorId: creator.id,
+        visibility: "SUBSCRIBER_PPV",
+        deletedAt: null,
+        publishedAt: { lte: new Date() },
+        media: { some: { kind: "VIDEO" } },
+      },
+      include: { media: { orderBy: { createdAt: "asc" } } },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+    const items = [];
+    for (const post of posts) {
+      const media = post.media.find((item) => item.kind === "VIDEO") ?? post.media[0];
+      if (!media || media.storageKey === "pending") continue;
+      const purchased = viewer ? await paidPostPurchase(viewer.id, post.id) : false;
+      items.push({
+        id: post.id,
+        mediaId: media.id,
+        caption: post.caption,
+        priceCents: post.priceCents ?? creator.defaultVideoPriceCents,
+        previewUrl: media.previewKey ? `/media/${media.previewKey}` : null,
+        fileUrl: purchased ? `/v1/media/${media.id}/file` : null,
+        purchased,
+        subscribed,
+      });
+    }
+    return { items, subscribed };
   }
 
   @Post("media/uploads")
@@ -263,7 +334,15 @@ class MediaController {
     const parsed = completeSchema.safeParse(body ?? {});
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
     const visibility = toVisibility(parsed.data.visibility);
-    if (visibility === "PPV" && !parsed.data.priceCents) throw new BadRequestException("PPV price is required");
+    const creator = await database.creator.findUniqueOrThrow({ where: { id: upload.creatorId } });
+    const priceCents = resolveVideoPrice({
+      visibility,
+      explicitCents: parsed.data.priceCents,
+      defaultVideoPriceCents: creator.defaultVideoPriceCents,
+    });
+    if ((visibility === "PPV" || visibility === "SUBSCRIBER_PPV") && !priceCents) {
+      throw new BadRequestException("PPV price is required");
+    }
     const storage = await this.storage();
     const directory = storage.resolve(upload.tempDir);
     const received = await receivedChunkIndexes(directory);
@@ -287,7 +366,7 @@ class MediaController {
         creatorId: upload.creatorId,
         caption: parsed.data.caption?.trim() || upload.filename,
         visibility,
-        priceCents: visibility === "PPV" ? parsed.data.priceCents : null,
+        priceCents,
         publishedAt: parsed.data.publishedAt ? new Date(parsed.data.publishedAt) : new Date(),
         sortOrder: await this.nextSort(upload.creatorId),
       },
@@ -304,7 +383,10 @@ class MediaController {
     });
     const folder = locked ? "private" : "public";
     const storageKey = `uploads/${upload.creatorId}/${folder}/${media.id}.${detected.extension}`;
-    const posterKey = `uploads/${upload.creatorId}/posters/${media.id}.jpg`;
+    const posterKey =
+      visibility === "SUBSCRIBER_PPV"
+        ? `uploads/${upload.creatorId}/private/posters/${media.id}.jpg`
+        : `uploads/${upload.creatorId}/posters/${media.id}.jpg`;
     const previewKey = `uploads/${upload.creatorId}/previews/${media.id}.jpg`;
     const destination = storage.resolve(storageKey);
     await mkdir(path.dirname(destination), { recursive: true });
@@ -357,9 +439,17 @@ class MediaController {
     if (!post || post.deletedAt) throw new NotFoundException("Media not found");
     const actor = await this.manager(authorization, post.creatorId);
     const visibility = parsed.data.visibility ? toVisibility(parsed.data.visibility) : post.visibility;
-    const priceCents =
-      parsed.data.priceCents !== undefined ? parsed.data.priceCents : visibility === "PPV" ? post.priceCents : null;
-    if (visibility === "PPV" && !priceCents) throw new BadRequestException("PPV price is required");
+    const creator = await database.creator.findUniqueOrThrow({ where: { id: post.creatorId } });
+    const explicit =
+      parsed.data.priceCents !== undefined ? parsed.data.priceCents : visibility === "FREE" || visibility === "SUBSCRIBERS" ? null : post.priceCents;
+    const priceCents = resolveVideoPrice({
+      visibility,
+      explicitCents: explicit,
+      defaultVideoPriceCents: creator.defaultVideoPriceCents,
+    });
+    if ((visibility === "PPV" || visibility === "SUBSCRIBER_PPV") && !priceCents) {
+      throw new BadRequestException("PPV price is required");
+    }
     const locked = isLocked(visibility);
     const storage = await this.storage();
     for (const media of post.media) {
@@ -377,7 +467,7 @@ class MediaController {
       data: {
         caption: parsed.data.caption ?? post.caption,
         visibility,
-        priceCents: visibility === "PPV" ? priceCents : null,
+        priceCents,
         publishedAt:
           parsed.data.publishedAt === undefined
             ? post.publishedAt
@@ -413,10 +503,10 @@ class MediaController {
   ) {
     const media = await database.media.findUnique({ where: { id }, include: { post: true } });
     if (!media?.post || media.post.deletedAt || media.storageKey === "pending") throw new NotFoundException("Media not found");
-    const allowed = await this.canRead(authorization, media.post, media.private || isLocked(media.post.visibility));
+    const allowed = await this.canRead(authorization, media.post);
     if (!allowed) {
       if (!authorization) throw new UnauthorizedException("Missing access token");
-      throw new ForbiddenException("Subscription required");
+      throw new ForbiddenException(media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
     }
     const storage = await this.storage();
     if (!(await storage.exists(media.storageKey))) throw new NotFoundException("Media not found");
@@ -447,7 +537,6 @@ class MediaController {
   private async canRead(
     authorization: string | undefined,
     post: { creatorId: string; visibility: string; deletedAt: Date | null; publishedAt: Date | null; id: string },
-    locked: boolean,
   ) {
     let user: { id: string; role: string } | null = null;
     if (authorization) {
@@ -457,22 +546,8 @@ class MediaController {
         user = null;
       }
     }
-    if (user?.role === "ADMIN") return true;
-    if (user) {
-      const creator = await database.creator.findUnique({ where: { userId: user.id } });
-      if (creator?.id === post.creatorId) return true;
-    }
-    if (!isLive(post)) return false;
-    if (!locked && post.visibility === "FREE") return true;
-    if (!user) return false;
-    if (post.visibility === "SUBSCRIBERS") return viewerHasAccess(user.id, post.creatorId);
-    if (post.visibility === "PPV") {
-      const purchase = await database.purchase.findFirst({
-        where: { buyerId: user.id, postId: post.id, status: "PAID" },
-      });
-      return Boolean(purchase);
-    }
-    return false;
+    const owner = user ? await database.creator.findUnique({ where: { userId: user.id } }) : null;
+    return viewerCanReadPost({ user, owns: owner?.id === post.creatorId, post });
   }
 
   private async ownedUpload(authorization: string | undefined, id: string) {
@@ -532,7 +607,8 @@ class MediaController {
       mimeType: media?.mimeType ?? "",
       byteSize: media?.byteSize ?? null,
       durationMs: media?.durationMs ?? null,
-      posterUrl: media?.posterKey ? `/media/${media.posterKey}` : null,
+      posterUrl:
+        post.visibility === "SUBSCRIBER_PPV" || !media?.posterKey ? null : `/media/${media.posterKey}`,
       previewUrl: media?.previewKey ? `/media/${media.previewKey}` : null,
       fileUrl: manager || !locked ? (media ? `/v1/media/${media.id}/file` : null) : null,
     };

@@ -20,6 +20,7 @@ import { Button, Pill, PremiumModal } from "@mimelux/ui";
 import type { Creator, Post } from "@/lib/gateway";
 import { brl, compact, plans, reviewsFor } from "@/lib/gateway";
 import { PostVisual } from "@/components/post-visual";
+import { SubscriberVideos } from "@/components/subscriber-videos";
 import { readDemo, writeDemo, type DemoReview, type DemoSpecialRequest } from "@/lib/demo-store";
 import { toast } from "sonner";
 
@@ -336,6 +337,8 @@ export function CreatorProfile({ creator, posts }: { creator: Creator; posts: Po
           );
         })}
       </div>
+
+      <SubscriberVideos username={creator.username} subscribeHref={planHref(1)} />
 
       <section data-testid="profile-reviews" className="mt-8 rounded-[28px] border border-border bg-elevated p-5">
         <div className="flex items-end justify-between gap-3">
