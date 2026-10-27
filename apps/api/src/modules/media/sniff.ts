@@ -30,17 +30,27 @@ export function detectFile(buffer: Buffer): DetectedFile | null {
   }
   if (buffer.length >= 12 && buffer.subarray(4, 8).toString("ascii") === "ftyp") {
     const brand = buffer.subarray(8, 12).toString("ascii");
+    if (brand === "M4A " || brand === "M4B " || brand === "M4P ") return null;
     if (brand.startsWith("qt")) return { kind: "VIDEO", mimeType: "video/quicktime", extension: "mov" };
     return { kind: "VIDEO", mimeType: "video/mp4", extension: "mp4" };
   }
   return null;
 }
 
+export function servedMimeType(mimeType: string) {
+  const value = mimeType.toLowerCase().split(";")[0]?.trim() ?? "";
+  if (value === "video/mp4" || value === "video/m4v" || value === "video/x-m4v") return "video/mp4";
+  return mimeType;
+}
+
 export function declaredMimeMatches(declared: string, detected: DetectedFile) {
   const value = declared.toLowerCase().split(";")[0]?.trim() ?? "";
   if (!value || value === "application/octet-stream") return true;
   if (value === detected.mimeType) return true;
-  if (detected.kind === "VIDEO" && (value === "video/mp4" || value === "video/quicktime" || value === "video/webm")) {
+  if (
+    detected.kind === "VIDEO" &&
+    (value === "video/mp4" || value === "video/m4v" || value === "video/x-m4v" || value === "video/quicktime" || value === "video/webm")
+  ) {
     return detected.mimeType.startsWith("video/");
   }
   if (detected.kind === "IMAGE" && value.startsWith("image/")) return detected.mimeType.startsWith("image/");

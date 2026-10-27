@@ -45,6 +45,10 @@ export function renewPlan<T extends { months: number }>(plans: T[]) {
   return plans.find((plan) => plan.months === 3) ?? plans.find((plan) => plan.months > 1) ?? null;
 }
 
+export function profileVideoCount(posts: { mediaType: string }[], subscriberVideos: readonly unknown[]) {
+  return posts.filter((post) => post.mediaType === "video").length + subscriberVideos.length;
+}
+
 export function formatDuration(durationMs: number | null | undefined) {
   if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs <= 0) return null;
   const total = Math.round(durationMs / 1000);

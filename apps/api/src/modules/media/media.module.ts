@@ -30,7 +30,7 @@ import { optionalUser, requireUser } from "../auth/require-user";
 import { writePosterAndPreview } from "./derivatives";
 import { fanSubscribed, paidPostPurchase, resolveVideoPrice, viewerCanReadPost } from "./entitlement";
 import { MEDIA_GRANT_TTL_SECONDS, readMediaGrant, signMediaGrant } from "./signed-url";
-import { chunkSizeBytes, declaredMimeMatches, detectFile, maxBytes } from "./sniff";
+import { chunkSizeBytes, declaredMimeMatches, detectFile, maxBytes, servedMimeType } from "./sniff";
 import { assembleChunks, openStorage, receivedChunkIndexes, type DiskStorage } from "./storage";
 
 const visibilitySchema = z.enum(["free", "subscribers", "ppv", "subscriber_ppv"]);
@@ -555,7 +555,7 @@ export class MediaController {
     if (!(await storage.exists(media.storageKey))) throw new NotFoundException("Media not found");
     const size = await storage.size(media.storageKey);
     const absolute = storage.resolve(media.storageKey);
-    response.setHeader("Content-Type", media.mimeType);
+    response.setHeader("Content-Type", servedMimeType(media.mimeType));
     response.setHeader("Content-Disposition", "inline");
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Cache-Control", token || media.private ? "private, no-store" : "private, max-age=3600");

@@ -9,7 +9,7 @@ import { resolveVideoPrice } from "./modules/media/entitlement";
 import { detectFile } from "./modules/media/sniff";
 import { openStorage } from "./modules/media/storage";
 
-const extensions = new Set([".mp4", ".mov", ".webm", ".jpg", ".jpeg", ".png", ".gif", ".webp"]);
+const extensions = new Set([".mp4", ".m4v", ".mov", ".webm", ".jpg", ".jpeg", ".png", ".gif", ".webp"]);
 
 export type ImportOptions = {
   creator: string;

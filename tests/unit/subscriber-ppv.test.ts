@@ -432,6 +432,32 @@ describe("subscriber pay-per-view videos", () => {
       where: { creatorId: ids.creatorId, caption: "other.mp4" },
     });
     expect(pricedDefault.priceCents).toBe(100);
+
+    const m4vDir = path.join(root, "m4v");
+    await mkdir(m4vDir, { recursive: true });
+    const m4v = Buffer.alloc(64, 0);
+    m4v.write("ftyp", 4, "ascii");
+    m4v.write("M4V ", 8, "ascii");
+    await writeFile(path.join(m4vDir, "clip.m4v"), m4v);
+    const audio = Buffer.alloc(64, 0);
+    audio.write("ftyp", 4, "ascii");
+    audio.write("M4A ", 8, "ascii");
+    await writeFile(path.join(m4vDir, "song.m4v"), audio);
+    const importedM4v = await importCreatorMedia({
+      creator: ids.username,
+      dir: m4vDir,
+      access: "subscriber_ppv",
+      priceCents: 250,
+    });
+    expect(importedM4v.created).toBe(1);
+    expect(importedM4v.skipped).toBe(1);
+    const m4vPost = await database.post.findFirstOrThrow({
+      where: { creatorId: ids.creatorId, caption: "clip.m4v" },
+      include: { media: true },
+    });
+    expect(m4vPost.media[0]?.kind).toBe("VIDEO");
+    expect(m4vPost.media[0]?.mimeType).toBe("video/mp4");
+    expect(m4vPost.media[0]?.storageKey.endsWith(".mp4")).toBe(true);
     await rm(root, { recursive: true, force: true });
   });
 });

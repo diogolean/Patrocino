@@ -3,6 +3,7 @@ import {
   formatActiveUntil,
   formatDuration,
   mergeGallery,
+  profileVideoCount,
   renewPlan,
   viewerHandleLabel,
   type SubscriberVideo,
@@ -52,6 +53,11 @@ describe("profile gallery and subscription copy", () => {
     expect(renewPlan([{ months: 1 }])).toBeNull();
     expect(formatDuration(95_000)).toBe("1:35");
     expect(formatDuration(null)).toBeNull();
+  });
+
+  it("counts subscriber videos in the profile header", () => {
+    expect(profileVideoCount([{ mediaType: "image" }, { mediaType: "video" }], [{}, {}])).toBe(3);
+    expect(profileVideoCount([{ mediaType: "image" }], [])).toBe(0);
   });
 
   it("keeps the viewer handle safe for a tiled watermark", () => {

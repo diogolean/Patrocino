@@ -24,7 +24,7 @@ import { PostVisual } from "@/components/post-visual";
 import { loadSubscriberCatalog, SubscriberPpvCard, type SubscriberVideo } from "@/components/subscriber-videos";
 import { MediaViewer, type ViewerSlide } from "@/components/media-viewer";
 import type { ProfileOffers } from "@/lib/creator-offers";
-import { formatActiveUntil, formatDuration, mergeGallery, renewPlan } from "@/lib/gallery";
+import { formatActiveUntil, formatDuration, mergeGallery, profileVideoCount, renewPlan } from "@/lib/gallery";
 import { watermarkStyle } from "@/lib/watermark";
 import { readDemo, writeDemo, type DemoReview, type DemoSpecialRequest } from "@/lib/demo-store";
 import { toast } from "sonner";
@@ -182,7 +182,7 @@ export function CreatorProfile({
     likedIds.filter((id) => posts.some((post) => post.id === id)).length;
 
   const photoCount = posts.filter((post) => post.mediaType === "image").length;
-  const videoCount = posts.filter((post) => post.mediaType === "video").length;
+  const videoCount = profileVideoCount(posts, videos);
   const lockedCount = posts.filter((post) => post.visibility !== "free").length;
   const visiblePosts = tab === "media" ? posts.filter((post) => post.mediaType === "image" || post.mediaType === "video") : posts;
 
@@ -492,7 +492,7 @@ export function CreatorProfile({
           <ImageIcon className="size-3.5" /> {posts.length + videos.length} {t("posts")}
         </button>
         <button type="button" onClick={() => setTab("media")} className={`flex h-9 items-center justify-center gap-2 text-sm ${tab === "media" ? "border-b-2 border-primary-strong font-semibold" : "text-muted"}`}>
-          <Video className="size-3.5" /> {photoCount + videoCount + videos.length} {t("media")}
+          <Video className="size-3.5" /> {photoCount + videoCount} {t("media")}
         </button>
       </div>
 
