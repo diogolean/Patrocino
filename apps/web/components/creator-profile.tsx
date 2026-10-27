@@ -34,21 +34,25 @@ export function CreatorProfile({
   posts,
   offers = null,
   gallerySession = "",
+  initialTab = "posts",
+  openSpecial = false,
 }: {
   creator: Creator;
   posts: Post[];
   offers?: ProfileOffers | null;
   gallerySession?: string;
+  initialTab?: "posts" | "media" | "videos";
+  openSpecial?: boolean;
 }) {
   const router = useRouter();
   const t = useTranslations("profile");
   const [subscribing, setSubscribing] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [unlocks, setUnlocks] = useState<string[]>([]);
-  const [tab, setTab] = useState<"posts" | "media" | "videos">("posts");
+  const [tab, setTab] = useState<"posts" | "media" | "videos">(initialTab);
   const [bioOpen, setBioOpen] = useState(false);
   const [promosOpen, setPromosOpen] = useState(true);
-  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(openSpecial);
   const [requestDescription, setRequestDescription] = useState("");
   const [requestBudget, setRequestBudget] = useState("");
   const [monetization, setMonetization] = useState(() => readDemo().creatorMonetization);

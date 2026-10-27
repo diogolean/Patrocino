@@ -15,16 +15,17 @@ const messageSchema = z.object({
 });
 
 const stepSchema = z.object({
-  position: z.number().int().min(0).max(20),
+  position: z.number().int().min(0).max(40),
   delayMinutes: z.number().int().min(0).max(60 * 24 * 90),
   bodyTemplate: z.string().trim().min(1).max(2000),
   offerMode: z.enum(chatSequenceOfferModes),
   postId: z.string().trim().min(1).nullable().optional(),
+  recurring: z.boolean().optional().default(false),
 });
 
 const sequenceSchema = z.object({
   enabled: z.boolean(),
-  steps: z.array(stepSchema).max(20),
+  steps: z.array(stepSchema).max(40),
 });
 
 @ApiTags("chat")
@@ -140,6 +141,7 @@ function presentStep(step: {
   bodyTemplate: string;
   offerMode: string;
   postId: string | null;
+  recurring: boolean;
 }) {
   return {
     position: step.position,
@@ -147,6 +149,7 @@ function presentStep(step: {
     bodyTemplate: step.bodyTemplate,
     offerMode: step.offerMode,
     postId: step.postId,
+    recurring: step.recurring,
   };
 }
 

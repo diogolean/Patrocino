@@ -1,6 +1,7 @@
 import "../../apps/api/node_modules/reflect-metadata/Reflect.js";
 import { afterAll, describe, expect, it } from "vitest";
 import { database } from "../../packages/db/src/index";
+import { chatSequenceJobPlan, defaultChatSequenceSteps } from "../../packages/core/src/chat-sequence";
 import { syncChargeFromExpay, type ExpayClient } from "../../packages/core/src/expay";
 import { createPrismaPaymentStore } from "../../apps/api/src/modules/payments/expay-store";
 import { handleStripeEvent, startSubscriptionCheckout } from "../../apps/api/src/modules/payments/billing";
@@ -214,10 +215,12 @@ describe("a paid subscription stays active", () => {
       where: { subscriptionId: pending.id },
       orderBy: { position: "asc" },
     });
-    expect(jobs.map((job) => job.position)).toEqual([0, 1, 2, 3]);
+    expect(jobs.map((job) => job.position)).toEqual(chatSequenceJobPlan(defaultChatSequenceSteps, new Date()).map((job) => job.position));
 
     await syncChargeFromExpay(client, store, ids.chargeId);
-    expect(await database.chatSequenceJob.count({ where: { subscriptionId: pending.id } })).toBe(4);
+    expect(await database.chatSequenceJob.count({ where: { subscriptionId: pending.id } })).toBe(
+      chatSequenceJobPlan(defaultChatSequenceSteps, new Date()).length,
+    );
     expect(await database.subscription.findUnique({ where: { id: subscription.id } })).toMatchObject({ status: "ACTIVE" });
   });
 });

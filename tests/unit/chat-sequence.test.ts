@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { database } from "../../packages/db/src/index";
+import { chatSequenceJobPlan, defaultChatSequenceSteps } from "../../packages/core/src/chat-sequence";
 import { enqueueChatSequence, processDueChatSequences } from "../../apps/api/src/modules/chat/sequence";
 
 const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
@@ -104,30 +105,31 @@ describe("creator chat sequence", () => {
     ids.newerId = newer.id;
 
     const started = new Date("2026-10-27T12:00:00.000Z");
+    const schedule = chatSequenceJobPlan(defaultChatSequenceSteps, started);
     await enqueueChatSequence(database, subscription.id, started);
     await enqueueChatSequence(database, subscription.id, started);
     const queued = await database.chatSequenceJob.findMany({ where: { subscriptionId: subscription.id }, orderBy: { position: "asc" } });
-    expect(queued).toHaveLength(4);
-    expect(queued.map((job) => job.runAt.toISOString())).toEqual([
-      started.toISOString(),
-      new Date(started.getTime() + 2 * 60 * 60 * 1000).toISOString(),
-      new Date(started.getTime() + 24 * 60 * 60 * 1000).toISOString(),
-      new Date(started.getTime() + 72 * 60 * 60 * 1000).toISOString(),
-    ]);
+    expect(queued.map((job) => [job.position, job.runAt.toISOString()])).toEqual(
+      schedule.map((job) => [job.position, job.runAt.toISOString()]),
+    );
 
     await database.subscription.update({ where: { id: subscription.id }, data: { status: "PENDING" } });
     await enqueueChatSequence(database, subscription.id, started);
-    expect(await database.chatSequenceJob.count({ where: { subscriptionId: subscription.id } })).toBe(4);
+    expect(await database.chatSequenceJob.count({ where: { subscriptionId: subscription.id } })).toBe(schedule.length);
     await database.subscription.update({ where: { id: subscription.id }, data: { status: "ACTIVE" } });
 
     await processDueChatSequences(started);
     await processDueChatSequences(started);
     const welcomeMessage = await database.message.findFirst({
-      where: { senderId: creatorUser.id, conversation: { fanId: fan.id } },
-      include: { offerPost: true },
+      where: { senderId: creatorUser.id, conversation: { fanId: fan.id, creatorId: creatorUser.creator!.id } },
+      include: { conversation: true, offerPost: true },
     });
+    expect(welcomeMessage?.conversation.creatorId).toBe(creatorUser.creator!.id);
+    expect(welcomeMessage?.senderId).toBe(creatorUser.id);
     expect(welcomeMessage?.body).toContain("Marina");
-    expect(welcomeMessage?.body.toLowerCase()).not.toContain("equipe");
+    expect(welcomeMessage?.body).toContain(`/creator/seqcreator${suffix}?tab=videos`);
+    expect(welcomeMessage?.body).toContain("pedido especial");
+    expect(welcomeMessage?.body.toLowerCase()).not.toMatch(/equipe|\bbot\b/);
     expect(welcomeMessage?.offerPostId).toBe(newer.id);
 
     await database.purchase.create({
@@ -141,14 +143,13 @@ describe("creator chat sequence", () => {
         idempotencyKey: `seq-newer-${suffix}`,
       },
     });
-    const followUp = await processDueChatSequences(new Date(started.getTime() + 2 * 60 * 60 * 1000));
-    expect(followUp.sent).toBeGreaterThanOrEqual(1);
+    await processDueChatSequences(new Date(started.getTime() + 2 * 60_000));
     const second = await database.message.findFirst({
       where: { senderId: creatorUser.id, offerPostId: older.id },
+      include: { conversation: true },
     });
-    expect(second?.body).toContain("Bastidores antigos");
-    expect(second?.body).toContain("2,50");
-    expect(second?.body.toLowerCase()).not.toContain("equipe");
+    expect(second?.conversation.creatorId).toBe(creatorUser.creator!.id);
+    expect(second?.body).toContain("pedido especial");
 
     await database.purchase.create({
       data: {
@@ -161,19 +162,46 @@ describe("creator chat sequence", () => {
         idempotencyKey: `seq-older-${suffix}`,
       },
     });
-    const skipped = await processDueChatSequences(new Date(started.getTime() + 24 * 60 * 60 * 1000));
-    expect(skipped.skipped).toBeGreaterThanOrEqual(1);
+    await processDueChatSequences(new Date(started.getTime() + 10 * 60_000));
     expect(await database.chatSequenceJob.findFirst({ where: { subscriptionId: subscription.id, position: 2 } })).toMatchObject({
-      status: "skipped",
+      status: "sent",
+    });
+
+    const recurring = schedule.at(-1);
+    if (!recurring) throw new Error("missing recurring step");
+    let recurringJob = await database.chatSequenceJob.findFirst({
+      where: { subscriptionId: subscription.id, position: recurring.position },
+    });
+    for (let attempt = 0; attempt < 6 && recurringJob?.cycle !== 1; attempt += 1) {
+      await processDueChatSequences(recurring.runAt);
+      recurringJob = await database.chatSequenceJob.findFirst({
+        where: { subscriptionId: subscription.id, position: recurring.position },
+      });
+    }
+    expect(recurringJob?.status).toBe("pending");
+    expect(recurringJob?.cycle).toBe(1);
+    expect(recurringJob?.runAt.toISOString()).toBe(new Date(recurring.runAt.getTime() + 21 * 24 * 60 * 60_000).toISOString());
+    const beforeStop = await database.message.count({
+      where: { senderId: creatorUser.id, conversation: { fanId: fan.id, creatorId: creatorUser.creator!.id } },
     });
 
     await database.subscription.update({ where: { id: subscription.id }, data: { status: "CANCELED" } });
-    const stopped = await processDueChatSequences(new Date(started.getTime() + 72 * 60 * 60 * 1000));
-    expect(stopped.canceled).toBeGreaterThanOrEqual(1);
-    expect(await database.message.count({ where: { senderId: creatorUser.id, conversation: { fanId: fan.id } } })).toBe(2);
-    expect(await database.chatSequenceJob.findFirst({ where: { subscriptionId: subscription.id, position: 3 } })).toMatchObject({
+    const stopAt = recurringJob?.runAt ?? recurring.runAt;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const current = await database.chatSequenceJob.findFirst({
+        where: { subscriptionId: subscription.id, position: recurring.position },
+      });
+      if (current?.status === "canceled") break;
+      await processDueChatSequences(stopAt);
+    }
+    expect(await database.chatSequenceJob.findFirst({ where: { subscriptionId: subscription.id, position: recurring.position } })).toMatchObject({
       status: "canceled",
     });
+    expect(
+      await database.message.count({
+        where: { senderId: creatorUser.id, conversation: { fanId: fan.id, creatorId: creatorUser.creator!.id } },
+      }),
+    ).toBe(beforeStop);
   });
 
   it("does not send the same step twice when two workers run together", async () => {
@@ -207,6 +235,86 @@ describe("creator chat sequence", () => {
     expect(messages).toBe(1);
     const welcome = await database.chatSequenceJob.findFirst({ where: { subscriptionId: subscription.id, position: 0 } });
     expect(welcome?.status).toBe("sent");
+  });
+
+  it("keeps a Sarah subscription out of Albina's conversation", async () => {
+    const fan = await database.user.create({
+      data: {
+        email: `seq-fan-sarah-${suffix}@patrocino.test`,
+        passwordHash: "test-only",
+        role: "FAN",
+        profile: { create: { name: "Bayazid", username: `seqfansarah${suffix}` } },
+      },
+    });
+    const albinaUser = await database.user.create({
+      data: {
+        email: `seq-albina-${suffix}@patrocino.test`,
+        passwordHash: "test-only",
+        role: "CREATOR",
+        profile: { create: { name: "Albina Schneider", username: `seqalbina${suffix}` } },
+        creator: { create: { status: "ACTIVE", category: "Lifestyle" } },
+      },
+      include: { creator: true },
+    });
+    const sarahUser = await database.user.create({
+      data: {
+        email: `seq-sarah-${suffix}@patrocino.test`,
+        passwordHash: "test-only",
+        role: "CREATOR",
+        profile: { create: { name: "Sarah Mitchell", username: `seqsarah${suffix}` } },
+        creator: { create: { status: "ACTIVE", category: "Lifestyle" } },
+      },
+      include: { creator: true },
+    });
+    const plan = await database.plan.create({
+      data: {
+        creatorId: sarahUser.creator!.id,
+        name: "Mensal",
+        description: "Plano",
+        priceCents: 1490,
+        durationMonths: 1,
+      },
+    });
+    const subscription = await database.subscription.create({
+      data: {
+        fanId: fan.id,
+        creatorId: sarahUser.creator!.id,
+        planId: plan.id,
+        status: "ACTIVE",
+        startsAt: new Date(),
+        endsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    });
+    const albinaConversation = await database.conversation.create({
+      data: {
+        fanId: fan.id,
+        creatorId: albinaUser.creator!.id,
+        participantIds: [fan.id, albinaUser.id],
+        messages: { create: { senderId: albinaUser.id, body: "Oi, eu sou a Albina." } },
+      },
+    });
+    try {
+      const now = new Date("2026-10-27T15:00:00.000Z");
+      await enqueueChatSequence(database, subscription.id, now);
+      await processDueChatSequences(now);
+      const sarahMessages = await database.message.findMany({
+        where: { conversation: { fanId: fan.id, creatorId: sarahUser.creator!.id } },
+      });
+      expect(sarahMessages.length).toBeGreaterThan(0);
+      expect(sarahMessages.every((message) => message.senderId === sarahUser.id)).toBe(true);
+      expect(sarahMessages.some((message) => message.body.includes("Sarah Mitchell"))).toBe(true);
+      const albinaMessages = await database.message.findMany({ where: { conversationId: albinaConversation.id } });
+      expect(albinaMessages.map((message) => message.body)).toEqual(["Oi, eu sou a Albina."]);
+      expect(await database.message.count({ where: { senderId: albinaUser.id, body: { contains: "aba Vídeos" } } })).toBe(0);
+    } finally {
+      await database.conversation.deleteMany({ where: { fanId: fan.id } });
+      await database.subscription.deleteMany({ where: { fanId: fan.id } });
+      await database.plan.deleteMany({ where: { creatorId: sarahUser.creator!.id } });
+      await database.creator.deleteMany({ where: { id: { in: [sarahUser.creator!.id, albinaUser.creator!.id] } } });
+      await database.profile.deleteMany({ where: { userId: { in: [fan.id, sarahUser.id, albinaUser.id] } } });
+      await database.user.deleteMany({ where: { id: { in: [fan.id, sarahUser.id, albinaUser.id] } } });
+    }
   });
 
   it("does not queue steps when the sequence is turned off", async () => {

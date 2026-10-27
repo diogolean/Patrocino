@@ -433,6 +433,7 @@ model ChatSequenceStep {
   offerMode     String       @default("none")
   postId        String?
   post          Post?        @relation(fields: [postId], references: [id], onDelete: SetNull)
+  recurring     Boolean      @default(false)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -449,6 +450,7 @@ model ChatSequenceJob {
   runAt          DateTime
   status         String       @default("pending")
   messageId      String?
+  cycle          Int          @default(0)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

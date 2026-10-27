@@ -20,8 +20,10 @@ async function loadOffers(username: string): Promise<ProfileOffers | null> {
 
 export default async function CreatorPage(props: {
   params: Promise<{ username: string }>;
+  searchParams: Promise<{ tab?: string; pedido?: string }>;
 }) {
-  const { username } = await props.params;
+  const [{ username }, query] = await Promise.all([props.params, props.searchParams]);
+  const initialTab = query.tab === "media" || query.tab === "videos" ? query.tab : "posts";
   const creator = creators.find((item) => item.username === username);
   const offers = await loadOffers(username);
   if (!creator) notFound();
@@ -46,6 +48,8 @@ export default async function CreatorPage(props: {
       posts={[...creatorPosts, ...fallbackPosts]}
       offers={priced}
       gallerySession={gallerySession}
+      initialTab={initialTab}
+      openSpecial={query.pedido === "especial"}
     />
   );
 }

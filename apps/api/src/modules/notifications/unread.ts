@@ -29,17 +29,19 @@ export async function listUnreadForFan(fanId: string) {
     count,
     items: messages.map((message) => {
       const profile = message.conversation.creator?.user.profile;
-      const creatorId = message.conversation.creatorId ?? message.conversation.id;
+      const creatorId = message.conversation.creatorId ?? "";
+      const creatorUsername = profile?.username ?? null;
+      const creatorKey = creatorUsername || creatorId;
       return {
         id: message.id,
         conversationId: message.conversationId,
-        creatorId,
-        creatorUsername: profile?.username ?? null,
+        creatorId: creatorId || message.conversation.id,
+        creatorUsername,
         creatorName: profile?.name?.trim() || profile?.username || "Patrocino",
         creatorAvatar: profile?.avatarUrl ?? null,
         preview: messagePreview(message.body),
         createdAt: message.createdAt.toISOString(),
-        url: `/chat/${creatorId}`,
+        url: creatorKey ? `/chat/${creatorKey}` : "/chat",
       };
     }),
   };

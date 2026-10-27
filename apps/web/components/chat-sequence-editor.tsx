@@ -9,6 +9,7 @@ type Step = {
   bodyTemplate: string;
   offerMode: "none" | "latest" | "post";
   postId: string | null;
+  recurring: boolean;
 };
 
 type Video = { id: string; title: string; priceCents: number };
@@ -64,7 +65,7 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
         }
         setResolvedId(data.creatorId);
         setEnabled(data.enabled);
-        setSteps(data.steps);
+        setSteps(data.steps.map((step) => ({ ...step, recurring: step.recurring === true })));
         setVideos(data.videos ?? []);
         setLoading(false);
       })();
@@ -95,6 +96,7 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
           bodyTemplate: step.bodyTemplate,
           offerMode: step.offerMode,
           postId: step.offerMode === "post" ? step.postId : null,
+          recurring: step.recurring,
         })),
       }),
     });
@@ -105,7 +107,7 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
       return;
     }
     setEnabled(data.enabled);
-    setSteps(data.steps);
+    setSteps(data.steps.map((step) => ({ ...step, recurring: step.recurring === true })));
     setNotice("Sequência salva.");
   }
 
@@ -124,21 +126,32 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
         steps.map((step, index) => (
           <article key={step.position} data-testid="sequence-step" className="rounded-[22px] bg-surface/60 p-4 dark:bg-white/5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-extrabold">{index === 0 ? "Boas-vindas" : `Passo ${index + 1}`}</p>
+              <p className="text-xs font-extrabold">{step.recurring ? `Recorrente ${index + 1}` : index === 0 ? "Boas-vindas" : `Passo ${index + 1}`}</p>
               <button type="button" className="text-[10px] font-bold text-muted" onClick={() => setSteps((current) => current.filter((item) => item.position !== step.position))}>
                 Remover
               </button>
             </div>
+            <label className="mt-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-muted">
+              <input
+                type="checkbox"
+                checked={step.recurring}
+                onChange={(event) => updateStep(step.position, { recurring: event.target.checked })}
+              />
+              Repete enquanto a assinatura estiver ativa
+            </label>
             <label className="mt-3 block text-[10px] font-bold uppercase tracking-wide text-muted">
-              Espera (horas)
+              {step.recurring ? "Intervalo (minutos)" : "Espera (minutos)"}
               <input
                 type="number"
                 min={0}
-                value={step.delayMinutes / 60}
-                onChange={(event) => updateStep(step.position, { delayMinutes: Math.max(0, Math.round(Number(event.target.value) * 60)) })}
+                value={step.delayMinutes}
+                onChange={(event) => updateStep(step.position, { delayMinutes: Math.max(0, Math.round(Number(event.target.value))) })}
                 className="mt-1 h-11 w-full rounded-full border border-border bg-background px-4 text-sm font-semibold normal-case tracking-normal text-foreground outline-none"
               />
             </label>
+            {step.recurring && (
+              <p className="mt-1 text-[10px] text-muted">O intervalo da rotação é a espera do primeiro passo recorrente. Os textos seguintes se alternam, sem repetir o anterior.</p>
+            )}
             <label className="mt-3 block text-[10px] font-bold uppercase tracking-wide text-muted">
               Texto
               <textarea
@@ -148,7 +161,7 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
                 className="mt-1 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold normal-case tracking-normal text-foreground outline-none"
               />
             </label>
-            <p className="mt-1 text-[10px] text-muted">{"Variáveis: {fanName}, {creatorName}, {videoTitle}, {price}"}</p>
+            <p className="mt-1 text-[10px] text-muted">{"Variáveis: {fanName}, {creatorName}, {videoTitle}, {price}, {videosUrl}, {requestUrl}"}</p>
             <label className="mt-3 block text-[10px] font-bold uppercase tracking-wide text-muted">
               Vídeo
               <select
@@ -182,9 +195,10 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
               {
                 position: current.reduce((max, step) => Math.max(max, step.position), -1) + 1,
                 delayMinutes: 60,
-                bodyTemplate: "{fanName}, olha {videoTitle}. Está por {price}.",
+                bodyTemplate: "{fanName}, olha a aba Vídeos: {videosUrl}. Se quiser algo só seu, abre um pedido especial: {requestUrl}.",
                 offerMode: "latest",
                 postId: null,
+                recurring: false,
               },
             ])
           }

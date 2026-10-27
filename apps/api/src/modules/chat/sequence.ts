@@ -1,7 +1,9 @@
 import { Prisma, database } from "@mimelux/db/runtime";
 import {
+  chatSequenceJobPlan,
   chatSequenceNeedsVideo,
   defaultChatSequenceSteps,
+  recurringIntervalMinutes,
   renderChatSequence,
   type ChatSequenceOfferMode,
 } from "@mimelux/core/chat-sequence";
@@ -56,6 +58,7 @@ export async function ensureChatSequence(db: Db, creatorId: string) {
             delayMinutes: step.delayMinutes,
             bodyTemplate: step.bodyTemplate,
             offerMode: step.offerMode,
+            recurring: step.recurring === true,
           })),
         },
       },
@@ -80,13 +83,13 @@ export async function enqueueChatSequence(db: Db, subscriptionId: string, now = 
   if (!subscription || subscription.status !== "ACTIVE") return;
   const sequence = await ensureChatSequence(db, subscription.creatorId);
   if (!sequence.enabled) return;
-  for (const step of sequence.steps) {
+  for (const step of chatSequenceJobPlan(sequence.steps, now)) {
     try {
       await db.chatSequenceJob.create({
         data: {
           subscriptionId: subscription.id,
           position: step.position,
-          runAt: new Date(now.getTime() + step.delayMinutes * 60_000),
+          runAt: step.runAt,
           status: "pending",
         },
       });
@@ -179,11 +182,15 @@ async function deliverJob(
     return { status: "canceled" };
   }
   const sequence = subscription.creator.chatSequence;
-  const step = sequence?.steps.find((item) => item.position === job.position);
+  const ordered = [...(sequence?.steps ?? [])].sort((left, right) => left.position - right.position);
+  const cursor = ordered.find((item) => item.position === job.position);
+  const pool = ordered.filter((item) => item.recurring);
+  const step = cursor?.recurring ? pool[job.cycle % pool.length] : cursor;
   if (!sequence?.enabled || !step) {
     await db.chatSequenceJob.update({ where: { id: job.id }, data: { status: "canceled" } });
     return { status: "canceled" };
   }
+  const recurring = cursor?.recurring === true;
   const offer = await resolveOffer(db, {
     creatorId: subscription.creatorId,
     buyerId: subscription.fanId,
@@ -192,19 +199,26 @@ async function deliverJob(
     now,
   });
   if (!offer && chatSequenceNeedsVideo(step.bodyTemplate)) {
-    await db.chatSequenceJob.update({ where: { id: job.id }, data: { status: "skipped" } });
+    if (recurring) await rescheduleRecurring(db, job.id, job.cycle, sequence.steps, now);
+    else await db.chatSequenceJob.update({ where: { id: job.id }, data: { status: "skipped" } });
     return { status: "skipped" };
   }
   const fanName = subscription.fan.profile?.name?.trim() || "você";
   const creatorName = subscription.creator.user.profile?.name?.trim() || "eu";
+  const username = subscription.creator.user.profile?.username?.trim();
+  const videosUrl = username ? `/creator/${encodeURIComponent(username)}?tab=videos` : "";
+  const requestUrl = username ? `/creator/${encodeURIComponent(username)}?pedido=especial` : "";
   const body = renderChatSequence(step.bodyTemplate, {
     fanName,
     creatorName,
     videoTitle: offer?.title ?? "",
     price: offer ? brl(offer.priceCents) : "",
+    videosUrl,
+    requestUrl,
   }).trim();
   if (!body) {
-    await db.chatSequenceJob.update({ where: { id: job.id }, data: { status: "skipped" } });
+    if (recurring) await rescheduleRecurring(db, job.id, job.cycle, sequence.steps, now);
+    else await db.chatSequenceJob.update({ where: { id: job.id }, data: { status: "skipped" } });
     return { status: "skipped" };
   }
   let conversation = await db.conversation.findUnique({
@@ -236,11 +250,35 @@ async function deliverJob(
       offerPostId: offer?.postId ?? null,
     },
   });
-  await db.chatSequenceJob.update({
-    where: { id: job.id },
-    data: { status: "sent", messageId: message.id },
-  });
+  if (recurring) {
+    await rescheduleRecurring(db, job.id, job.cycle, sequence.steps, now, message.id);
+  } else {
+    await db.chatSequenceJob.update({
+      where: { id: job.id },
+      data: { status: "sent", messageId: message.id },
+    });
+  }
   return { status: "sent", messageId: message.id };
+}
+
+async function rescheduleRecurring(
+  db: Db,
+  jobId: string,
+  cycle: number,
+  steps: { delayMinutes: number; recurring: boolean; position: number }[],
+  now: Date,
+  messageId?: string,
+) {
+  const interval = recurringIntervalMinutes(steps);
+  await db.chatSequenceJob.update({
+    where: { id: jobId },
+    data: {
+      status: "pending",
+      runAt: new Date(now.getTime() + interval * 60_000),
+      cycle: cycle + 1,
+      ...(messageId ? { messageId } : {}),
+    },
+  });
 }
 
 export async function processDueChatSequences(now = new Date()) {
@@ -288,7 +326,14 @@ export function startChatSequenceWorker() {
 
 export async function readFanThread(fanId: string, creatorKey: string) {
   const creator = await findCreatorByKey(creatorKey);
-  if (!creator) return { messages: [] as ThreadMessage[] };
+  if (!creator) return { messages: [] as ThreadMessage[], creator: null };
+  const profile = creator.user.profile;
+  const identity = {
+    id: creator.id,
+    username: profile?.username ?? null,
+    name: profile?.name?.trim() || profile?.username || "Criador",
+    avatarUrl: profile?.avatarUrl ?? null,
+  };
   const conversation = await database.conversation.findUnique({
     where: { fanId_creatorId: { fanId, creatorId: creator.id } },
     include: {
@@ -298,7 +343,7 @@ export async function readFanThread(fanId: string, creatorKey: string) {
       },
     },
   });
-  if (!conversation) return { messages: [] as ThreadMessage[] };
+  if (!conversation) return { messages: [] as ThreadMessage[], creator: identity };
   const postIds = conversation.messages.map((message) => message.offerPostId).filter((id): id is string => Boolean(id));
   const bought = await purchasedPostIds(database, fanId, postIds);
   const messages: ThreadMessage[] = conversation.messages
@@ -321,7 +366,7 @@ export async function readFanThread(fanId: string, creatorKey: string) {
         offer,
       };
     });
-  return { messages };
+  return { messages, creator: identity };
 }
 
 export type ThreadMessage = {
@@ -337,6 +382,7 @@ export type SequenceStepInput = {
   bodyTemplate: string;
   offerMode: ChatSequenceOfferMode;
   postId?: string | null;
+  recurring?: boolean;
 };
 
 export async function replaceChatSequence(creatorId: string, enabled: boolean, steps: SequenceStepInput[]) {
@@ -357,12 +403,14 @@ export async function replaceChatSequence(creatorId: string, enabled: boolean, s
           bodyTemplate: step.bodyTemplate,
           offerMode: step.offerMode,
           postId: step.offerMode === "post" ? step.postId ?? null : null,
+          recurring: step.recurring === true,
         },
         update: {
           delayMinutes: step.delayMinutes,
           bodyTemplate: step.bodyTemplate,
           offerMode: step.offerMode,
           postId: step.offerMode === "post" ? step.postId ?? null : null,
+          recurring: step.recurring === true,
         },
       });
     }

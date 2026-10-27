@@ -49,6 +49,14 @@ describe("web push", () => {
     expect(payload.title).toBe("Luna");
     expect(payload.body).toBe("Oi sumida");
     expect(payload.url).toBe("/chat/creator-1");
+    expect(
+      buildMessagePushPayload({
+        creatorName: "Sarah Mitchell",
+        body: "Oi",
+        creatorId: "cmcreator",
+        creatorUsername: "sarah-mitchell",
+      }).url,
+    ).toBe("/chat/sarah-mitchell");
     expect(payload.icon).toBe("/icons/icon-192.png");
     expect(buildMessagePushPayload({ creatorName: " ", body: " ", creatorId: "c" }).body).toBe("Nova mensagem");
   });

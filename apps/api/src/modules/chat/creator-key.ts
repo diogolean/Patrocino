@@ -1,11 +1,19 @@
 import { database } from "@mimelux/db/runtime";
 
+const creatorInclude = { user: { include: { profile: true } } } as const;
+
 export async function findCreatorByKey(creatorKey: string) {
-  const keys = Array.from(new Set([creatorKey, creatorKey.replace(/-/g, "")]));
+  const byId = await database.creator.findUnique({ where: { id: creatorKey }, include: creatorInclude });
+  if (byId) return byId;
+  const byUsername = await database.creator.findFirst({
+    where: { user: { profile: { is: { username: creatorKey } } } },
+    include: creatorInclude,
+  });
+  if (byUsername) return byUsername;
+  const stripped = creatorKey.replace(/-/g, "");
+  if (!stripped || stripped === creatorKey) return null;
   return database.creator.findFirst({
-    where: {
-      OR: [{ id: { in: keys } }, { user: { profile: { is: { username: { in: keys } } } } }],
-    },
-    include: { user: { include: { profile: true } } },
+    where: { user: { profile: { is: { username: stripped } } } },
+    include: creatorInclude,
   });
 }

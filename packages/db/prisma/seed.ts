@@ -5,6 +5,8 @@ import {
   demoExtraPostsFor,
   demoPostPublishedAt,
   imageFile,
+  chatSequenceJobPlan,
+  chatSequenceSeedAction,
   defaultChatSequenceSteps,
   initialCreators,
   initialPosts,
@@ -428,25 +430,70 @@ async function seedInitialCreators() {
   }
 }
 
+function defaultStepData() {
+  return defaultChatSequenceSteps.map((step) => ({
+    position: step.position,
+    delayMinutes: step.delayMinutes,
+    bodyTemplate: step.bodyTemplate,
+    offerMode: step.offerMode,
+    recurring: step.recurring === true,
+  }));
+}
+
+async function backfillActiveSequenceJobs(creatorId: string) {
+  const sequence = await prisma.chatSequence.findUnique({
+    where: { creatorId },
+    include: { steps: { orderBy: { position: "asc" } } },
+  });
+  if (!sequence?.enabled) return;
+  const subs = await prisma.subscription.findMany({
+    where: { creatorId, status: "ACTIVE" },
+    select: { id: true },
+  });
+  const plan = chatSequenceJobPlan(sequence.steps, new Date());
+  for (const sub of subs) {
+    for (const step of plan) {
+      try {
+        await prisma.chatSequenceJob.create({
+          data: {
+            subscriptionId: sub.id,
+            position: step.position,
+            runAt: step.runAt,
+            status: "pending",
+          },
+        });
+      } catch (error) {
+        const unique = typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+        if (!unique) throw error;
+      }
+    }
+  }
+}
+
 async function seedChatSequenceDefaults() {
   const rows = await prisma.creator.findMany({ select: { id: true } });
   for (const row of rows) {
-    const existing = await prisma.chatSequence.findUnique({ where: { creatorId: row.id }, select: { id: true } });
-    if (existing) continue;
-    await prisma.chatSequence.create({
-      data: {
-        creatorId: row.id,
-        enabled: true,
-        steps: {
-          create: defaultChatSequenceSteps.map((step) => ({
-            position: step.position,
-            delayMinutes: step.delayMinutes,
-            bodyTemplate: step.bodyTemplate,
-            offerMode: step.offerMode,
-          })),
-        },
-      },
+    const existing = await prisma.chatSequence.findUnique({
+      where: { creatorId: row.id },
+      include: { steps: { orderBy: { position: "asc" } } },
     });
+    const action = chatSequenceSeedAction(existing?.steps ?? null);
+    if (action === "keep") continue;
+    if (!existing) {
+      await prisma.chatSequence.create({
+        data: {
+          creatorId: row.id,
+          enabled: true,
+          steps: { create: defaultStepData() },
+        },
+      });
+    } else {
+      await prisma.chatSequenceStep.deleteMany({ where: { sequenceId: existing.id } });
+      await prisma.chatSequenceStep.createMany({
+        data: defaultStepData().map((step) => ({ ...step, sequenceId: existing.id })),
+      });
+    }
+    await backfillActiveSequenceJobs(row.id);
   }
 }
 

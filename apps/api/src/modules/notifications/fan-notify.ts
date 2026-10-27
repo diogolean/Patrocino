@@ -41,6 +41,7 @@ export async function notifyFanOfMessage(messageId: string) {
       creatorName: profile?.name?.trim() || profile?.username || "Patrocino",
       body: message.body,
       creatorId,
+      creatorUsername: profile?.username,
       icon: profile?.avatarUrl,
     });
     const subscriptions = await database.pushSubscription.findMany({ where: { userId: fanId } });

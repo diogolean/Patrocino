@@ -48,14 +48,16 @@ export function buildMessagePushPayload(input: {
   creatorName: string;
   body: string;
   creatorId: string;
+  creatorUsername?: string | null;
   icon?: string | null;
 }): PushPayload {
   const icon = input.icon && input.icon.length <= 500 ? input.icon : "/icons/icon-192.png";
   const title = input.creatorName.trim() || "Patrocino";
+  const creatorKey = input.creatorUsername?.trim() || input.creatorId;
   return {
     title,
     body: messagePreview(input.body) || "Nova mensagem",
-    url: `/chat/${input.creatorId}`,
+    url: `/chat/${creatorKey}`,
     icon,
     tag: `chat-${input.creatorId}`,
   };

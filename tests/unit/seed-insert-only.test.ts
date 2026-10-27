@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { defaultChatSequenceSteps, legacyChatSequenceSteps } from "../../packages/core/src/chat-sequence";
 import { database } from "../../packages/db/src/index";
 import { disconnectSeed, seedDatabase } from "../../packages/db/prisma/seed";
 
@@ -311,4 +312,40 @@ describe("deploy seed inserts missing rows and does not overwrite edits", () => 
     expect(paidAfter.currentPeriodEnd?.toISOString()).toBe(paidUntil.toISOString());
     expect(paidAfter.updatedAt.toISOString()).toBe(paid.updatedAt.toISOString());
   }, 20_000);
+
+  it("upgrades an untouched chat sequence and leaves one a creator edited", async () => {
+    await seedDatabase();
+    const sarah = await database.user.findUnique({
+      where: { email: "sarah-mitchell@creators.patrocino.com" },
+      include: { creator: true },
+    });
+    const creatorId = sarah?.creator?.id;
+    expect(creatorId).toBeTruthy();
+    const sequence = await database.chatSequence.findUniqueOrThrow({ where: { creatorId: creatorId! } });
+    await database.chatSequenceStep.deleteMany({ where: { sequenceId: sequence.id } });
+    await database.chatSequenceStep.createMany({
+      data: legacyChatSequenceSteps.map((step) => ({
+        sequenceId: sequence.id,
+        position: step.position,
+        delayMinutes: step.delayMinutes,
+        bodyTemplate: step.bodyTemplate,
+        offerMode: step.offerMode,
+        recurring: false,
+      })),
+    });
+    await seedDatabase();
+    const upgraded = await database.chatSequence.findUniqueOrThrow({
+      where: { creatorId: creatorId! },
+      include: { steps: { orderBy: { position: "asc" } } },
+    });
+    expect(upgraded.steps.map((step) => step.delayMinutes)).toEqual(defaultChatSequenceSteps.map((step) => step.delayMinutes));
+    expect(upgraded.steps.filter((step) => step.recurring)).toHaveLength(defaultChatSequenceSteps.filter((step) => step.recurring).length);
+    await database.chatSequenceStep.update({
+      where: { sequenceId_position: { sequenceId: sequence.id, position: 0 } },
+      data: { bodyTemplate: "Texto editado pela Sarah." },
+    });
+    await seedDatabase();
+    const kept = await database.chatSequenceStep.findFirstOrThrow({ where: { sequenceId: sequence.id, position: 0 } });
+    expect(kept.bodyTemplate).toBe("Texto editado pela Sarah.");
+  }, 30_000);
 });
