@@ -6,6 +6,7 @@ import Stripe from "stripe";
 import { paymentProvider, readStripeSecret } from "./payment-gateways";
 import { cancelPendingChatSequence, enqueueChatSequence } from "../chat/sequence";
 import { quoteCharge } from "./quote-charge";
+import { resistsPending } from "./subscription-status";
 
 type Tx = Prisma.TransactionClient;
 type AccountUser = { id: string; email: string; stripeCustomerId: string | null };
@@ -281,24 +282,24 @@ async function simulateSubscription(
     where: { fanId_creatorId: { fanId: user.id, creatorId: creator.id } },
     include: { plan: true, creator: { include: { user: { include: { profile: true } } } } },
   });
-  if (
-    current &&
-    subscriptionGrantsAccess({ status: current.status, currentPeriodEnd: current.currentPeriodEnd ?? current.endsAt })
-  ) {
+  if (current && resistsPending(current)) {
     return { simulation: true, alreadyActive: true, subscription: presentSubscription(current) };
   }
   const periodEnd = addMonths(new Date(), plan.durationMonths);
-  const subscription = await database.subscription.upsert({
-    where: { fanId_creatorId: { fanId: user.id, creatorId: creator.id } },
-    create: {
-      fanId: user.id,
-      creatorId: creator.id,
-      planId: plan.id,
-      status: "PENDING",
-      isDemo: true,
-    },
-    update: { planId: plan.id, status: "PENDING", isDemo: true },
-  });
+  const subscription = current
+    ? await database.subscription.update({
+        where: { id: current.id },
+        data: { planId: plan.id, status: "PENDING" },
+      })
+    : await database.subscription.create({
+        data: {
+          fanId: user.id,
+          creatorId: creator.id,
+          planId: plan.id,
+          status: "PENDING",
+          isDemo: true,
+        },
+      });
   const purchase = await openPurchase(user.id, creator.id, amountCents, subscription.id, true);
   await database.$transaction(async (tx) => {
     await settlePurchase(tx, purchase.id, `demo:${purchase.id}`);
@@ -402,17 +403,26 @@ export async function startSubscriptionCheckout(user: AccountUser, creatorKey: s
   const creatorName = resolved.creator.user.profile?.name ?? "Criador";
   const priceId = await ensurePrice(stripe, resolved.plan, creatorName, amountCents);
   const periodEnd = addMonths(new Date(), resolved.plan.durationMonths);
-  const subscription = await database.subscription.upsert({
+  const existing = await database.subscription.findUnique({
     where: { fanId_creatorId: { fanId: user.id, creatorId: resolved.creator.id } },
-    create: {
-      fanId: user.id,
-      creatorId: resolved.creator.id,
-      planId: resolved.plan.id,
-      status: "PENDING",
-      currentPeriodEnd: periodEnd,
-    },
-    update: { planId: resolved.plan.id, status: "PENDING" },
   });
+  const subscription =
+    existing && resistsPending(existing)
+      ? existing
+      : existing
+        ? await database.subscription.update({
+            where: { id: existing.id },
+            data: { planId: resolved.plan.id, status: "PENDING" },
+          })
+        : await database.subscription.create({
+            data: {
+              fanId: user.id,
+              creatorId: resolved.creator.id,
+              planId: resolved.plan.id,
+              status: "PENDING",
+              currentPeriodEnd: periodEnd,
+            },
+          });
   const purchase = await openPurchase(user.id, resolved.creator.id, amountCents, subscription.id, false);
   const origin = webOrigin();
   const session = await stripe.checkout.sessions.create({
@@ -686,17 +696,21 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
     const status = event.type === "customer.subscription.deleted" ? "CANCELED" : mapStripeStatus(text(object.status));
     const periodEnd = typeof object.current_period_end === "number" ? new Date(object.current_period_end * 1000) : null;
     const result = await withEvent(event.id, event.type, event, undefined, async (tx) => {
-      const subscriptions = await tx.subscription.findMany({ where: { stripeSubscriptionId }, select: { id: true } });
-      await tx.subscription.updateMany({
+      const subscriptions = await tx.subscription.findMany({
         where: { stripeSubscriptionId },
-        data: {
-          status,
-          cancelAtPeriodEnd: object.cancel_at_period_end === true,
-          ...(periodEnd ? { currentPeriodEnd: periodEnd, endsAt: periodEnd } : {}),
-        },
+        select: { id: true, status: true, endsAt: true, currentPeriodEnd: true },
       });
-      if (status !== "ACTIVE") {
-        for (const subscription of subscriptions) await cancelPendingChatSequence(tx, subscription.id);
+      for (const subscription of subscriptions) {
+        if (status === "PENDING" && resistsPending(subscription)) continue;
+        await tx.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            status,
+            cancelAtPeriodEnd: object.cancel_at_period_end === true,
+            ...(periodEnd ? { currentPeriodEnd: periodEnd, endsAt: periodEnd } : {}),
+          },
+        });
+        if (status !== "ACTIVE") await cancelPendingChatSequence(tx, subscription.id);
       }
     });
     return { processed: true, ...result };

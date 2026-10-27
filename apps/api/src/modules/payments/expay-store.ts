@@ -1,5 +1,6 @@
 import { database, Prisma } from "@mimelux/db/runtime";
 import { cancelPendingChatSequence, enqueueChatSequence } from "../chat/sequence";
+import { laterInstant } from "./subscription-status";
 import {
   billingModes,
   chargeStatuses,
@@ -105,11 +106,12 @@ async function syncSubscription(row: {
   if (!fan || !creator || !plan) return;
   const existing = await database.subscription.findUnique({
     where: { fanId_creatorId: { fanId: fan.id, creatorId: creator.id } },
-    select: { id: true, status: true },
   });
   if (row.accessActive) {
-    const endsAt = new Date();
-    endsAt.setMonth(endsAt.getMonth() + plan.durationMonths);
+    const computedEnd = new Date();
+    computedEnd.setMonth(computedEnd.getMonth() + plan.durationMonths);
+    const endsAt = laterInstant(laterInstant(existing?.endsAt, computedEnd), existing?.currentPeriodEnd ?? computedEnd);
+    const now = new Date();
     const subscription = await database.subscription.upsert({
       where: { fanId_creatorId: { fanId: fan.id, creatorId: creator.id } },
       create: {
@@ -117,10 +119,17 @@ async function syncSubscription(row: {
         creatorId: creator.id,
         planId: plan.id,
         status: "ACTIVE",
-        startsAt: new Date(),
+        startsAt: now,
         endsAt,
+        currentPeriodEnd: endsAt,
       },
-      update: { planId: plan.id, status: "ACTIVE", startsAt: new Date(), endsAt },
+      update: {
+        planId: plan.id,
+        status: "ACTIVE",
+        startsAt: existing?.startsAt ?? now,
+        endsAt,
+        currentPeriodEnd: endsAt,
+      },
     });
     if (existing?.status !== "ACTIVE") await enqueueChatSequence(database, subscription.id);
     return;

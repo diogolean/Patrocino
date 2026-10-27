@@ -50,6 +50,8 @@ describe("deploy seed inserts missing rows and does not overwrite edits", () => 
     lunaPrice?: number;
     fanId?: string;
     fanPassword?: string;
+    paidFanId?: string;
+    paidSubscriptionId?: string;
   } = {};
 
   afterAll(async () => {
@@ -139,6 +141,13 @@ describe("deploy seed inserts missing rows and does not overwrite edits", () => 
         where: { id: restore.fanId },
         data: { passwordHash: restore.fanPassword },
       });
+    }
+    if (restore.paidSubscriptionId) {
+      await database.subscription.deleteMany({ where: { id: restore.paidSubscriptionId } });
+    }
+    if (restore.paidFanId) {
+      await database.profile.deleteMany({ where: { userId: restore.paidFanId } });
+      await database.user.deleteMany({ where: { id: restore.paidFanId } });
     }
     await disconnectSeed();
     await database.$disconnect();
@@ -237,6 +246,30 @@ describe("deploy seed inserts missing rows and does not overwrite edits", () => 
     await database.plan.update({ where: { id: lunaMonthly!.id }, data: { priceCents: 100 } });
     await database.user.update({ where: { id: fan!.id }, data: { passwordHash: SENTINEL_HASH } });
 
+    const paidFan = await database.user.create({
+      data: {
+        email: `seed-paid-${Date.now().toString(36)}@patrocino.test`,
+        passwordHash: "test-only",
+        role: "FAN",
+        profile: { create: { name: "Assinante pago", username: `seedpaid${Date.now().toString(36)}` } },
+      },
+    });
+    restore.paidFanId = paidFan.id;
+    const paidUntil = new Date("2026-11-27T01:39:00.000Z");
+    const paid = await database.subscription.create({
+      data: {
+        fanId: paidFan.id,
+        creatorId: sarah!.creator!.id,
+        planId: monthly!.id,
+        status: "ACTIVE",
+        isDemo: false,
+        startsAt: new Date("2026-10-27T01:39:00.000Z"),
+        endsAt: paidUntil,
+        currentPeriodEnd: paidUntil,
+      },
+    });
+    restore.paidSubscriptionId = paid.id;
+
     await seedDatabase();
 
     const after = await database.user.findUnique({
@@ -269,5 +302,13 @@ describe("deploy seed inserts missing rows and does not overwrite edits", () => 
 
     const fanAfter = await database.user.findUnique({ where: { email: "fan@mimelux.com.br" } });
     expect(fanAfter?.passwordHash).toBe(SENTINEL_HASH);
-  });
+
+    const paidAfter = await database.subscription.findUniqueOrThrow({ where: { id: paid.id } });
+    expect(paidAfter.status).toBe("ACTIVE");
+    expect(paidAfter.isDemo).toBe(false);
+    expect(paidAfter.planId).toBe(monthly!.id);
+    expect(paidAfter.endsAt?.toISOString()).toBe(paidUntil.toISOString());
+    expect(paidAfter.currentPeriodEnd?.toISOString()).toBe(paidUntil.toISOString());
+    expect(paidAfter.updatedAt.toISOString()).toBe(paid.updatedAt.toISOString());
+  }, 20_000);
 });
