@@ -25,7 +25,7 @@ import { PostVisual } from "@/components/post-visual";
 import { loadSubscriberCatalog, SubscriberPpvCard, type SubscriberVideo } from "@/components/subscriber-videos";
 import { MediaViewer, type ViewerSlide } from "@/components/media-viewer";
 import type { ProfileOffers } from "@/lib/creator-offers";
-import { buildProfileGallery, formatActiveUntil, formatDuration, profileVideoCount, renewPlan } from "@/lib/gallery";
+import { PROFILE_GALLERY_COLUMNS, buildProfileGallery, formatActiveUntil, formatDuration, profileVideoCount, renewPlan } from "@/lib/gallery";
 import { readDemo, writeDemo, type DemoReview, type DemoSpecialRequest } from "@/lib/demo-store";
 import { toast } from "sonner";
 
@@ -502,7 +502,10 @@ export function CreatorProfile({
         </button>
       </div>
 
-      <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+      <div
+        className="mt-1.5 grid gap-1.5"
+        style={{ gridTemplateColumns: `repeat(${PROFILE_GALLERY_COLUMNS}, minmax(0, 1fr))` }}
+      >
         {gallery.map((entry) => {
           if (entry.kind === "video") {
             return <SubscriberPpvCard key={entry.video.id} video={entry.video} onOpen={() => onPpv(entry.video)} />;

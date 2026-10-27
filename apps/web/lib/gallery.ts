@@ -74,38 +74,8 @@ function hashSeed(value: string) {
   return hash >>> 0;
 }
 
-/** Spreads videos through photos. The same seed always yields the same order. */
-export function interleaveMedia<T>(photos: readonly T[], videos: readonly T[], seedKey: string): T[] {
-  if (videos.length === 0) return [...photos];
-  if (photos.length === 0) return [...videos];
-  const next = mix32(hashSeed(seedKey) || 1);
-  const gap = () => 4 + (next() % 5);
-  const result: T[] = [];
-  let photoIndex = 0;
-  let videoIndex = 0;
-  let photosUntilVideo = gap();
-  while (photoIndex < photos.length || videoIndex < videos.length) {
-    if (photoIndex < photos.length && (photosUntilVideo > 0 || videoIndex >= videos.length)) {
-      result.push(photos[photoIndex] as T);
-      photoIndex += 1;
-      photosUntilVideo -= 1;
-      continue;
-    }
-    if (videoIndex < videos.length && photoIndex < photos.length) {
-      result.push(videos[videoIndex] as T);
-      videoIndex += 1;
-      photosUntilVideo = gap();
-      continue;
-    }
-    if (videoIndex < videos.length) {
-      result.push(videos[videoIndex] as T);
-      videoIndex += 1;
-      continue;
-    }
-    break;
-  }
-  return result;
-}
+/** Posts grid column count. The profile grid is three columns at every breakpoint. */
+export const PROFILE_GALLERY_COLUMNS = 3;
 
 type GalleryPost = { mediaType: string; publishedAt: string; visibility?: string };
 
@@ -116,17 +86,59 @@ function clipIsLocked<T extends GalleryPost>(entry: GalleryEntry<T>) {
   return entry.post.mediaType === "video" && LOCKED_POST_VISIBILITY.has(entry.post.visibility ?? "");
 }
 
-/** Moves the first locked clip into a stable slot among the first three items. */
-function placeLockedVideoEarly<T extends GalleryPost>(items: GalleryEntry<T>[], seedKey: string): GalleryEntry<T>[] {
-  const index = items.findIndex(clipIsLocked);
-  if (index < 0) return items;
-  const slot = mix32(hashSeed(`${seedKey}:early`) || 1)() % 3;
-  const target = Math.min(slot, items.length - 1);
-  if (index === target) return items;
-  const next = items.slice();
-  const [clip] = next.splice(index, 1);
-  next.splice(target, 0, clip as GalleryEntry<T>);
-  return next;
+/**
+ * Odd rows hold one video in a seeded column and photos in the rest.
+ * Even rows are photos only. The same seed always picks the same columns.
+ * Leftover photos stay in order. Leftover videos are appended at the end.
+ */
+export function layoutGalleryRows<T>(
+  photos: readonly T[],
+  videos: readonly T[],
+  seedKey: string,
+  columns = PROFILE_GALLERY_COLUMNS,
+): T[] {
+  const width = Math.max(1, Math.trunc(columns));
+  if (videos.length === 0) return [...photos];
+  if (photos.length === 0) return [...videos];
+  const next = mix32(hashSeed(seedKey) || 1);
+  const result: T[] = [];
+  let photoIndex = 0;
+  let videoIndex = 0;
+  let row = 0;
+  while (photoIndex < photos.length && videoIndex < videos.length) {
+    const videoRow = row % 2 === 0;
+    if (videoRow) {
+      const photosNeeded = width - 1;
+      if (photoIndex + photosNeeded > photos.length) break;
+      const column = width === 1 ? 0 : next() % width;
+      for (let cell = 0; cell < width; cell += 1) {
+        if (cell === column) {
+          result.push(videos[videoIndex] as T);
+          videoIndex += 1;
+        } else {
+          result.push(photos[photoIndex] as T);
+          photoIndex += 1;
+        }
+      }
+    } else if (photoIndex + width > photos.length) {
+      break;
+    } else {
+      for (let cell = 0; cell < width; cell += 1) {
+        result.push(photos[photoIndex] as T);
+        photoIndex += 1;
+      }
+    }
+    row += 1;
+  }
+  while (photoIndex < photos.length) {
+    result.push(photos[photoIndex] as T);
+    photoIndex += 1;
+  }
+  while (videoIndex < videos.length) {
+    result.push(videos[videoIndex] as T);
+    videoIndex += 1;
+  }
+  return result;
 }
 
 export function buildProfileGallery<T extends GalleryPost>(
@@ -134,6 +146,7 @@ export function buildProfileGallery<T extends GalleryPost>(
   posts: T[],
   videos: SubscriberVideo[],
   creatorId: string,
+  columns = PROFILE_GALLERY_COLUMNS,
 ): GalleryEntry<T>[] {
   const fixture =
     tab === "videos"
@@ -148,5 +161,7 @@ export function buildProfileGallery<T extends GalleryPost>(
   if (tab !== "posts") return merged;
   const photos = merged.filter((entry) => entry.kind === "post" && entry.post.mediaType !== "video");
   const clips = merged.filter((entry) => entry.kind === "video" || (entry.kind === "post" && entry.post.mediaType === "video"));
-  return placeLockedVideoEarly(interleaveMedia(photos, clips, creatorId), creatorId);
+  const locked = clips.filter((entry) => clipIsLocked(entry));
+  const open = clips.filter((entry) => !clipIsLocked(entry));
+  return layoutGalleryRows(photos, [...locked, ...open], creatorId, columns);
 }

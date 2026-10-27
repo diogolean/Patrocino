@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  PROFILE_GALLERY_COLUMNS,
   buildProfileGallery,
   formatActiveUntil,
   formatDuration,
-  interleaveMedia,
+  layoutGalleryRows,
   mergeGallery,
   profileVideoCount,
   renewPlan,
@@ -61,25 +62,48 @@ describe("profile gallery and subscription copy", () => {
     expect(profileVideoCount([{ mediaType: "image" }], [])).toBe(0);
   });
 
-  it("spreads videos through the posts grid from a stable creator seed", () => {
-    const photos = Array.from({ length: 40 }, (_, index) => ({ id: `photo-${index}` }));
-    const clips = Array.from({ length: 4 }, (_, index) => ({ id: `clip-${index}` }));
-    const mixed = interleaveMedia(photos, clips, "creator-sarah");
-    expect(interleaveMedia(photos, clips, "creator-sarah")).toEqual(mixed);
-    expect(mixed[0]?.id).toBe("photo-0");
-    const positions = mixed.flatMap((item, index) => (item.id.startsWith("clip-") ? [index] : []));
-    expect(positions).toHaveLength(4);
-    let previous = -1;
-    for (const position of positions) {
-      const gap = position - previous - 1;
-      expect(gap).toBeGreaterThanOrEqual(4);
-      expect(gap).toBeLessThanOrEqual(8);
-      previous = position;
+  it("puts one video on every other posts row and keeps the column for a viewer", () => {
+    const columns = PROFILE_GALLERY_COLUMNS;
+    expect(columns).toBe(3);
+    const photos = Array.from({ length: 12 }, (_, index) => ({ id: `photo-${index}` }));
+    const clips = Array.from({ length: 3 }, (_, index) => ({ id: `clip-${index}` }));
+    const mixed = layoutGalleryRows(photos, clips, "creator-sarah", columns);
+    expect(layoutGalleryRows(photos, clips, "creator-sarah", columns)).toEqual(mixed);
+    expect(mixed).toHaveLength(photos.length + clips.length);
+    for (let row = 0; row < 5; row += 1) {
+      const slice = mixed.slice(row * columns, row * columns + columns);
+      const videoCount = slice.filter((item) => item.id.startsWith("clip-")).length;
+      expect(videoCount).toBe(row % 2 === 0 ? 1 : 0);
     }
+    expect(mixed.filter((item) => item.id.startsWith("photo-")).map((item) => item.id)).toEqual(photos.map((item) => item.id));
+    expect(mixed.filter((item) => item.id.startsWith("clip-")).map((item) => item.id)).toEqual(clips.map((item) => item.id));
     const pageSize = 9;
     expect(mixed.slice(0, pageSize).concat(mixed.slice(pageSize, pageSize * 2))).toEqual(mixed.slice(0, pageSize * 2));
-    expect(interleaveMedia(photos, [], "creator-sarah").map((item) => item.id)).toEqual(photos.map((item) => item.id));
-    expect(interleaveMedia([], clips, "creator-sarah")).toEqual(clips);
+
+    const slots = new Set<number>();
+    for (let seed = 0; seed < 24; seed += 1) {
+      const order = layoutGalleryRows(photos, clips, `viewer-${seed}`, columns);
+      const slot = order.findIndex((item) => item.id === "clip-0");
+      expect(slot).toBeGreaterThanOrEqual(0);
+      expect(slot).toBeLessThan(columns);
+      const second = order.findIndex((item) => item.id === "clip-1");
+      expect(second).toBeGreaterThanOrEqual(columns * 2);
+      expect(second).toBeLessThan(columns * 3);
+      slots.add(slot);
+    }
+    expect(slots.size).toBe(columns);
+
+    const wider = layoutGalleryRows(photos, clips.slice(0, 1), "creator-sarah", 4);
+    expect(wider.slice(0, 4).filter((item) => item.id.startsWith("clip-"))).toHaveLength(1);
+    expect(wider.slice(4, 8).every((item) => item.id.startsWith("photo-"))).toBe(true);
+
+    const restPhotos = layoutGalleryRows(photos, clips.slice(0, 1), "creator-sarah", columns);
+    expect(restPhotos.slice(columns).every((item) => item.id.startsWith("photo-"))).toBe(true);
+    const short = layoutGalleryRows(photos.slice(0, 2), clips, "creator-sarah", columns);
+    expect(short.slice(0, columns).filter((item) => item.id.startsWith("clip-"))).toHaveLength(1);
+    expect(short.slice(-2).map((item) => item.id)).toEqual(["clip-1", "clip-2"]);
+    expect(layoutGalleryRows(photos, [], "creator-sarah").map((item) => item.id)).toEqual(photos.map((item) => item.id));
+    expect(layoutGalleryRows([], clips, "creator-sarah")).toEqual(clips);
 
     const posts = [
       ...Array.from({ length: 12 }, (_, index) => ({
@@ -90,35 +114,32 @@ describe("profile gallery and subscription copy", () => {
       {
         id: "fixture-video",
         mediaType: "video",
+        visibility: "public",
         publishedAt: new Date(Date.UTC(2026, 2, 1)).toISOString(),
       },
     ];
+    const images = posts.filter((item) => item.mediaType === "image");
+    expect(buildProfileGallery("posts", images, [], "albina")).toEqual(mergeGallery(images, []));
     const subscriber = [video("ppv-new", new Date(Date.UTC(2026, 3, 1)).toISOString())];
     const grid = buildProfileGallery("posts", posts, subscriber, "creator-sarah");
     expect(buildProfileGallery("posts", posts, subscriber, "creator-sarah")).toEqual(grid);
     const lockedAt = grid.findIndex((entry) => entry.kind === "video" && entry.video.id === "ppv-new");
     expect(lockedAt).toBeGreaterThanOrEqual(0);
-    expect(lockedAt).toBeLessThan(3);
+    expect(lockedAt).toBeLessThan(columns);
+    expect(grid.slice(0, columns).filter((entry) => entry.kind === "video" || entry.post.mediaType === "video")).toHaveLength(1);
+    expect(grid.slice(columns, columns * 2).every((entry) => entry.kind === "post" && entry.post.mediaType === "image")).toBe(true);
+    const freeAt = grid.findIndex((entry) => entry.kind === "post" && entry.post.id === "fixture-video");
+    expect(freeAt).toBeGreaterThanOrEqual(columns * 2);
+    expect(freeAt).toBeLessThan(columns * 3);
     expect(grid.slice(0, pageSize).concat(grid.slice(pageSize, pageSize * 2))).toEqual(grid.slice(0, pageSize * 2));
-    const slots = new Set<number>();
-    for (let seed = 0; seed < 24; seed += 1) {
-      const order = buildProfileGallery("posts", posts, subscriber, `viewer-${seed}`);
-      const slot = order.findIndex((entry) => entry.kind === "video" && entry.video.id === "ppv-new");
-      expect(slot).toBeGreaterThanOrEqual(0);
-      expect(slot).toBeLessThan(3);
-      slots.add(slot);
-    }
-    expect(slots.size).toBeGreaterThan(1);
+
     const bought = [{ ...subscriber[0]!, id: "bought", purchased: true }];
-    const open = buildProfileGallery(
-      "posts",
-      posts.filter((item) => item.mediaType !== "video"),
-      bought,
-      "creator-sarah",
-    );
-    expect(open.slice(0, 3).every((entry) => entry.kind === "post" && entry.post.mediaType === "image")).toBe(true);
+    const open = buildProfileGallery("posts", images, bought, "creator-sarah");
+    const boughtAt = open.findIndex((entry) => entry.kind === "video" && entry.video.id === "bought");
+    expect(boughtAt).toBeGreaterThanOrEqual(0);
+    expect(boughtAt).toBeLessThan(columns);
     const lockedPost = [
-      ...posts.filter((item) => item.mediaType !== "video"),
+      ...images,
       {
         id: "locked-clip",
         mediaType: "video",
@@ -129,7 +150,7 @@ describe("profile gallery and subscription copy", () => {
     const fromPost = buildProfileGallery("posts", lockedPost, [], "creator-sarah");
     const postSlot = fromPost.findIndex((entry) => entry.kind === "post" && entry.post.id === "locked-clip");
     expect(postSlot).toBeGreaterThanOrEqual(0);
-    expect(postSlot).toBeLessThan(3);
+    expect(postSlot).toBeLessThan(columns);
     const videos = buildProfileGallery("videos", posts, subscriber, "creator-sarah");
     expect(videos).toHaveLength(2);
     expect(videos.every((entry) => entry.kind === "video" || entry.post.mediaType === "video")).toBe(true);
