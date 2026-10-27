@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Button } from "@mimelux/ui";
+import { PushOptIn } from "@/components/push-opt-in";
 import { brl, creators, posts } from "@/lib/gateway";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 import { requestUnreadRefresh, THREAD_REFRESH_EVENT } from "@/lib/message-notifications";
@@ -91,6 +92,7 @@ export default function ConversationPage() {
         </div>
         <Button variant="ghost" size="icon"><MoreVertical className="size-4" /></Button>
       </header>
+      <PushOptIn className="mx-4 mt-3 sm:mx-6" />
 
       <section className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_30%_10%,rgba(233,176,167,.12),transparent_18rem)] px-4 py-6 sm:px-7">
         <p className="mx-auto mb-6 w-fit rounded-full bg-surface px-3 py-1 text-[8px] font-semibold text-muted dark:bg-white/5">Hoje</p>

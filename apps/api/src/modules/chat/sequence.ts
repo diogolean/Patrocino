@@ -6,6 +6,7 @@ import {
   type ChatSequenceOfferMode,
 } from "@mimelux/core/chat-sequence";
 import { findCreatorByKey } from "./creator-key";
+import { notifyFanOfMessage } from "../notifications/fan-notify";
 
 type Db = {
   chatSequence: Prisma.TransactionClient["chatSequence"];
@@ -159,9 +160,13 @@ async function resolveOffer(
   return { postId: next.id, title: next.caption, priceCents: next.priceCents };
 }
 
-async function deliverJob(db: Db, jobId: string, now: Date): Promise<"sent" | "skipped" | "canceled"> {
+async function deliverJob(
+  db: Db,
+  jobId: string,
+  now: Date,
+): Promise<{ status: "sent" | "skipped" | "canceled"; messageId?: string }> {
   const job = await db.chatSequenceJob.findUnique({ where: { id: jobId } });
-  if (!job || job.status !== "pending") return "canceled";
+  if (!job || job.status !== "pending") return { status: "canceled" };
   const subscription = await db.subscription.findUnique({
     where: { id: job.subscriptionId },
     include: {
@@ -171,13 +176,13 @@ async function deliverJob(db: Db, jobId: string, now: Date): Promise<"sent" | "s
   });
   if (!subscription || !sequenceRuns(subscription, now)) {
     await cancelPendingChatSequence(db, job.subscriptionId);
-    return "canceled";
+    return { status: "canceled" };
   }
   const sequence = subscription.creator.chatSequence;
   const step = sequence?.steps.find((item) => item.position === job.position);
   if (!sequence?.enabled || !step) {
     await db.chatSequenceJob.update({ where: { id: job.id }, data: { status: "canceled" } });
-    return "canceled";
+    return { status: "canceled" };
   }
   const offer = await resolveOffer(db, {
     creatorId: subscription.creatorId,
@@ -188,7 +193,7 @@ async function deliverJob(db: Db, jobId: string, now: Date): Promise<"sent" | "s
   });
   if (!offer && chatSequenceNeedsVideo(step.bodyTemplate)) {
     await db.chatSequenceJob.update({ where: { id: job.id }, data: { status: "skipped" } });
-    return "skipped";
+    return { status: "skipped" };
   }
   const fanName = subscription.fan.profile?.name?.trim() || "você";
   const creatorName = subscription.creator.user.profile?.name?.trim() || "eu";
@@ -200,7 +205,7 @@ async function deliverJob(db: Db, jobId: string, now: Date): Promise<"sent" | "s
   }).trim();
   if (!body) {
     await db.chatSequenceJob.update({ where: { id: job.id }, data: { status: "skipped" } });
-    return "skipped";
+    return { status: "skipped" };
   }
   let conversation = await db.conversation.findUnique({
     where: { fanId_creatorId: { fanId: subscription.fanId, creatorId: subscription.creatorId } },
@@ -235,11 +240,12 @@ async function deliverJob(db: Db, jobId: string, now: Date): Promise<"sent" | "s
     where: { id: job.id },
     data: { status: "sent", messageId: message.id },
   });
-  return "sent";
+  return { status: "sent", messageId: message.id };
 }
 
 export async function processDueChatSequences(now = new Date()) {
-  return database.$transaction(async (tx) => {
+  const messageIds: string[] = [];
+  const counts = await database.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM chat_sequence_jobs
       WHERE status = 'pending' AND "runAt" <= ${now}
@@ -247,13 +253,22 @@ export async function processDueChatSequences(now = new Date()) {
       LIMIT 20
       FOR UPDATE SKIP LOCKED
     `;
-    const counts = { sent: 0, skipped: 0, canceled: 0 };
+    const totals = { sent: 0, skipped: 0, canceled: 0 };
     for (const row of rows) {
       const outcome = await deliverJob(tx, row.id, now);
-      counts[outcome] += 1;
+      totals[outcome.status] += 1;
+      if (outcome.messageId) messageIds.push(outcome.messageId);
     }
-    return counts;
+    return totals;
   });
+  await Promise.all(
+    messageIds.map((messageId) =>
+      notifyFanOfMessage(messageId).catch((error: unknown) => {
+        console.error(error);
+      }),
+    ),
+  );
+  return counts;
 }
 
 let workerStarted = false;
