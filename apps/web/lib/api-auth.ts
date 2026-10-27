@@ -51,6 +51,7 @@ export async function apiAuth(path: string, body: unknown, request?: Request) {
   });
   const data = (await response.json().catch(() => ({}))) as {
     message?: string | string[];
+    code?: string;
     user?: ApiUser;
     accessToken?: string;
     refreshToken?: string;

@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Sparkles,
 } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import { Button, Pill } from "@mimelux/ui";
 import type { Creator, Post } from "@/lib/gateway";
 import { brl, seedComments } from "@/lib/gateway";
@@ -19,6 +20,8 @@ import { readDemo, writeDemo } from "@/lib/demo-store";
 import { getServerSessionSnapshot, getSessionSnapshot, subscribeSession } from "@/lib/session";
 
 export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
+  const t = useTranslations("feed");
+  const locale = useLocale();
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
   const signedIn = Boolean(session.user);
   const [liked, setLiked] = useState(false);
@@ -95,7 +98,7 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
           </div>
           <p className="text-[9px] text-muted">@{creator.username} · {post.time}</p>
         </div>
-        <button aria-label="Mais opções" className="grid size-9 place-items-center rounded-full hover:bg-black/5"><MoreHorizontal className="size-4" /></button>
+        <button aria-label={t("moreOptions")} className="grid size-9 place-items-center rounded-full hover:bg-black/5"><MoreHorizontal className="size-4" /></button>
       </header>
 
       <div
@@ -126,9 +129,9 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
               <span className="mx-auto grid size-11 place-items-center rounded-2xl bg-white/10">
                 <LockKeyhole className="size-5" />
               </span>
-              <h3 className="mt-3 text-base font-extrabold">Assine para ver</h3>
+              <h3 className="mt-3 text-base font-extrabold">{t("subscribeToSee")}</h3>
               <Link href="/auth?route=sign-up" className="mt-4 block">
-                <Button size="sm" className="w-full">Assine para ver</Button>
+                <Button size="sm" className="w-full">{t("subscribeToSee")}</Button>
               </Link>
             </div>
           </div>
@@ -140,17 +143,17 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
                 <LockKeyhole className="size-5" />
               </span>
               <h3 className="mt-4 text-base font-extrabold">
-                {post.visibility === "subscriber" ? "Só para assinantes" : "Conteúdo especial"}
+                {post.visibility === "subscriber" ? t("subscribersOnly") : t("specialContent")}
               </h3>
               <p className="mt-2 text-[10px] leading-5 text-white/65">
                 {post.visibility === "subscriber"
-                  ? `Assine ${creator.name} para desbloquear este e outros conteúdos.`
-                  : "Uma experiência exclusiva disponível com compra única."}
+                  ? t("subscribeUnlock", { name: creator.name })
+                  : t("oneTime")}
               </p>
               <Link href={checkout}>
                 <Button size="sm" className="mt-4 w-full">
                   <Sparkles className="size-3.5" />
-                  {post.visibility === "subscriber" ? `Assinar por ${brl(creator.price)}` : `Desbloquear por ${brl(post.price || 0)}`}
+                  {post.visibility === "subscriber" ? t("subscribePrice", { price: brl(creator.price) }) : t("unlockPrice", { price: brl(post.price || 0) })}
                 </Button>
               </Link>
             </div>
@@ -158,22 +161,22 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
         )}
         {!locked && post.visibility !== "free" && (
           <Pill className="absolute left-3 top-3 bg-ink/75 text-white backdrop-blur">
-            <LockKeyhole className="mr-1 size-3" /> Desbloqueado
+            <LockKeyhole className="mr-1 size-3" /> {t("unlocked")}
           </Pill>
         )}
       </div>
 
       <div className="p-4">
         <div className="flex items-center gap-1">
-          <button onClick={() => toggleList("likes", liked)} className="grid size-9 place-items-center rounded-full hover:bg-black/5" aria-label="Curtir">
+          <button onClick={() => toggleList("likes", liked)} className="grid size-9 place-items-center rounded-full hover:bg-black/5" aria-label={t("like")}>
             <Heart className={`size-[19px] ${liked ? "fill-accent text-accent-strong" : ""}`} />
           </button>
-          <button onClick={() => setCommentOpen((value) => !value)} className="grid size-9 place-items-center rounded-full hover:bg-black/5" aria-label="Comentar"><MessageCircle className="size-[19px]" /></button>
-          <button onClick={() => toggleList("saves", saved)} className="ml-auto grid size-9 place-items-center rounded-full hover:bg-black/5" aria-label="Salvar">
+          <button onClick={() => setCommentOpen((value) => !value)} className="grid size-9 place-items-center rounded-full hover:bg-black/5" aria-label={t("comment")}><MessageCircle className="size-[19px]" /></button>
+          <button onClick={() => toggleList("saves", saved)} className="ml-auto grid size-9 place-items-center rounded-full hover:bg-black/5" aria-label={t("save")}>
             <Bookmark className={`size-[19px] ${saved ? "fill-primary text-primary-strong" : ""}`} />
           </button>
         </div>
-        <p data-testid="post-likes" className="mt-1 text-xs font-bold">{(post.likes + (liked ? 1 : 0)).toLocaleString("pt-BR")} curtidas</p>
+        <p data-testid="post-likes" className="mt-1 text-xs font-bold">{t("likes", { count: (post.likes + (liked ? 1 : 0)).toLocaleString(locale) })}</p>
         <p className="mt-2 text-xs leading-5">
           <b className="mr-1.5">{creator.name}</b>
           {post.caption}
@@ -185,13 +188,13 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
         ))}
         {comments.map((comment, index) => (
           <p key={`${comment}-${index}`} data-testid="post-comment" className="mt-2 text-xs leading-5">
-            <b className="mr-1.5">você</b>{comment}
+            <b className="mr-1.5">{t("you")}</b>{comment}
           </p>
         ))}
         {commentOpen && (
           <form onSubmit={addComment} className="mt-3 flex gap-2">
-            <input name="comment" autoFocus placeholder="Escreva um comentário..." className="h-10 min-w-0 flex-1 rounded-full bg-surface/60 px-4 text-[10px] outline-none focus:ring-2 focus:ring-primary/30 dark:bg-white/5" />
-            <Button type="submit" size="sm">Publicar</Button>
+            <input name="comment" autoFocus placeholder={t("commentPlaceholder")} className="h-10 min-w-0 flex-1 rounded-full bg-surface/60 px-4 text-[10px] outline-none focus:ring-2 focus:ring-primary/30 dark:bg-white/5" />
+            <Button type="submit" size="sm">{t("publish")}</Button>
           </form>
         )}
       </div>

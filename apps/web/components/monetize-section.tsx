@@ -161,6 +161,7 @@ export function MonetizeSection() {
 }
 
 function FeaturedCarousel({ demoLabel }: { demoLabel: string }) {
+  const t = useTranslations("monetize");
   const featured = creators.slice(0, 6);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -237,17 +238,17 @@ function FeaturedCarousel({ demoLabel }: { demoLabel: string }) {
             <button
               key={creator.id}
               type="button"
-              aria-label={`Mostrar ${creator.name}`}
+              aria-label={t("showCreator", { name: creator.name })}
               onClick={() => setActive(index)}
               className={`h-1.5 rounded-full transition-all ${index === active ? "w-8 bg-white" : "w-2 bg-white/45"}`}
             />
           ))}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="icon" aria-label="Anterior" onClick={() => move(-1)} className="border-white/30 bg-ink/40 text-white hover:bg-ink/60">
+          <Button variant="outline" size="icon" aria-label={t("previous")} onClick={() => move(-1)} className="border-white/30 bg-ink/40 text-white hover:bg-ink/60">
             <ArrowLeft className="size-4" />
           </Button>
-          <Button variant="outline" size="icon" aria-label="Próxima" onClick={() => move(1)} className="border-white/30 bg-ink/40 text-white hover:bg-ink/60">
+          <Button variant="outline" size="icon" aria-label={t("next")} onClick={() => move(1)} className="border-white/30 bg-ink/40 text-white hover:bg-ink/60">
             <ArrowRight className="size-4" />
           </Button>
         </div>

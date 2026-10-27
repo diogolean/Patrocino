@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import {
   BadRequestException,
   Body,
@@ -37,7 +38,7 @@ type AccessPayload = { sub: string; email: string; role: string };
 
 function readAccess(authorization?: string): AccessPayload {
   const token = authorization?.replace(/^Bearer\s+/i, "");
-  if (!token) throw new UnauthorizedException("Missing access token");
+  if (!token) throw apiError(401, "MISSING_ACCESS_TOKEN", "Missing access token");
   try {
     const payload = verify(token, process.env.JWT_ACCESS_SECRET ?? "local-access-only") as {
       sub?: string;
@@ -47,16 +48,16 @@ function readAccess(authorization?: string): AccessPayload {
     if (!payload.sub || !payload.email || !payload.role) throw new Error("Incomplete token");
     return { sub: payload.sub, email: payload.email, role: payload.role };
   } catch {
-    throw new UnauthorizedException("Invalid access token");
+    throw apiError(401, "INVALID_ACCESS_TOKEN", "Invalid access token");
   }
 }
 
 async function requireAdmin(authorization?: string) {
   const access = readAccess(authorization);
-  if (access.role !== "ADMIN") throw new ForbiddenException("Admin only");
+  if (access.role !== "ADMIN") throw apiError(403, "ADMIN_ONLY", "Admin only");
   const actor = await database.user.findUnique({ where: { id: access.sub } });
   if (!actor || actor.role !== "ADMIN" || actor.deletedAt || actor.suspendedAt) {
-    throw new ForbiddenException("Admin only");
+    throw apiError(403, "ADMIN_ONLY", "Admin only");
   }
   return actor;
 }
@@ -144,7 +145,7 @@ class AdminController {
   async detail(@Headers("authorization") authorization: string | undefined, @Param("id") id: string) {
     await requireAdmin(authorization);
     const user = await database.user.findUnique({ where: { id }, select: userSelect });
-    if (!user) throw new BadRequestException("User not found");
+    if (!user) throw apiError(400, "USER_NOT_FOUND", "User not found");
     const auditLogs = await database.auditLog.findMany({
       where: { entityType: "user", entityId: id },
       orderBy: { createdAt: "desc" },
@@ -163,14 +164,14 @@ class AdminController {
     const actor = await requireAdmin(authorization);
     const parsed = patchSchema.safeParse(body);
     if (!parsed.success) {
-      throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+      throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     }
     const input = parsed.data;
     if (actor.id === id && (input.role && input.role !== "ADMIN" || input.suspended === true)) {
-      throw new BadRequestException("You cannot remove your own admin access");
+      throw apiError(400, "YOU_CANNOT_REMOVE_YOUR_OWN_ADMIN_ACCESS", "You cannot remove your own admin access");
     }
     const user = await database.user.findUnique({ where: { id } });
-    if (!user || user.deletedAt) throw new BadRequestException("User not found");
+    if (!user || user.deletedAt) throw apiError(400, "USER_NOT_FOUND", "User not found");
     try {
       const updated = await database.user.update({
         where: { id },
@@ -202,7 +203,7 @@ class AdminController {
       return { user: publicUser(updated) };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw new BadRequestException("Username already taken");
+        throw apiError(400, "USERNAME_ALREADY_TAKEN", "Username already taken");
       }
       throw error;
     }
@@ -212,7 +213,7 @@ class AdminController {
   async resetPassword(@Headers("authorization") authorization: string | undefined, @Param("id") id: string) {
     const actor = await requireAdmin(authorization);
     const user = await database.user.findUnique({ where: { id } });
-    if (!user || user.deletedAt) throw new BadRequestException("User not found");
+    if (!user || user.deletedAt) throw apiError(400, "USER_NOT_FOUND", "User not found");
     const temporaryPassword = randomBytes(9).toString("base64url");
     await database.user.update({
       where: { id },
@@ -225,9 +226,9 @@ class AdminController {
   @Delete("users/:id")
   async remove(@Headers("authorization") authorization: string | undefined, @Param("id") id: string) {
     const actor = await requireAdmin(authorization);
-    if (actor.id === id) throw new BadRequestException("You cannot delete your own admin account");
+    if (actor.id === id) throw apiError(400, "YOU_CANNOT_DELETE_YOUR_OWN_ADMIN_ACCOUNT", "You cannot delete your own admin account");
     const user = await database.user.findUnique({ where: { id } });
-    if (!user || user.deletedAt) throw new BadRequestException("User not found");
+    if (!user || user.deletedAt) throw apiError(400, "USER_NOT_FOUND", "User not found");
     await database.user.update({
       where: { id },
       data: { deletedAt: new Date(), refreshTokenHash: null },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { locales, writeLocaleCookie, type AppLocale } from "@/i18n/locale";
 
 export function LanguageSwitcher({
@@ -13,15 +13,21 @@ export function LanguageSwitcher({
 }) {
   const router = useRouter();
   const locale = useLocale();
+  const label = useTranslations("nav")("language");
 
   function select(next: AppLocale) {
     writeLocaleCookie(next);
+    void fetch("/api/session/locale", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ locale: next }),
+    });
     if (onChange) onChange(next);
     else router.refresh();
   }
 
   return (
-    <div className="flex gap-1 rounded-full bg-white/70 p-1 dark:bg-white/10" aria-label="Language">
+    <div className="flex gap-1 rounded-full bg-white/70 p-1 dark:bg-white/10" aria-label={label}>
       {locales.map((item) => (
         <button
           key={item}

@@ -42,6 +42,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const t = useTranslations("nav");
+  const shell = useTranslations("shell");
+  const auth = useTranslations("auth");
   const tNotifications = useTranslations("notifications");
   const unread = useSyncExternalStore(subscribeUnread, getUnreadSnapshot, getServerUnreadSnapshot).count;
   const currentCreator = creators[0]!;
@@ -94,7 +96,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
           <button
             type="button"
-            aria-label={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
+            aria-label={collapsed ? shell("expandSidebar") : shell("collapseSidebar")}
             onClick={() => setSidebar(!collapsed)}
             className="grid size-9 place-items-center rounded-full text-muted transition hover:bg-surface hover:text-foreground"
           >
@@ -182,9 +184,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               data-testid="mode-toggle"
               onClick={() => writeDemo({ demoMode: !demoMode })}
               className="hidden h-9 items-center gap-2 rounded-full border border-border px-3 text-[9px] font-black uppercase tracking-[.12em] text-muted transition hover:bg-surface sm:flex"
-              title="Alternar dados fictícios"
+              title={shell("toggleData")}
             >
-              <Database className="size-3.5" /> {demoMode ? "Demo" : "Real"}
+              <Database className="size-3.5" /> {demoMode ? shell("demo") : shell("real")}
             </button>
           )}
           <ThemeToggle label={t("theme")} />
@@ -198,10 +200,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {session.status === "ready" && !session.user ? (
             <>
               <Link href="/auth?route=sign-in">
-                <Button size="sm" variant="outline" className="h-9 px-3">Entrar</Button>
+                <Button size="sm" variant="outline" className="h-9 px-3">{auth("enter")}</Button>
               </Link>
               <Link href="/auth?route=sign-up" className="hidden sm:inline-flex">
-                <Button size="sm" className="h-9 px-3">Cadastre-se</Button>
+                <Button size="sm" className="h-9 px-3">{auth("signUp")}</Button>
               </Link>
             </>
           ) : (
@@ -227,7 +229,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Button>
             </>
           )}
-          <Button variant="ghost" size="icon" aria-label="Menu" className="lg:hidden">
+          <Button variant="ghost" size="icon" aria-label={shell("menu")} className="lg:hidden">
             <Menu className="size-[18px]" />
           </Button>
         </div>
@@ -240,10 +242,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="grid min-h-[calc(100dvh-64px)] place-items-center px-5 text-center">
             <div className="max-w-md rounded-[32px] border border-border bg-elevated p-8 shadow-xl">
               <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-accent/15 text-accent-strong"><Database className="size-6" /></span>
-              <p className="mt-5 text-[10px] font-black uppercase tracking-[.18em] text-primary-strong">Modo real</p>
-              <h1 className="mt-2 text-2xl font-extrabold">Pronto para conteúdo real</h1>
-              <p className="mt-3 text-xs leading-6 text-muted">Os registros fictícios estão isolados e ocultos. Conecte uma conta real quando a operação estiver pronta.</p>
-              <Button className="mt-6" onClick={() => writeDemo({ demoMode: true })}>Voltar ao modo demo</Button>
+              <p className="mt-5 text-[10px] font-black uppercase tracking-[.18em] text-primary-strong">{shell("realEyebrow")}</p>
+              <h1 className="mt-2 text-2xl font-extrabold">{shell("realTitle")}</h1>
+              <p className="mt-3 text-xs leading-6 text-muted">{shell("realBody")}</p>
+              <Button className="mt-6" onClick={() => writeDemo({ demoMode: true })}>{shell("backToDemo")}</Button>
             </div>
           </div>
         ) : children}

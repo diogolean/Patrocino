@@ -148,6 +148,8 @@ function DockNotifications() {
 export function ChatDock() {
   const pathname = usePathname();
   const t = useTranslations("dock");
+  const creatorFallback = useTranslations("errors")("CREATOR_FALLBACK");
+  const labelFor = (name: string) => name.trim() || creatorFallback;
   const previewFallback = useTranslations("notifications")("previewFallback");
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
   const unread = useSyncExternalStore(subscribeUnread, getUnreadSnapshot, getServerUnreadSnapshot).count;
@@ -198,7 +200,7 @@ export function ChatDock() {
       if (!item) return;
       setMessages([]);
       setThreadState("loading");
-      setThread({ key: creatorKey(item), name: item.creatorName, avatar: item.creatorAvatar });
+      setThread({ key: creatorKey(item), name: item.creatorName.trim() || creatorFallback, avatar: item.creatorAvatar });
       setDockCreator(creatorKey(item));
       setOpen(true);
       setSendError("");
@@ -207,7 +209,7 @@ export function ChatDock() {
     };
     window.addEventListener(OPEN_THREAD_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_THREAD_EVENT, onOpen);
-  }, []);
+  }, [creatorFallback]);
 
   useEffect(() => {
     if (!open || threadKey) return;
@@ -448,11 +450,11 @@ export function ChatDock() {
                     key={item.id}
                     type="button"
                     className="flex w-full cursor-pointer items-center gap-3 px-4 py-4 text-left hover:bg-surface/70"
-                    onClick={() => openChat({ key: creatorKey(item), name: item.creatorName, avatar: item.creatorAvatar })}
+                    onClick={() => openChat({ key: creatorKey(item), name: labelFor(item.creatorName), avatar: item.creatorAvatar })}
                   >
-                    <Avatar name={item.creatorName} src={item.creatorAvatar} className="size-12 shrink-0 text-base" />
+                    <Avatar name={labelFor(item.creatorName)} src={item.creatorAvatar} className="size-12 shrink-0 text-base" />
                     <span className="min-w-0 flex-1">
-                      <span className={`block truncate text-base ${item.unread > 0 ? "font-extrabold" : "font-semibold"}`}>{item.creatorName}</span>
+                      <span className={`block truncate text-base ${item.unread > 0 ? "font-extrabold" : "font-semibold"}`}>{labelFor(item.creatorName)}</span>
                       <span className={`mt-1 block truncate text-[15px] leading-5 ${item.unread > 0 ? "font-semibold text-foreground" : "text-muted"}`}>
                         {item.preview || t("newConversation")}
                       </span>
@@ -488,11 +490,11 @@ export function ChatDock() {
                       <button
                         type="button"
                         className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
-                        onClick={() => openChat({ key: creatorKey(item), name: item.creatorName, avatar: item.creatorAvatar })}
+                        onClick={() => openChat({ key: creatorKey(item), name: labelFor(item.creatorName), avatar: item.creatorAvatar })}
                       >
-                        <Avatar name={item.creatorName} src={item.creatorAvatar} className="size-12 shrink-0 text-base" />
+                        <Avatar name={labelFor(item.creatorName)} src={item.creatorAvatar} className="size-12 shrink-0 text-base" />
                         <span className="min-w-0">
-                          <span className="block truncate text-base font-extrabold">{item.creatorName}</span>
+                          <span className="block truncate text-base font-extrabold">{labelFor(item.creatorName)}</span>
                           <span className="mt-1 line-clamp-3 text-[15px] leading-5 text-muted">{item.preview || previewFallback}</span>
                         </span>
                       </button>

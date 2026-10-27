@@ -1,7 +1,8 @@
 import { getRequestConfig } from "next-intl/server";
 import { cookies, headers } from "next/headers";
 import { clientIpFrom } from "@/lib/client-ip";
-import { lookupCountry, resolveRequestLocale } from "./locale";
+import { countryFromIp } from "@/lib/geoip";
+import { resolveRequestLocale } from "./locale";
 
 export { locales, resolveLocale, resolveRequestLocale } from "./locale";
 export type { AppLocale } from "./locale";
@@ -15,7 +16,7 @@ export default getRequestConfig(async () => {
     cfIpCountry: header.get("cf-ipcountry"),
     xCountry: header.get("x-country"),
     ip: clientIpFrom(header) ?? null,
-    lookupCountry,
+    lookupCountry: countryFromIp,
   });
   return {
     locale,

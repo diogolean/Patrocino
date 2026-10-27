@@ -23,7 +23,10 @@ export async function POST(request: Request) {
   }, request);
   if (!response.ok || !data.user || !data.accessToken || !data.refreshToken) {
     return NextResponse.json(
-      { message: authErrorMessage(response.status, "Não foi possível entrar.") },
+      {
+        code: data.code ?? (response.status === 409 ? "EMAIL_ALREADY_REGISTERED" : response.status === 429 ? "TOO_MANY_ATTEMPTS" : "REQUEST_FAILED"),
+        message: (typeof data.message === "string" && data.message) || authErrorMessage(response.status, "Could not sign in."),
+      },
       { status: response.status || 500 },
     );
   }

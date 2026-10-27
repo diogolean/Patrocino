@@ -22,34 +22,9 @@ import { creators } from "@/lib/gateway";
 import { writeDemo } from "@/lib/demo-store";
 import { getSessionSnapshot } from "@/lib/session";
 
-const interests = ["Lifestyle", "Fitness", "Música", "Gastronomia", "Moda", "Arte", "Viagem", "Bem-estar"];
+const interestIds = ["lifestyle", "fitness", "music", "food", "fashion", "art", "travel", "wellness"] as const;
 
-const fanSteps = [
-  {
-    eyebrow: "Você chegou!",
-    title: "Um espaço para chegar mais perto.",
-    body: "Conteúdos especiais, conversas de verdade e uma nova forma de apoiar quem inspira você.",
-    icon: Sparkles,
-  },
-  {
-    eyebrow: "Do seu jeito",
-    title: "O que desperta sua curiosidade?",
-    body: "Escolha alguns temas. Você pode mudar tudo depois.",
-    icon: Heart,
-  },
-  {
-    eyebrow: "Sua primeira seleção",
-    title: "Encontre gente incrível para acompanhar.",
-    body: "Preparamos sugestões para começar o seu feed.",
-    icon: Users,
-  },
-  {
-    eyebrow: "Feito para membros",
-    title: "Mais perto. Mais exclusivo.",
-    body: "Assine, converse e desbloqueie experiências únicas com pagamento seguro.",
-    icon: LockKeyhole,
-  },
-];
+const fanIcons = [Sparkles, Heart, Users, LockKeyhole] as const;
 
 function subscribe(callback: () => void) {
   window.addEventListener("mimelux:state", callback);
@@ -84,14 +59,21 @@ export default function OnboardingPage() {
 
 function FanOnboarding() {
   const router = useRouter();
+  const t = useTranslations("onboarding");
   const [step, setStep] = useState(0);
-  const [selected, setSelected] = useState(["Lifestyle", "Música", "Viagem"]);
+  const [selected, setSelected] = useState<string[]>(["lifestyle", "music", "travel"]);
   const [following, setFollowing] = useState(["luna-ferraz", "bella-monroe"]);
-  const current = fanSteps[step]!;
-  const Icon = current.icon;
+  const steps = [
+    { eyebrow: t("s1eyebrow"), title: t("s1title"), body: t("s1body") },
+    { eyebrow: t("s2eyebrow"), title: t("s2title"), body: t("s2body") },
+    { eyebrow: t("s3eyebrow"), title: t("s3title"), body: t("s3body") },
+    { eyebrow: t("s4eyebrow"), title: t("s4title"), body: t("s4body") },
+  ];
+  const current = steps[step]!;
+  const Icon = fanIcons[step]!;
 
   function next() {
-    if (step < fanSteps.length - 1) {
+    if (step < steps.length - 1) {
       setStep((value) => value + 1);
       return;
     }
@@ -106,7 +88,7 @@ function FanOnboarding() {
           onClick={() => finish(router)}
           className="text-xs font-bold text-muted transition hover:text-foreground"
         >
-          Pular tutorial <ArrowRight className="ml-1 inline size-3.5" />
+          {t("skip")} <ArrowRight className="ml-1 inline size-3.5" />
         </button>
       </header>
 
@@ -126,9 +108,9 @@ function FanOnboarding() {
           {step === 0 && (
             <div className="mx-auto mt-10 grid max-w-2xl grid-cols-3 gap-3">
               {[
-                { icon: Star, text: "Conteúdo exclusivo" },
-                { icon: MessageCircle, text: "Conversa direta" },
-                { icon: Heart, text: "Apoio que transforma" },
+                { icon: Star, text: t("exclusive") },
+                { icon: MessageCircle, text: t("direct") },
+                { icon: Heart, text: t("support") },
               ].map(({ icon: FeatureIcon, text }) => (
                 <div key={text} className="rounded-[24px] border border-black/5 bg-white/55 p-4 dark:bg-white/5">
                   <FeatureIcon className="mx-auto size-5 text-primary-strong" />
@@ -140,7 +122,7 @@ function FanOnboarding() {
 
           {step === 1 && (
             <div className="mx-auto mt-9 flex max-w-xl flex-wrap justify-center gap-2">
-              {interests.map((interest) => {
+              {interestIds.map((interest) => {
                 const active = selected.includes(interest);
                 return (
                   <button
@@ -153,7 +135,7 @@ function FanOnboarding() {
                   >
                     <Pill active={active} className="px-5 py-3 text-sm transition hover:-translate-y-0.5">
                       {active && <Check className="mr-1 size-3.5" />}
-                      {interest}
+                      {t(`interest_${interest}`)}
                     </Pill>
                   </button>
                 );
@@ -181,7 +163,7 @@ function FanOnboarding() {
                         active ? "bg-ink text-white" : "bg-primary text-ink"
                       }`}
                     >
-                      {active ? "Seguindo" : "Seguir"}
+                      {active ? t("following") : t("follow")}
                     </button>
                   </article>
                 );
@@ -192,9 +174,9 @@ function FanOnboarding() {
           {step === 3 && (
             <div className="mx-auto mt-9 grid max-w-2xl gap-3 text-left sm:grid-cols-3">
               {[
-                ["Assine", "Escolha planos no seu ritmo e cancele quando quiser."],
-                ["Desbloqueie", "Acesse posts especiais com uma compra única."],
-                ["Converse", "Receba novidades e mensagens de quem você acompanha."],
+                [t("subscribeTitle"), t("subscribeBody")],
+                [t("unlockTitle"), t("unlockBody")],
+                [t("chatTitle"), t("chatBody")],
               ].map(([title, body], index) => (
                 <div key={title} className="rounded-[24px] border border-black/5 bg-white/60 p-5 dark:bg-white/5">
                   <span className="text-xs font-black text-primary-strong">0{index + 1}</span>
@@ -213,19 +195,19 @@ function FanOnboarding() {
           size="icon"
           disabled={step === 0}
           onClick={() => setStep((value) => value - 1)}
-          aria-label="Passo anterior"
+          aria-label={t("back")}
         >
           <ArrowLeft className="size-4" />
         </Button>
         <div className="text-center">
           <div className="flex gap-1.5">
-            {fanSteps.map((_, index) => (
+            {steps.map((_, index) => (
               <i key={index} className={`h-1.5 rounded-full transition-all ${index === step ? "w-7 bg-primary" : "w-1.5 bg-black/15 dark:bg-white/20"}`} />
             ))}
           </div>
-          <p className="mt-2 text-[10px] font-semibold text-muted">Passo {step + 1}/4</p>
+          <p className="mt-2 text-[10px] font-semibold text-muted">{t("step", { current: step + 1 })}</p>
         </div>
-        <Button size="icon" onClick={next} aria-label={step === 3 ? "Concluir" : "Próximo passo"}>
+        <Button size="icon" onClick={next} aria-label={step === 3 ? t("done") : t("next")}>
           {step === 3 ? <Check className="size-4" /> : <ArrowRight className="size-4" />}
         </Button>
       </footer>

@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { Check, Copy, LoaderCircle, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
+import { apiErrorText } from "@/lib/api-error";
 import { Input } from "@/components/ui/input";
 import { brl } from "@/lib/fixtures";
 
@@ -38,6 +40,9 @@ export function ExpayCheckoutModal({
   onPaid: () => void;
   onAmount?: (amountCents: number) => void;
 }) {
+  const t = useTranslations("checkout");
+  const errors = useTranslations("errors");
+  const closeLabel = useTranslations("dialog")("close");
   const asksForDocument = purpose === "subscription";
   const [documentInput, setDocumentInput] = useState("");
   const [payerDocument, setPayerDocument] = useState<string | null>(asksForDocument ? null : "");
@@ -64,9 +69,9 @@ export function ExpayCheckoutModal({
             customer: payerDocument ? { document: payerDocument } : undefined,
           }),
         });
-        const payload = (await response.json().catch(() => ({}))) as Partial<ChargeView> & { message?: string };
+        const payload = (await response.json().catch(() => ({}))) as Partial<ChargeView> & { code?: unknown; message?: unknown };
         if (!response.ok || !payload.chargeId || typeof payload.amountCents !== "number") {
-          if (!stop) setError(payload.message || "Não foi possível gerar o Pix.");
+          if (!stop) setError(apiErrorText(payload, errors, t("pixFailed")));
           return;
         }
         if (!stop) {
@@ -74,7 +79,7 @@ export function ExpayCheckoutModal({
           onAmount?.(payload.amountCents);
         }
       } catch {
-        if (!stop) setError("Não foi possível gerar o Pix.");
+        if (!stop) setError(t("pixFailed"));
       }
     }
 
@@ -83,7 +88,7 @@ export function ExpayCheckoutModal({
       stop = true;
       controller.abort();
     };
-  }, [creatorId, purpose, subjectId, idempotencyKey, onAmount, payerDocument]);
+  }, [creatorId, purpose, subjectId, idempotencyKey, onAmount, payerDocument, errors, t]);
 
   useEffect(() => {
     if (!charge?.chargeId || terminal.has(charge.status)) return;
@@ -122,7 +127,7 @@ export function ExpayCheckoutModal({
   function generatePix() {
     const cleaned = documentInput.replace(/\D/g, "");
     if (cleaned && cleaned.length !== 11 && cleaned.length !== 14) {
-      setError("Informe um CPF com 11 dígitos ou um CNPJ com 14, ou deixe em branco para pagar só este mês.");
+      setError(t("documentInvalid"));
       return;
     }
     setError("");
@@ -139,21 +144,21 @@ export function ExpayCheckoutModal({
         className="max-h-[94dvh] w-full overflow-y-auto rounded-t-[28px] bg-background px-5 pb-8 pt-4 shadow-2xl sm:max-w-md sm:rounded-[28px] sm:px-6"
       >
         <div className="mb-4 flex items-center justify-between">
-          <p className="text-[10px] font-black uppercase tracking-[.18em] text-primary-strong">Pix</p>
-          <button type="button" aria-label="Fechar" onClick={onClose} className="grid size-10 place-items-center rounded-full hover:bg-black/5">
+          <p className="text-[10px] font-black uppercase tracking-[.18em] text-primary-strong">{t("pix")}</p>
+          <button type="button" aria-label={closeLabel} onClick={onClose} className="grid size-10 place-items-center rounded-full hover:bg-black/5">
             <X className="size-4" />
           </button>
         </div>
-        <h2 id="expay-title" className="text-2xl font-extrabold tracking-[-.04em]">{paid ? "Pagamento confirmado" : "Pague com Pix"}</h2>
+        <h2 id="expay-title" className="text-2xl font-extrabold tracking-[-.04em]">{paid ? t("confirmedPayment") : t("payWithPix")}</h2>
         <p className="mt-2 text-sm leading-6 text-muted">{title}</p>
         {charge && <p data-testid="expay-amount" className="mt-3 text-lg font-black">{brl(charge.amountCents)}</p>}
 
         {error && <p className="mt-5 rounded-2xl bg-accent/15 px-4 py-3 text-sm text-accent-strong">{error}</p>}
-        {amountMismatch && <p className="mt-5 rounded-2xl bg-accent/15 px-4 py-3 text-sm text-accent-strong">O valor pago não confere com o preço deste item.</p>}
+        {amountMismatch && <p className="mt-5 rounded-2xl bg-accent/15 px-4 py-3 text-sm text-accent-strong">{t("mismatch")}</p>}
 
         {asksForDocument && payerDocument !== null && error && !charge && (
           <Button type="button" variant="outline" className="mt-3 w-full" onClick={() => { setError(""); setPayerDocument(null); }}>
-            Tentar de novo
+            {t("retry")}
           </Button>
         )}
 
@@ -165,7 +170,7 @@ export function ExpayCheckoutModal({
               generatePix();
             }}
           >
-            <label htmlFor="expay-document" className="block text-sm font-semibold">CPF ou CNPJ do pagador</label>
+            <label htmlFor="expay-document" className="block text-sm font-semibold">{t("documentLabel")}</label>
             <Input
               id="expay-document"
               inputMode="numeric"
@@ -175,22 +180,22 @@ export function ExpayCheckoutModal({
               placeholder="000.000.000-00"
               className="h-12 rounded-2xl px-4 text-base"
             />
-            <p className="text-xs leading-5 text-muted">Sem ele, o Pix automático não abre e o mês segue avulso.</p>
-            <Button type="submit" className="w-full">Gerar Pix</Button>
+            <p className="text-xs leading-5 text-muted">{t("documentHint")}</p>
+            <Button type="submit" className="w-full">{t("generatePix")}</Button>
           </form>
         )}
 
         {payerDocument !== null && !charge && !error && (
           <div className="grid place-items-center py-16 text-muted">
             <LoaderCircle className="size-6 animate-spin" />
-            <p className="mt-3 text-xs">Gerando o código Pix</p>
+            <p className="mt-3 text-xs">{t("generating")}</p>
           </div>
         )}
 
         {charge && paid && (
           <div className="mt-6 grid place-items-center rounded-[24px] bg-emerald-500/10 px-5 py-10 text-center">
             <span className="grid size-16 place-items-center rounded-full bg-emerald-500/15 text-emerald-600"><Check className="size-7" /></span>
-            <p className="mt-4 text-sm font-semibold">O acesso já está liberado.</p>
+            <p className="mt-4 text-sm font-semibold">{t("accessReady")}</p>
           </div>
         )}
 
@@ -198,7 +203,7 @@ export function ExpayCheckoutModal({
           <div className="mt-5">
             {charge.billingMode === "pix_monthly_fallback" && (
               <p className="mb-4 rounded-2xl bg-surface px-4 py-3 text-xs leading-5 text-muted">
-                O débito automático não ficou disponível. Este Pix cobre o mês atual.
+                {t("monthlyFallback")}
               </p>
             )}
             <div className="grid place-items-center rounded-[24px] bg-white p-4">
@@ -208,7 +213,7 @@ export function ExpayCheckoutModal({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={charge.qrCode} alt="" className="size-48 object-contain" />
               ) : (
-                <p className="px-4 py-10 text-center text-sm text-muted">A ExPay não devolveu o código Pix.</p>
+                <p className="px-4 py-10 text-center text-sm text-muted">{t("missingCode")}</p>
               )}
             </div>
             {copia && (
@@ -221,12 +226,12 @@ export function ExpayCheckoutModal({
                     void navigator.clipboard.writeText(copia).then(() => setCopied(true));
                   }}
                 >
-                  <Copy className="size-4" /> {copied ? "Código copiado" : "Copiar código"}
+                  <Copy className="size-4" /> {copied ? t("copied") : t("copyCode")}
                 </Button>
               </>
             )}
             <p data-testid="expay-status" className="mt-4 text-center text-xs text-muted">
-              {charge.status === "expired" ? "Este Pix expirou." : charge.status === "failed" || charge.status === "canceled" ? "O pagamento não foi concluído." : "Aguardando o pagamento"}
+              {charge.status === "expired" ? t("expired") : charge.status === "failed" || charge.status === "canceled" ? t("notCompleted") : t("waiting")}
             </p>
           </div>
         )}

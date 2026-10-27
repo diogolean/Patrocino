@@ -1,4 +1,5 @@
 import { filledCompanyFields, legalConfig } from "@mimelux/core";
+import { de, es, fr } from "./legal-translations";
 
 export type LegalId = "terms" | "privacy" | "guidelines" | "refund";
 
@@ -15,7 +16,7 @@ export type LegalDocument = {
 
 const company = legalConfig;
 
-function identification(labels: { legalName: string; cnpj: string; address: string }) {
+export function identification(labels: { legalName: string; cnpj: string; address: string }) {
   const fields = filledCompanyFields();
   const parts = [
     fields.legalName ? `${labels.legalName} ${fields.legalName}` : "",
@@ -322,8 +323,25 @@ const en: Record<LegalId, LegalDocument> = {
   },
 };
 
+const creatorTermHeadings = new Set([
+  "Termos do criador",
+  "Creator terms",
+  "Términos del creador",
+  "Creator-Bedingungen",
+  "Conditions du créateur",
+]);
+
+export function isCreatorTermsHeading(heading: string) {
+  return creatorTermHeadings.has(heading);
+}
+
 export function legalDocument(locale: string, id: LegalId): LegalDocument {
-  return locale.toLowerCase().startsWith("pt") ? pt[id] : en[id];
+  const normalized = locale.toLowerCase();
+  if (normalized.startsWith("pt")) return pt[id];
+  if (normalized.startsWith("es")) return es[id];
+  if (normalized.startsWith("de")) return de[id];
+  if (normalized.startsWith("fr")) return fr[id];
+  return en[id];
 }
 
 export { company as legalCompany };

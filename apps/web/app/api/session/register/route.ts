@@ -11,6 +11,7 @@ export async function POST(request: Request) {
     role?: AccountRole;
     acceptTerms?: boolean;
     acceptCreatorTerms?: boolean;
+    locale?: string;
   } | null;
   const { response, data } = await apiAuth("/auth/register", {
     name: body?.name ?? "",
@@ -19,10 +20,14 @@ export async function POST(request: Request) {
     role: toApiRole(body?.role ?? "fan"),
     acceptTerms: body?.acceptTerms === true,
     acceptCreatorTerms: body?.acceptCreatorTerms === true,
+    locale: body?.locale,
   }, request);
   if (!response.ok || !data.user || !data.accessToken || !data.refreshToken) {
     return NextResponse.json(
-      { message: authErrorMessage(response.status, "Não foi possível criar a conta.") },
+      {
+        code: data.code ?? (response.status === 409 ? "EMAIL_ALREADY_REGISTERED" : response.status === 429 ? "TOO_MANY_ATTEMPTS" : "REQUEST_FAILED"),
+        message: (typeof data.message === "string" && data.message) || authErrorMessage(response.status, "Could not create the account."),
+      },
       { status: response.status || 500 },
     );
   }

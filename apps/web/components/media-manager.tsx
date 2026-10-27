@@ -1,7 +1,9 @@
 "use client";
 
 import { ChangeEvent, DragEvent, FormEvent, useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
+import { apiErrorText } from "@/lib/api-error";
 
 export type MediaVisibility = "free" | "subscribers" | "ppv" | "subscriber_ppv";
 
@@ -37,12 +39,14 @@ type Job = {
   message: string;
 };
 
-const labels: Record<MediaVisibility, string> = {
-  free: "Gratuito",
-  subscribers: "Somente assinantes",
-  ppv: "Pago por visualização",
-  subscriber_ppv: "Vídeo para assinantes",
+const visibilityKey: Record<MediaVisibility, "free" | "subscribers" | "ppv" | "subscriberPpv"> = {
+  free: "free",
+  subscribers: "subscribers",
+  ppv: "ppv",
+  subscriber_ppv: "subscriberPpv",
 };
+
+const visibilityOrder: MediaVisibility[] = ["subscribers", "free", "ppv", "subscriber_ppv"];
 
 function pricedVisibility(visibility: MediaVisibility) {
   return visibility === "ppv" || visibility === "subscriber_ppv";
@@ -87,10 +91,13 @@ function formatBytes(size: number | null) {
   return `${Math.max(1, Math.round(size / 1000))} KB`;
 }
 
-async function errorMessage(response: Response, fallback: string) {
-  const data = (await response.json().catch(() => ({}))) as { message?: string | string[] };
-  if (Array.isArray(data.message)) return data.message[0] || fallback;
-  return data.message || fallback;
+async function explainResponse(
+  response: Response,
+  errors: { has: (key: string) => boolean; (key: string): string },
+  fallback: string,
+) {
+  const data = (await response.json().catch(() => ({}))) as { code?: unknown; message?: unknown };
+  return apiErrorText(data, errors, fallback);
 }
 
 async function uploadFile(
@@ -98,6 +105,8 @@ async function uploadFile(
   creatorId: string | undefined,
   fields: { caption: string; visibility: MediaVisibility; priceCents: number | null; publishedAt: string | null },
   onProgress: (value: number) => void,
+  errors: { has: (key: string) => boolean; (key: string): string },
+  copy: { start: string; chunk: string; publish: string },
 ) {
   const storageKey = `patrocino-upload:${creatorId ?? "self"}:${file.name}:${file.size}:${file.lastModified}`;
   let uploadId = window.sessionStorage.getItem(storageKey);
@@ -140,7 +149,7 @@ async function uploadFile(
         chunkSize,
       }),
     });
-    if (!started.ok) throw new Error(await errorMessage(started, "Não foi possível iniciar o envio."));
+    if (!started.ok) throw new Error(await explainResponse(started, errors, copy.start));
     const data = (await started.json()) as { id: string; chunkSize: number; totalChunks: number };
     uploadId = data.id;
     chunkSize = data.chunkSize;
@@ -156,7 +165,7 @@ async function uploadFile(
     const start = index * chunkSize;
     const end = Math.min(file.size, start + chunkSize);
     let sent = false;
-    let lastError = "Não foi possível enviar um trecho do arquivo.";
+    let lastError = copy.chunk;
     for (let attempt = 0; attempt < 3 && !sent; attempt += 1) {
       const response = await fetch(`/api/media/uploads/${encodeURIComponent(uploadId)}/chunks/${index}`, {
         method: "PUT",
@@ -167,7 +176,7 @@ async function uploadFile(
         sent = true;
         break;
       }
-      lastError = await errorMessage(response, lastError);
+      lastError = await explainResponse(response, errors, copy.chunk);
       if (response.status === 400 || response.status === 401 || response.status === 403 || response.status === 413) {
         throw new Error(lastError);
       }
@@ -186,7 +195,7 @@ async function uploadFile(
       publishedAt: fields.publishedAt,
     }),
   });
-  if (!completed.ok) throw new Error(await errorMessage(completed, "Não foi possível publicar o arquivo."));
+  if (!completed.ok) throw new Error(await explainResponse(completed, errors, copy.publish));
   window.sessionStorage.removeItem(storageKey);
   const data = (await completed.json()) as { item?: MediaLibraryItem };
   return data.item ?? null;
@@ -202,6 +211,8 @@ function draftFor(item: MediaLibraryItem): Draft {
 }
 
 export function MediaManager({ creatorId }: { creatorId?: string }) {
+  const t = useTranslations("media");
+  const errors = useTranslations("errors");
   const [items, setItems] = useState<MediaLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -224,10 +235,11 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
     const data = (await response.json().catch(() => ({}))) as {
       items?: MediaLibraryItem[];
       defaultVideoPriceCents?: number;
-      message?: string;
+      code?: unknown;
+      message?: unknown;
     };
     if (!response.ok || !data.items) {
-      setError(data.message || "Não foi possível carregar a mídia.");
+      setError(apiErrorText(data, errors, t("loadFailed")));
       setItems([]);
       setLoading(false);
       return;
@@ -240,7 +252,7 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
     setDrafts(Object.fromEntries(data.items.map((item) => [item.id, draftFor(item)])));
     setLoadedAt(Date.now());
     setLoading(false);
-  }, [creatorId]);
+  }, [creatorId, errors, t]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -254,7 +266,7 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
     if (files.length === 0) return;
     const priceCents = centsFromInput(price);
     if (visibility === "ppv" && !priceCents) {
-      setError("Informe o preço da visualização avulsa.");
+      setError(t("priceRequired"));
       return;
     }
     setError("");
@@ -269,16 +281,18 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
           (progress) => {
             setJobs((current) => current.map((job) => (job.key === key ? { ...job, progress } : job)));
           },
+          errors,
+          { start: t("startFailed"), chunk: t("chunkFailed"), publish: t("publishFailed") },
         );
         setJobs((current) =>
-          current.map((job) => (job.key === key ? { ...job, status: "done", progress: 1, message: "Publicado" } : job)),
+          current.map((job) => (job.key === key ? { ...job, status: "done", progress: 1, message: t("published") } : job)),
         );
         if (item) {
           setItems((current) => [...current, item]);
           setDrafts((current) => ({ ...current, [item.id]: draftFor(item) }));
         }
       } catch (caught) {
-        const message = caught instanceof Error ? caught.message : "Falha no envio.";
+        const message = caught instanceof Error && caught.message ? caught.message : t("uploadFailed");
         setJobs((current) => current.map((job) => (job.key === key ? { ...job, status: "error", message } : job)));
       }
     }
@@ -309,7 +323,7 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
     if (!draft) return;
     const nextPrice = pricedVisibility(draft.visibility) ? centsFromInput(draft.price) : null;
     if (draft.visibility === "ppv" && !nextPrice) {
-      setError("Informe o preço da visualização avulsa.");
+      setError(t("priceRequired"));
       return;
     }
     setError("");
@@ -323,9 +337,9 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
         publishedAt: fromLocalInput(draft.publishedAt),
       }),
     });
-    const data = (await response.json().catch(() => ({}))) as { item?: MediaLibraryItem; message?: string };
+    const data = (await response.json().catch(() => ({}))) as { item?: MediaLibraryItem; code?: unknown; message?: unknown };
     if (!response.ok || !data.item) {
-      setError(data.message || "Não foi possível salvar.");
+      setError(apiErrorText(data, errors, t("saveFailed")));
       return;
     }
     const saved = data.item;
@@ -336,7 +350,7 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
   async function saveDefaultPrice() {
     const cents = centsFromInput(defaultPrice);
     if (!cents) {
-      setError("Informe o preço padrão do vídeo.");
+      setError(t("defaultPriceRequired"));
       return;
     }
     setError("");
@@ -345,9 +359,9 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ creatorId, defaultVideoPriceCents: cents }),
     });
-    const data = (await response.json().catch(() => ({}))) as { defaultVideoPriceCents?: number; message?: string };
+    const data = (await response.json().catch(() => ({}))) as { defaultVideoPriceCents?: number; code?: unknown; message?: unknown };
     if (!response.ok || typeof data.defaultVideoPriceCents !== "number") {
-      setError(data.message || "Não foi possível salvar o preço padrão.");
+      setError(apiErrorText(data, errors, t("defaultSaveFailed")));
       return;
     }
     setDefaultPriceCents(data.defaultVideoPriceCents);
@@ -355,11 +369,11 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
   }
 
   async function remove(item: MediaLibraryItem) {
-    if (!window.confirm("Excluir esta mídia da biblioteca?")) return;
+    if (!window.confirm(t("deleteConfirm"))) return;
     setError("");
     const response = await fetch(`/api/media/items/${encodeURIComponent(item.id)}`, { method: "DELETE" });
     if (!response.ok) {
-      setError(await errorMessage(response, "Não foi possível excluir."));
+      setError(await explainResponse(response, errors, t("deleteFailed")));
       return;
     }
     setItems((current) => current.filter((entry) => entry.id !== item.id));
@@ -381,7 +395,7 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
       body: JSON.stringify({ creatorId, ids: reordered.map((item) => item.id) }),
     });
     if (!response.ok) {
-      setError(await errorMessage(response, "Não foi possível reordenar."));
+      setError(await explainResponse(response, errors, t("reorderFailed")));
       void load();
     }
   }
@@ -390,10 +404,8 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
     <section data-testid="media-library" className="rounded-[28px] border border-border bg-elevated/70 p-4 sm:p-6">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-lg font-extrabold tracking-[-.03em]">Biblioteca de mídia</h2>
-          <p className="mt-1 max-w-xl text-sm text-muted">
-            Envie fotos e vídeos (mp4, mov ou webm, até 2 GB). O arquivo entra em partes, com retomada se a conexão cair.
-          </p>
+          <h2 className="text-lg font-extrabold tracking-[-.03em]">{t("libraryTitle")}</h2>
+          <p className="mt-1 max-w-xl text-sm text-muted">{t("libraryBody")}</p>
         </div>
       </div>
 
@@ -405,7 +417,7 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
         }}
       >
         <label className="block flex-1 text-xs font-bold uppercase tracking-wide text-muted">
-          Preço padrão do vídeo (R$)
+          {t("defaultPrice")}
           <input
             data-testid="default-video-price"
             inputMode="decimal"
@@ -415,55 +427,52 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
           />
         </label>
         <Button type="submit" size="sm" data-testid="default-video-price-save">
-          Salvar padrão
+          {t("saveDefault")}
         </Button>
-        <p className="text-xs font-medium normal-case tracking-normal text-muted sm:max-w-xs sm:pb-2">
-          Vídeos para assinantes sem preço próprio usam este valor. O padrão de teste é R$ 1,00.
-        </p>
+        <p className="text-xs font-medium normal-case tracking-normal text-muted sm:max-w-xs sm:pb-2">{t("defaultHint")}</p>
       </form>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="block text-xs font-bold uppercase tracking-wide text-muted">
-          Legenda do lote
+          {t("batchCaption")}
           <input
             value={caption}
             onChange={(event) => setCaption(event.target.value)}
-            placeholder="Opcional"
+            placeholder={t("optional")}
             className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-primary"
           />
         </label>
         <label className="block text-xs font-bold uppercase tracking-wide text-muted">
-          Acesso
+          {t("access")}
           <select
             value={visibility}
             onChange={(event) => setVisibility(event.target.value as MediaVisibility)}
             className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm font-semibold normal-case tracking-normal outline-none focus:border-primary"
           >
-            <option value="subscribers">Somente assinantes</option>
-            <option value="free">Gratuito</option>
-            <option value="ppv">Pago por visualização</option>
-            <option value="subscriber_ppv">Vídeo para assinantes</option>
+            {visibilityOrder.map((value) => (
+              <option key={value} value={value}>{t(visibilityKey[value])}</option>
+            ))}
           </select>
         </label>
         {pricedVisibility(visibility) && (
           <label className="block text-xs font-bold uppercase tracking-wide text-muted">
-            Preço (R$)
+            {t("price")}
             <input
               inputMode="decimal"
               value={price}
               onChange={(event) => setPrice(event.target.value)}
-              placeholder={visibility === "subscriber_ppv" ? reais(defaultPriceCents) || "1,00" : "19,90"}
+              placeholder={visibility === "subscriber_ppv" ? reais(defaultPriceCents) || t("placeholderSubscriber") : t("placeholderPpv")}
               className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-primary"
             />
             {visibility === "subscriber_ppv" && (
               <span className="mt-2 block font-medium normal-case tracking-normal">
-                Em branco usa o preço padrão (R$ {(reais(defaultPriceCents) || "1.00").replace(".", ",")}).
+                {t("blankDefault", { price: (reais(defaultPriceCents) || "1.00").replace(".", ",") })}
               </span>
             )}
           </label>
         )}
         <label className="block text-xs font-bold uppercase tracking-wide text-muted">
-          Publicar em
+          {t("publishAt")}
           <input
             type="datetime-local"
             value={publishedAt}
@@ -493,8 +502,8 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
           className="sr-only"
           onChange={onPick}
         />
-        <span className="text-sm font-extrabold">Arraste fotos ou vídeos</span>
-        <span className="mt-1 text-xs text-muted">ou clique para escolher vários arquivos</span>
+        <span className="text-sm font-extrabold">{t("dropTitle")}</span>
+        <span className="mt-1 text-xs text-muted">{t("dropBody")}</span>
       </label>
 
       {jobs.length > 0 && (
@@ -523,9 +532,9 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
       )}
 
       <div className="mt-5 space-y-3">
-        {loading && <p className="text-sm text-muted">Carregando a biblioteca…</p>}
+        {loading && <p className="text-sm text-muted">{t("loading")}</p>}
         {!loading && items.length === 0 && (
-          <p className="text-sm text-muted">Nenhuma mídia ainda. Envie uma foto ou um vídeo.</p>
+          <p className="text-sm text-muted">{t("empty")}</p>
         )}
         {items.map((item, index) => {
           const draft = drafts[item.id] ?? draftFor(item);
@@ -543,19 +552,19 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
                       className="aspect-[4/5] w-full rounded-2xl object-cover"
                     />
                   ) : (
-                    <div className="grid aspect-[4/5] place-items-center rounded-2xl bg-surface text-[10px] text-muted">Sem capa</div>
+                    <div className="grid aspect-[4/5] place-items-center rounded-2xl bg-surface text-[10px] text-muted">{t("noCover")}</div>
                   )}
                 </div>
                 <form onSubmit={(event) => void save(item, event)} className="min-w-0 flex-1 space-y-3">
                   <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-primary-strong">
-                    <span>{item.kind === "VIDEO" ? "Vídeo" : "Foto"}</span>
-                    <span>{labels[item.visibility]}</span>
-                    {item.locked && <span>Bloqueado</span>}
-                    {scheduled && <span>Agendado</span>}
+                    <span>{item.kind === "VIDEO" ? t("video") : t("photo")}</span>
+                    <span>{t(visibilityKey[item.visibility])}</span>
+                    {item.locked && <span>{t("locked")}</span>}
+                    {scheduled && <span>{t("scheduled")}</span>}
                     {item.byteSize ? <span className="text-muted">{formatBytes(item.byteSize)}</span> : null}
                   </div>
                   <label className="block text-xs font-bold uppercase tracking-wide text-muted">
-                    Legenda
+                    {t("caption")}
                     <input
                       value={draft.caption}
                       onChange={(event) => updateDraft(item.id, { caption: event.target.value })}
@@ -564,38 +573,37 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
                   </label>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-xs font-bold uppercase tracking-wide text-muted">
-                      Acesso
+                      {t("access")}
                       <select
                         value={draft.visibility}
                         onChange={(event) => updateDraft(item.id, { visibility: event.target.value as MediaVisibility })}
                         className="mt-2 h-11 w-full rounded-full border border-border bg-elevated px-4 text-sm font-semibold normal-case tracking-normal outline-none focus:border-primary"
                       >
-                        <option value="subscribers">Somente assinantes</option>
-                        <option value="free">Gratuito</option>
-                        <option value="ppv">Pago por visualização</option>
-                        <option value="subscriber_ppv">Vídeo para assinantes</option>
+                        {visibilityOrder.map((value) => (
+                          <option key={value} value={value}>{t(visibilityKey[value])}</option>
+                        ))}
                       </select>
                     </label>
                     {pricedVisibility(draft.visibility) && (
                       <label className="block text-xs font-bold uppercase tracking-wide text-muted">
-                        Preço (R$)
+                        {t("price")}
                         <input
                           data-testid="media-item-price"
                           inputMode="decimal"
                           value={draft.price}
-                          placeholder={draft.visibility === "subscriber_ppv" ? reais(defaultPriceCents) || "1,00" : "19,90"}
+                          placeholder={draft.visibility === "subscriber_ppv" ? reais(defaultPriceCents) || t("placeholderSubscriber") : t("placeholderPpv")}
                           onChange={(event) => updateDraft(item.id, { price: event.target.value })}
                           className="mt-2 h-11 w-full rounded-full border border-border bg-elevated px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-primary"
                         />
                         {draft.visibility === "subscriber_ppv" && (
                           <span className="mt-2 block font-medium normal-case tracking-normal">
-                            Em branco usa o preço padrão.
+                            {t("blankDefaultShort")}
                           </span>
                         )}
                       </label>
                     )}
                     <label className="block text-xs font-bold uppercase tracking-wide text-muted">
-                      Publicar em
+                      {t("publishAt")}
                       <input
                         type="datetime-local"
                         value={draft.publishedAt}
@@ -606,22 +614,22 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
                   </div>
                   {item.locked && item.previewUrl && (
                     <p className="text-[11px] text-muted">
-                      Quem não tem acesso vê só a prévia borrada.
+                      {t("lockedPreview")}
                     </p>
                   )}
                   {playback && item.kind === "VIDEO" && (
                     <video src={playback} poster={item.posterUrl ?? undefined} controls className="max-h-48 w-full rounded-2xl bg-black" />
                   )}
                   <div className="flex flex-wrap gap-2">
-                    <Button type="submit" size="sm">Salvar</Button>
+                    <Button type="submit" size="sm">{t("save")}</Button>
                     <Button type="button" size="sm" variant="outline" disabled={index === 0} onClick={() => void move(index, -1)}>
-                      Subir
+                      {t("moveUp")}
                     </Button>
                     <Button type="button" size="sm" variant="outline" disabled={index === items.length - 1} onClick={() => void move(index, 1)}>
-                      Descer
+                      {t("moveDown")}
                     </Button>
                     <Button type="button" size="sm" variant="ghost" onClick={() => void remove(item)}>
-                      Excluir
+                      {t("remove")}
                     </Button>
                   </div>
                 </form>

@@ -11,7 +11,7 @@ import {
   Music2,
   ShieldCheck,
 } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Button, Logo, Mark } from "@mimelux/ui";
 import {
   DEMO_ACCOUNTS,
@@ -24,7 +24,7 @@ import {
 } from "@mimelux/core";
 import { bindAttribution } from "@/lib/affiliates";
 import { readDemo, writeDemo } from "@/lib/demo-store";
-import { loginAccount, registerAccount, socialAccount } from "@/lib/session";
+import { loginAccount, registerAccount, sessionErrorText, socialAccount } from "@/lib/session";
 import { creators, posts } from "@/lib/gateway";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { MonetizeSection } from "@/components/monetize-section";
@@ -51,6 +51,9 @@ function AuthContent() {
   const router = useRouter();
   const params = useSearchParams();
   const t = useTranslations("auth");
+  const page = useTranslations("authPage");
+  const errors = useTranslations("errors");
+  const locale = useLocale();
   const signUp = params.get("route") === "sign-up";
   const requestedRole = params.get("role");
   const preset = requestedRole === "creator" || requestedRole === "affiliate" ? requestedRole : "fan";
@@ -105,7 +108,7 @@ function AuthContent() {
       : loginSchema.safeParse({ identifier: email, password });
 
     if (!result.success) {
-      setError(signUp ? "Confira nome, e-mail e uma senha com 6 caracteres." : "Preencha e-mail/CPF e senha.");
+      setError(signUp ? page("signupInvalid") : page("loginInvalid"));
       return;
     }
     const chosen: AccountRole = professional ? (role === "affiliate" ? "affiliate" : "creator") : "fan";
@@ -124,6 +127,7 @@ function AuthContent() {
           role: chosen,
           acceptTerms: true,
           acceptCreatorTerms: chosen === "creator",
+          locale,
         });
         router.push("/verificacao");
         return;
@@ -132,7 +136,7 @@ function AuthContent() {
       writeDemo({ onboarding: true, coachSeen: true });
       router.push(roleHome(user.role));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível entrar.");
+      setError(sessionErrorText(caught, errors, signUp ? page("registerFailed") : page("enterFailed")));
     } finally {
       setLoading(false);
     }
@@ -157,7 +161,7 @@ function AuthContent() {
       router.push(signUp ? "/onboarding" : roleHome(user.role));
     } catch (caught) {
       setSocial("");
-      setError(caught instanceof Error ? caught.message : "Não foi possível entrar.");
+      setError(sessionErrorText(caught, errors, page("enterFailed")));
     }
   }
 
@@ -187,35 +191,35 @@ function AuthContent() {
             {signUp && (
               <input
                 name="name"
-                aria-label="Seu nome"
-                placeholder="Seu nome"
+                aria-label={t("name")}
+                placeholder={t("name")}
                 autoComplete="name"
                 className="h-13 w-full rounded-full border border-black/8 bg-white/70 px-5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15 dark:bg-white/5"
               />
             )}
             <input
               name="email"
-              aria-label="Email ou CPF"
+              aria-label={t("identifier")}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder={signUp ? "E-mail" : "E-mail ou CPF"}
+              placeholder={signUp ? t("email") : t("identifierPlaceholder")}
               autoComplete="email"
               className="h-13 w-full rounded-full border border-black/8 bg-white/70 px-5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15 dark:bg-white/5"
             />
             <div className="relative">
               <input
                 name="password"
-                aria-label="Senha"
+                aria-label={t("password")}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 type={visible ? "text" : "password"}
-                placeholder="Senha"
+                placeholder={t("password")}
                 autoComplete={signUp ? "new-password" : "current-password"}
                 className="h-13 w-full rounded-full border border-black/8 bg-white/70 px-5 pr-13 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15 dark:bg-white/5"
               />
               <button
                 type="button"
-                aria-label={visible ? "Ocultar senha" : "Mostrar senha"}
+                aria-label={visible ? t("hidePassword") : t("showPassword")}
                 onClick={() => setVisible((value) => !value)}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-muted"
               >
@@ -303,7 +307,7 @@ function AuthContent() {
           </form>
 
           <div className="my-6 flex items-center gap-3 text-[11px] text-muted before:h-px before:flex-1 before:bg-black/10 after:h-px after:flex-1 after:bg-black/10">
-            ou entre com
+            {t("or")}
           </div>
 
           <div className="grid grid-cols-4 gap-2">
@@ -316,7 +320,7 @@ function AuthContent() {
               <button
                 key={item.label}
                 type="button"
-                aria-label={`Entrar com ${item.label}`}
+                aria-label={t("social", { provider: item.label })}
                 onClick={() => socialLogin(item.label)}
                 className="grid h-12 place-items-center rounded-full border border-black/8 bg-white/60 transition hover:-translate-y-0.5 hover:bg-white dark:bg-white/5 dark:hover:bg-white/10"
               >
@@ -348,7 +352,7 @@ function AuthContent() {
             <div className="absolute inset-0 rotate-[-6deg] rounded-[44px] bg-ink/10" />
             <div className="absolute inset-0 overflow-hidden rounded-[44px] border-[7px] border-white bg-white shadow-[0_30px_80px_rgba(32,32,39,.18)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={featuredPost.image} alt={`Conteúdo demo de ${featuredCreator.name}`} className="h-[68%] w-full object-cover" />
+              <img src={featuredPost.image} alt={page("demoAlt", { name: featuredCreator.name })} className="h-[68%] w-full object-cover" />
               <div className="p-5">
                 <div className="flex items-center gap-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -388,8 +392,8 @@ function AuthContent() {
             <div className="mx-auto grid size-16 place-items-center rounded-3xl bg-primary">
               <LoaderCircle className="size-7 animate-spin text-ink" />
             </div>
-            <p className="mt-5 text-lg font-extrabold">Entrando...</p>
-            <p className="mt-1 text-xs text-muted">Conectando com {social}</p>
+            <p className="mt-5 text-lg font-extrabold">{t("entering")}</p>
+            <p className="mt-1 text-xs text-muted">{t("connecting", { provider: social })}</p>
           </div>
         </div>
       )}

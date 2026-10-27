@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type TouchEvent } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 export type ViewerSlide = {
   id: string;
@@ -29,6 +30,8 @@ export function MediaViewer({
   onIndex: (index: number) => void;
   onClose: () => void;
 }) {
+  const t = useTranslations("media");
+  const closeLabel = useTranslations("dialog")("close");
   const slide = slides[index];
   const [zoomFor, setZoomFor] = useState({ id: "", zoom: 1 });
   const [fetched, setFetched] = useState<Resolved | null>(null);
@@ -111,7 +114,7 @@ export function MediaViewer({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={slide.caption || "Mídia"}
+      aria-label={slide.caption || t("fallbackLabel")}
       className="media-shield fixed inset-0 z-[80] flex flex-col bg-black text-white"
       onContextMenu={shield}
       onTouchStart={swipe}
@@ -121,17 +124,17 @@ export function MediaViewer({
         <p className="text-xs font-semibold tabular-nums text-white/80">
           {index + 1} / {slides.length}
         </p>
-        <button type="button" aria-label="Fechar" onClick={onClose} className="grid size-11 place-items-center rounded-full bg-white/10">
+        <button type="button" aria-label={closeLabel} onClick={onClose} className="grid size-11 place-items-center rounded-full bg-white/10">
           <X className="size-5" />
         </button>
       </div>
       <div className="relative min-h-0 flex-1">
         {slides.length > 1 && (
           <>
-            <button type="button" aria-label="Anterior" onClick={() => onIndex(Math.max(0, index - 1))} className="absolute left-2 top-1/2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/45">
+            <button type="button" aria-label={t("previous")} onClick={() => onIndex(Math.max(0, index - 1))} className="absolute left-2 top-1/2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/45">
               <ChevronLeft className="size-6" />
             </button>
-            <button type="button" aria-label="Próxima" onClick={() => onIndex(Math.min(slides.length - 1, index + 1))} className="absolute right-2 top-1/2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/45">
+            <button type="button" aria-label={t("next")} onClick={() => onIndex(Math.min(slides.length - 1, index + 1))} className="absolute right-2 top-1/2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/45">
               <ChevronRight className="size-6" />
             </button>
           </>
@@ -141,9 +144,9 @@ export function MediaViewer({
           style={zoom === 1 ? undefined : { transform: `scale(${zoom})` }}
         >
           {failed ? (
-            <p className="px-6 text-center text-sm text-white/80">Não foi possível abrir esta mídia.</p>
+            <p className="px-6 text-center text-sm text-white/80">{t("openFailed")}</p>
           ) : !resolved ? (
-            <p className="text-sm text-white/70">Abrindo…</p>
+            <p className="text-sm text-white/70">{t("opening")}</p>
           ) : slide.kind === "video" ? (
             <video
               key={resolved.src}
@@ -168,10 +171,10 @@ export function MediaViewer({
         <p className="line-clamp-1 text-xs text-white/75">{slide.caption}</p>
         {slide.kind === "image" && resolved && (
           <div className="flex shrink-0 gap-2">
-            <button type="button" aria-label="Diminuir" onClick={() => setZoom(zoom - 1)} className="grid size-11 place-items-center rounded-full bg-white/10">
+            <button type="button" aria-label={t("zoomOut")} onClick={() => setZoom(zoom - 1)} className="grid size-11 place-items-center rounded-full bg-white/10">
               <Minus className="size-4" />
             </button>
-            <button type="button" aria-label="Aumentar" onClick={() => setZoom(zoom + 1)} className="grid size-11 place-items-center rounded-full bg-white/10">
+            <button type="button" aria-label={t("zoomIn")} onClick={() => setZoom(zoom + 1)} className="grid size-11 place-items-center rounded-full bg-white/10">
               <Plus className="size-4" />
             </button>
           </div>

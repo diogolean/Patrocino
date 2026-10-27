@@ -47,6 +47,11 @@ yarn-error.log*
 # Creator photos live on the server at /opt/patrocino/media. Never commit them.
 /media/models/
 
+# Offline IP-country database, downloaded at image build or startup.
+/data/geoip/*.mmdb
+/data/geoip/*.mmdb.gz
+/data/geoip/*.source
+
 # vercel
 .vercel
 

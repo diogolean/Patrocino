@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import {
   BadRequestException,
   Body,
@@ -62,7 +63,7 @@ class PushController {
     if (!config) return { enabled: false as const };
     const user = await requireUser(authorization);
     const parsed = subscriptionSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const saved = await database.pushSubscription.upsert({
       where: { endpoint: parsed.data.endpoint },
       create: {
@@ -89,7 +90,7 @@ class PushController {
   async remove(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
     const user = await requireUser(authorization);
     const parsed = endpointSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const result = await database.pushSubscription.deleteMany({
       where: { endpoint: parsed.data.endpoint, userId: user.id },
     });

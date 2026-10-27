@@ -25,6 +25,7 @@ export function publishIncoming(items: IncomingMessage[]) {
 
 export const OPEN_THREAD_EVENT = "patrocino:open-thread";
 export const PREVIEW_SESSION_KEY = "patrocino-open-previews";
+export const DISMISSED_PREVIEW_KEY = "patrocino-dismissed-preview-ids";
 export const MESSAGE_TOAST_DURATION = Number.POSITIVE_INFINITY;
 
 export function requestOpenThread(item: IncomingMessage) {
@@ -135,14 +136,69 @@ export function decodeStickyPreviews(raw: string | null): IncomingMessage[] {
 const emptyPreviews: IncomingMessage[] = [];
 let stickyPreviews: IncomingMessage[] = emptyPreviews;
 let stickyHydrated = false;
+let storageBound = false;
 const stickyListeners = new Set<() => void>();
+
+export function undismissedPreviews<T extends { id: string }>(items: readonly T[], dismissed: ReadonlySet<string>) {
+  return items.filter((item) => !dismissed.has(item.id));
+}
+
+function readDismissedIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DISMISSED_PREVIEW_KEY) ?? "[]") as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((item): item is string => typeof item === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeDismissedIds(ids: ReadonlySet<string>) {
+  if (typeof window === "undefined") return;
+  const values = [...ids].slice(-200);
+  window.localStorage.setItem(DISMISSED_PREVIEW_KEY, JSON.stringify(values));
+}
+
+export function dismissedPreviewIds() {
+  return readDismissedIds();
+}
+
+function rememberDismissed(ids: readonly string[]) {
+  if (ids.length === 0) return;
+  const dismissed = readDismissedIds();
+  for (const id of ids) dismissed.add(id);
+  writeDismissedIds(dismissed);
+}
+
+function readStoredPreviews() {
+  if (typeof window === "undefined") return emptyPreviews;
+  const stored = window.localStorage.getItem(PREVIEW_SESSION_KEY) ?? window.sessionStorage.getItem(PREVIEW_SESSION_KEY);
+  const decoded = decodeStickyPreviews(stored);
+  if (decoded.length > 0 && !window.localStorage.getItem(PREVIEW_SESSION_KEY)) {
+    window.localStorage.setItem(PREVIEW_SESSION_KEY, JSON.stringify(decoded));
+  }
+  return decoded.length ? decoded : emptyPreviews;
+}
+
+function bindStorage() {
+  if (storageBound || typeof window === "undefined") return;
+  storageBound = true;
+  window.addEventListener("storage", (event) => {
+    if (event.key !== PREVIEW_SESSION_KEY && event.key !== DISMISSED_PREVIEW_KEY) return;
+    stickyHydrated = true;
+    stickyPreviews = readStoredPreviews();
+    stickyListeners.forEach((listener) => listener());
+  });
+}
 
 function rememberSticky(next: IncomingMessage[]) {
   stickyPreviews = next.length ? next : emptyPreviews;
   stickyHydrated = true;
   if (typeof window !== "undefined") {
-    if (stickyPreviews.length === 0) window.sessionStorage.removeItem(PREVIEW_SESSION_KEY);
-    else window.sessionStorage.setItem(PREVIEW_SESSION_KEY, JSON.stringify(stickyPreviews));
+    if (stickyPreviews.length === 0) window.localStorage.removeItem(PREVIEW_SESSION_KEY);
+    else window.localStorage.setItem(PREVIEW_SESSION_KEY, JSON.stringify(stickyPreviews));
+    window.sessionStorage.removeItem(PREVIEW_SESSION_KEY);
   }
   stickyListeners.forEach((listener) => listener());
 }
@@ -156,10 +212,10 @@ export function subscribeStickyPreviews(listener: () => void) {
 
 export function getStickyPreviews() {
   if (typeof window === "undefined") return emptyPreviews;
+  bindStorage();
   if (!stickyHydrated) {
     stickyHydrated = true;
-    stickyPreviews = decodeStickyPreviews(window.sessionStorage.getItem(PREVIEW_SESSION_KEY));
-    if (stickyPreviews.length === 0) stickyPreviews = emptyPreviews;
+    stickyPreviews = readStoredPreviews();
   }
   return stickyPreviews;
 }
@@ -169,12 +225,18 @@ export function getServerStickyPreviews() {
 }
 
 export function upsertStickyPreviews(items: readonly IncomingMessage[]) {
-  if (items.length === 0) return;
-  rememberSticky(stackMessagePreviews(getStickyPreviews(), items));
+  const fresh = undismissedPreviews(items, readDismissedIds());
+  if (fresh.length === 0) return;
+  rememberSticky(stackMessagePreviews(getStickyPreviews(), fresh));
 }
 
 export function dismissStickyPreview(key: string) {
-  rememberSticky(dismissMessagePreview(getStickyPreviews(), key));
+  const current = getStickyPreviews();
+  const removed = current.filter(
+    (item) => previewConversationKey(item) === key || item.creatorId === key || item.creatorUsername === key,
+  );
+  rememberDismissed(removed.map((item) => item.id));
+  rememberSticky(dismissMessagePreview(current, key));
 }
 
 export function syncStickyWithUnread(unread: readonly { creatorId: string; creatorUsername?: string | null }[]) {

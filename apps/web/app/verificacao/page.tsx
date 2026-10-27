@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, Mail, ShieldCheck } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Button, Logo } from "@mimelux/ui";
 import { contentMode } from "@mimelux/core";
 import { mockDelay, writeDemo } from "@/lib/demo-store";
@@ -10,6 +11,7 @@ import { getSessionSnapshot } from "@/lib/session";
 
 export default function VerificationPage() {
   const router = useRouter();
+  const t = useTranslations("verify");
   const [code, setCode] = useState(["2", "2", "4", "4", "8", "8"]);
   const [age, setAge] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -18,21 +20,21 @@ export default function VerificationPage() {
   const label = useMemo(
     () =>
       contentMode === "adult"
-        ? "Plataforma 18+"
+        ? t("adult")
         : contentMode === "hybrid"
-          ? "Modo de conteúdo híbrido"
-          : "Conteúdo geral",
-    [],
+          ? t("hybrid")
+          : t("general"),
+    [t],
   );
 
   async function verify(event: FormEvent) {
     event.preventDefault();
     if (code.join("") !== "224488") {
-      setError("Código inválido. Para o demo, use 224488.");
+      setError(t("invalidCode"));
       return;
     }
     if (needsAge && !age) {
-      setError("Confirme que você tem 18 anos ou mais para continuar.");
+      setError(t("ageRequired"));
       return;
     }
     setError("");
@@ -50,7 +52,7 @@ export default function VerificationPage() {
         <button
           onClick={() => router.back()}
           className="relative mb-8 grid size-10 place-items-center rounded-full border border-black/10 bg-white/50 transition hover:bg-white dark:bg-white/5"
-          aria-label="Voltar"
+          aria-label={t("back")}
         >
           <ArrowLeft className="size-4" />
         </button>
@@ -59,18 +61,16 @@ export default function VerificationPage() {
           <div className="mt-9 grid size-14 place-items-center rounded-2xl bg-primary/20 text-primary-strong">
             <Mail className="size-6" />
           </div>
-          <p className="mt-6 text-xs font-bold uppercase tracking-[.2em] text-primary-strong">Só mais um passo</p>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-[-.04em]">Verifique seu e-mail</h1>
-          <p className="mt-3 max-w-md text-sm leading-6 text-muted">
-            Enviamos um código para o seu e-mail. Para esta demonstração, ele já está preenchido.
-          </p>
+          <p className="mt-6 text-xs font-bold uppercase tracking-[.2em] text-primary-strong">{t("eyebrow")}</p>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-[-.04em]">{t("title")}</h1>
+          <p className="mt-3 max-w-md text-sm leading-6 text-muted">{t("body")}</p>
 
           <form onSubmit={verify} className="mt-8">
             <div className="grid grid-cols-6 gap-2">
               {code.map((digit, index) => (
                 <input
                   key={index}
-                  aria-label={`Dígito ${index + 1}`}
+                  aria-label={t("digit", { index: index + 1 })}
                   inputMode="numeric"
                   maxLength={1}
                   value={digit}
@@ -95,18 +95,16 @@ export default function VerificationPage() {
                 <span>
                   <span className="flex items-center gap-1.5 text-sm font-bold">
                     <ShieldCheck className="size-4 text-primary-strong" />
-                    Confirmo que tenho 18 anos ou mais
+                    {t("ageTitle")}
                   </span>
-                  <span className="mt-1 block text-[11px] leading-5 text-muted">
-                    {label}. Essa regra é configurável por ambiente e ainda é uma decisão aberta do produto.
-                  </span>
+                  <span className="mt-1 block text-[11px] leading-5 text-muted">{t("ageBody", { label })}</span>
                 </span>
               </label>
             )}
 
             {error && <p className="mt-4 text-xs font-semibold text-red-600">{error}</p>}
             <Button type="submit" size="lg" className="mt-6 w-full" disabled={loading}>
-              {loading ? "Verificando..." : <><CheckCircle2 className="size-4" /> Verificar e continuar</>}
+              {loading ? t("checking") : <><CheckCircle2 className="size-4" /> {t("submit")}</>}
             </Button>
           </form>
         </div>

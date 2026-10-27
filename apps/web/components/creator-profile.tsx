@@ -17,7 +17,7 @@ import {
   Star,
   Video,
 } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Button, Pill, PremiumModal } from "@mimelux/ui";
 import type { Creator, Post } from "@/lib/gateway";
 import { brl, compact, plans, reviewsFor } from "@/lib/gateway";
@@ -28,6 +28,17 @@ import type { ProfileOffers } from "@/lib/creator-offers";
 import { PROFILE_GALLERY_COLUMNS, buildProfileGallery, formatActiveUntil, formatDuration, profileVideoCount, renewPlan } from "@/lib/gallery";
 import { readDemo, writeDemo, type DemoReview, type DemoSpecialRequest } from "@/lib/demo-store";
 import { toast } from "sonner";
+import { apiErrorText } from "@/lib/api-error";
+
+const requestStatusKey = {
+  requested: "statusRequested",
+  quoted: "statusQuoted",
+  accepted: "statusAccepted",
+  paid: "statusPaid",
+  delivered: "statusDelivered",
+  declined: "statusDeclined",
+  refunded: "statusRefunded",
+} as const;
 
 export function CreatorProfile({
   creator,
@@ -45,7 +56,9 @@ export function CreatorProfile({
   openSpecial?: boolean;
 }) {
   const router = useRouter();
+  const locale = useLocale();
   const t = useTranslations("profile");
+  const errors = useTranslations("errors");
   const [subscribing, setSubscribing] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [unlocks, setUnlocks] = useState<string[]>([]);
@@ -131,7 +144,7 @@ export function CreatorProfile({
 
   function submitSpecialRequest() {
     if (requestDescription.trim().length < 10) {
-      toast.error("Conte um pouco mais sobre o seu pedido.");
+      toast.error(t("requestTooShort"));
       return;
     }
     const state = readDemo();
@@ -152,12 +165,12 @@ export function CreatorProfile({
     setRequestOpen(false);
     setRequestDescription("");
     setRequestBudget("");
-    toast.success("Pedido especial enviado em modo demo.");
+    toast.success(t("requestSent"));
   }
 
   function submitReview() {
     if (!subscribed || reviewBody.trim().length < 4) {
-      toast.error("Escreva um comentário curto sobre a experiência.");
+      toast.error(t("reviewTooShort"));
       return;
     }
     const state = readDemo();
@@ -167,14 +180,14 @@ export function CreatorProfile({
         {
           id: `review-local-${Date.now()}`,
           creatorId: creator.id,
-          authorName: "você",
+          authorName: t("you"),
           rating: reviewRating,
           body: reviewBody.trim(),
         },
       ],
     });
     setReviewBody("");
-    toast.success("Avaliação salva neste navegador.");
+    toast.success(t("reviewSaved"));
   }
 
   const visibleReviews = [...reviewsFor(creator.id), ...extraReviews];
@@ -215,7 +228,7 @@ export function CreatorProfile({
 
   const memberSubscribed = subscribed || serverSubscribed;
   const until = formatActiveUntil(activeUntil);
-  const activeLabel = until ? `Assinatura ativa até ${until}` : t("active");
+  const activeLabel = until ? t("activeUntil", { date: until }) : t("active");
   const showCard = stripeOn && !memberSubscribed;
   const databaseRenew = databasePlans ? renewPlan(databasePlans) : null;
   const renewal = memberSubscribed
@@ -281,12 +294,12 @@ export function CreatorProfile({
       body: JSON.stringify({ creatorId: creator.username, planId: "monthly" }),
     })
       .then(async (response) => {
-        const data = (await response.json().catch(() => ({}))) as { url?: string; message?: string };
+        const data = (await response.json().catch(() => ({}))) as { url?: string; code?: unknown; message?: unknown };
         if (response.status === 401) {
           router.push("/auth?route=sign-in");
           return;
         }
-        if (!response.ok) throw new Error(data.message || "Não foi possível assinar.");
+        if (!response.ok) throw new Error(apiErrorText(data, errors, t("subscribeFailed")));
         if (data.url) {
           window.location.href = data.url;
           return;
@@ -294,7 +307,7 @@ export function CreatorProfile({
         router.push("/assinaturas");
       })
       .catch((caught: unknown) => {
-        toast.error(caught instanceof Error ? caught.message : "Não foi possível assinar.");
+        toast.error(caught instanceof Error && caught.message ? caught.message : t("subscribeFailed"));
       })
       .finally(() => setSubscribing(false));
   }
@@ -381,7 +394,7 @@ export function CreatorProfile({
               className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-border px-2.5 text-[11px] font-semibold leading-none disabled:opacity-50"
             >
               {subscribing ? <LoaderCircle className="size-3 animate-spin" /> : null}
-              Assinar com cartão
+              {t("subscribeCard")}
             </button>
           )}
         </div>
@@ -392,7 +405,7 @@ export function CreatorProfile({
               {renewal && (
                 <>
                   <button type="button" aria-expanded={renewOpen} onClick={() => setRenewOpen((value) => !value)} className="flex h-7 w-full items-center justify-between text-xs font-medium text-muted">
-                    Estender assinatura
+                    {t("extend")}
                     <ChevronDown className={`size-3.5 transition motion-reduce:transition-none ${renewOpen ? "rotate-180" : ""}`} />
                   </button>
                   {renewOpen && (
@@ -405,7 +418,7 @@ export function CreatorProfile({
               )}
             </>
           ) : databasePlans && databasePlans.length === 0 ? (
-            <p className="text-sm text-muted">Preços indisponíveis no momento.</p>
+            <p className="text-sm text-muted">{t("pricesUnavailable")}</p>
           ) : primaryPlan ? (
             <Link href={databaseHref(primaryPlan.id)} className={`flex h-11 w-full items-center justify-between rounded-full bg-gradient-to-r from-primary to-primary-strong/90 px-5 text-sm font-semibold text-ink ${planGlow}`}>
               <span>{primaryPlan.months === 1 ? `1 ${t("month")}` : primaryPlan.name}</span>
@@ -462,7 +475,7 @@ export function CreatorProfile({
                   ))
                 : (
                     <Link href={`/checkout?kind=pack&id=summer-pack&creator=${creator.id}&return=/creator/${creator.username}`} className={`flex h-10 w-full items-center justify-between rounded-full border border-accent/40 bg-gradient-to-r from-accent/15 to-primary/10 px-5 text-sm font-semibold ${planGlow}`}>
-                      <span>Pacote Bastidores</span>
+                      <span>{t("packName")}</span>
                       <span>{brl(4_990)}</span>
                     </Link>
                   )}
@@ -476,13 +489,13 @@ export function CreatorProfile({
 
       {requests.length > 0 && (
         <section className="mt-5 rounded-[28px] border border-border bg-elevated p-5">
-          <h2 className="text-sm font-semibold">Seus pedidos especiais</h2>
+          <h2 className="text-sm font-semibold">{t("yourRequests")}</h2>
           <div className="mt-4 space-y-3">
             {requests.map((request) => (
               <article key={request.id} className="rounded-[20px] bg-surface/70 p-4">
-                <div className="flex items-start justify-between gap-3"><p className="line-clamp-2 text-xs font-semibold">{request.description}</p><Pill>{request.status}</Pill></div>
+                <div className="flex items-start justify-between gap-3"><p className="line-clamp-2 text-xs font-semibold">{request.description}</p><Pill>{request.status in requestStatusKey ? t(requestStatusKey[request.status]) : request.status}</Pill></div>
                 {request.status === "quoted" && request.quotedPriceCents && (
-                  <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs font-semibold">Contraproposta: {brl(request.quotedPriceCents)}</p><Link href={`/checkout?kind=special_request&id=${request.id}&creator=${creator.id}&amount=${request.quotedPriceCents}&return=/creator/${creator.username}`}><Button size="sm">Aceitar e simular pagamento</Button></Link></div>
+                  <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs font-semibold">{t("counteroffer", { price: brl(request.quotedPriceCents) })}</p><Link href={`/checkout?kind=special_request&id=${request.id}&creator=${creator.id}&amount=${request.quotedPriceCents}&return=/creator/${creator.username}`}><Button size="sm">{t("acceptPay")}</Button></Link></div>
                 )}
               </article>
             ))}
@@ -516,10 +529,10 @@ export function CreatorProfile({
             <div key={post.id} data-testid="profile-post" data-locked={locked} onContextMenu={(event) => event.preventDefault()} className={`clickable media-shield group relative aspect-[3/4] overflow-hidden rounded-[16px] ${post.playback ? "bg-black" : "bg-surface"}`}>
               <PostVisual post={post} locked={locked} testId={post.playback ? "profile-video" : undefined} autoPlay />
               {!locked && !post.playback && (
-                <button type="button" aria-label="Abrir foto" className="absolute inset-0 z-[2]" onClick={() => openSlides(post.id)} />
+                <button type="button" aria-label={t("openPhoto")} className="absolute inset-0 z-[2]" onClick={() => openSlides(post.id)} />
               )}
               {!locked && post.playback && (
-                <button type="button" aria-label="Abrir vídeo" className="absolute right-2 top-2 z-10 grid size-8 place-items-center rounded-full bg-black/50 text-white" onClick={() => openSlides(post.id)}>
+                <button type="button" aria-label={t("openVideo")} className="absolute right-2 top-2 z-10 grid size-8 place-items-center rounded-full bg-black/50 text-white" onClick={() => openSlides(post.id)}>
                   <Maximize2 className="size-3.5" />
                 </button>
               )}
@@ -530,7 +543,7 @@ export function CreatorProfile({
                 >
                   <span>
                     <span className="mx-auto grid size-8 place-items-center rounded-full bg-black/40"><LockKeyhole className="size-3.5" /></span>
-                    <span className="mt-2 block text-[10px] font-semibold">{post.visibility === "subscriber" ? "Assine para desbloquear" : "Desbloquear conteúdo"}</span>
+                    <span className="mt-2 block text-[10px] font-semibold">{post.visibility === "subscriber" ? t("subscribeUnlock") : t("unlockContent")}</span>
                   </span>
                 </Link>
               )}
@@ -545,14 +558,14 @@ export function CreatorProfile({
             <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary-strong">{t("reviews")}</p>
             <h2 className="mt-1 text-lg font-semibold">{t("reviewers")}</h2>
           </div>
-          <p data-testid="profile-rating" className="text-sm font-semibold">{averageRating.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</p>
+          <p data-testid="profile-rating" className="text-sm font-semibold">{averageRating.toLocaleString(locale, { maximumFractionDigits: 1 })}</p>
         </div>
         <div className="mt-4 space-y-3">
           {visibleReviews.map((review) => (
             <article key={review.id} data-testid="review-card" className="rounded-[20px] bg-surface/70 p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold">{review.authorName}</p>
-                <p className="text-sm font-semibold text-primary-strong" aria-label={`${review.rating} de 5`}>{"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}</p>
+                <p className="text-sm font-semibold text-primary-strong" aria-label={t("ratingOf", { rating: review.rating })}>{"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}</p>
               </div>
               <p className="mt-2 text-sm leading-6">{review.body}</p>
             </article>
@@ -562,7 +575,7 @@ export function CreatorProfile({
           <form data-testid="review-form" className="mt-4" onSubmit={(event) => { event.preventDefault(); submitReview(); }}>
             <div className="flex gap-1">
               {[1, 2, 3, 4, 5].map((value) => (
-                <button key={value} type="button" aria-label={`Nota ${value}`} onClick={() => setReviewRating(value)}>
+                <button key={value} type="button" aria-label={t("score", { value })} onClick={() => setReviewRating(value)}>
                   <Star className={`size-5 ${value <= reviewRating ? "fill-primary text-primary-strong" : "text-muted"}`} />
                 </button>
               ))}
@@ -575,21 +588,21 @@ export function CreatorProfile({
         )}
       </section>
 
-      <PremiumModal open={requestOpen} onClose={() => setRequestOpen(false)} title={t("special")} description="Descreva sua ideia. O criador poderá aceitar, recusar ou enviar uma contraproposta. Tudo aqui é simulado.">
-        <label className="block text-[10px] font-bold text-muted">Descrição
-          <textarea value={requestDescription} onChange={(event) => setRequestDescription(event.target.value)} className="mt-2 min-h-28 w-full rounded-2xl border border-border bg-surface/60 p-3 text-xs outline-none focus:ring-2 focus:ring-primary" placeholder="Conte o que você gostaria de receber..." />
+      <PremiumModal open={requestOpen} onClose={() => setRequestOpen(false)} title={t("special")} description={t("requestDescription")}>
+        <label className="block text-[10px] font-bold text-muted">{t("description")}
+          <textarea value={requestDescription} onChange={(event) => setRequestDescription(event.target.value)} className="mt-2 min-h-28 w-full rounded-2xl border border-border bg-surface/60 p-3 text-xs outline-none focus:ring-2 focus:ring-primary" placeholder={t("requestPlaceholder")} />
         </label>
-        <label className="mt-4 block text-[10px] font-bold text-muted">Orçamento opcional (R$)
-          <input value={requestBudget} onChange={(event) => setRequestBudget(event.target.value)} type="number" min="1" className="mt-2 h-11 w-full rounded-2xl border border-border bg-surface/60 px-3 text-xs outline-none focus:ring-2 focus:ring-primary" placeholder="150,00" />
+        <label className="mt-4 block text-[10px] font-bold text-muted">{t("budgetLabel")}
+          <input value={requestBudget} onChange={(event) => setRequestBudget(event.target.value)} type="number" min="1" className="mt-2 h-11 w-full rounded-2xl border border-border bg-surface/60 px-3 text-xs outline-none focus:ring-2 focus:ring-primary" placeholder={t("budgetPlaceholder")} />
         </label>
-        <Button className="mt-5 w-full" onClick={submitSpecialRequest}>Enviar pedido demo</Button>
+        <Button className="mt-5 w-full" onClick={submitSpecialRequest}>{t("sendRequest")}</Button>
       </PremiumModal>
-      <PremiumModal open={subscribePrompt} onClose={() => setSubscribePrompt(false)} title="Assine para assistir" description="Este vídeo fica disponível depois da assinatura. A compra avulsa é só para quem já assina.">
+      <PremiumModal open={subscribePrompt} onClose={() => setSubscribePrompt(false)} title={t("watchTitle")} description={t("watchBody")}>
         <Link href={primaryPlan ? databaseHref(primaryPlan.id) : planHref(1)} className="inline-flex h-11 w-full items-center justify-center rounded-full bg-primary text-sm font-semibold text-ink">
-          Ver assinatura
+          {t("seePlan")}
         </Link>
       </PremiumModal>
-      <PremiumModal open={Boolean(purchase)} onClose={() => setPurchase(null)} title={purchase?.caption || "Vídeo"} description="O pagamento libera este vídeo para assistir aqui.">
+      <PremiumModal open={Boolean(purchase)} onClose={() => setPurchase(null)} title={purchase?.caption || t("videoFallback")} description={t("purchaseBody")}>
         {purchase && (
           <div className="space-y-3">
             <p className="text-sm font-semibold">
@@ -597,7 +610,7 @@ export function CreatorProfile({
               {brl(purchase.priceCents)}
             </p>
             <Link href={videoCheckout(purchase)} className="inline-flex h-11 w-full items-center justify-center rounded-full bg-primary text-sm font-semibold text-ink">
-              Desbloquear por {brl(purchase.priceCents)}
+              {t("unlock", { price: brl(purchase.priceCents) })}
             </Link>
           </div>
         )}

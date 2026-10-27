@@ -44,19 +44,36 @@ export function isPushEndpoint(value: string) {
   }
 }
 
+const pushFallback: Record<string, string> = {
+  "pt-BR": "Nova mensagem",
+  en: "New message",
+  es: "Mensaje nuevo",
+  de: "Neue Nachricht",
+  fr: "Nouveau message",
+};
+
+export function pushPreviewFallback(locale?: string | null): string {
+  const direct = locale ? pushFallback[locale] : undefined;
+  if (direct) return direct;
+  if (locale?.toLowerCase().startsWith("pt")) return "Nova mensagem";
+  const short = locale?.slice(0, 2);
+  return (short && pushFallback[short]) || "Nova mensagem";
+}
+
 export function buildMessagePushPayload(input: {
   creatorName: string;
   body: string;
   creatorId: string;
   creatorUsername?: string | null;
   icon?: string | null;
+  locale?: string | null;
 }): PushPayload {
   const icon = input.icon && input.icon.length <= 500 ? input.icon : "/icons/icon-192.png";
   const title = input.creatorName.trim() || "Patrocino";
   const creatorKey = input.creatorUsername?.trim() || input.creatorId;
   return {
     title,
-    body: messagePreview(input.body) || "Nova mensagem",
+    body: messagePreview(input.body) || pushPreviewFallback(input.locale),
     url: `/chat/${creatorKey}`,
     icon,
     tag: `chat-${input.creatorId}`,

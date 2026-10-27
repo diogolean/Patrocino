@@ -2,6 +2,8 @@ FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/* && corepack enable
 WORKDIR /app
 COPY . .
+ENV GEOIP_DB_PATH=/app/data/geoip/country.mmdb
+RUN node scripts/download-geoip.mjs || echo "geoip download failed; startup will retry"
 ARG NEXT_PUBLIC_API_URL=/v1
 ARG NEXT_PUBLIC_CONTENT_MODE=hybrid
 ARG NEXT_PUBLIC_DEMO_MODE=true

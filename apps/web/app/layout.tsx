@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Poppins } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
+import { PersistLocaleCookie } from "@/components/persist-locale";
 import { Providers } from "@/components/providers";
 import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
@@ -63,6 +64,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className={`${poppins.variable} min-h-full antialiased`}>
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Providers>
+            <PersistLocaleCookie />
             {children}
             <SiteFooter />
           </Providers>

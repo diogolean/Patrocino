@@ -74,11 +74,11 @@ export function resolveRequestLocale(input: {
 }): AppLocale {
   const fromCookie = resolveLocale(input.cookie);
   if (fromCookie) return fromCookie;
-  const fromLanguage = resolveAcceptLanguage(input.acceptLanguage);
-  if (fromLanguage) return fromLanguage;
   const country =
     normalizeCountry(input.cfIpCountry) ??
     normalizeCountry(input.xCountry) ??
     normalizeCountry((input.lookupCountry ?? lookupCountry)(input.ip ?? null));
-  return localeFromCountry(country) ?? "pt-BR";
+  const fromCountry = localeFromCountry(country);
+  if (fromCountry) return fromCountry;
+  return resolveAcceptLanguage(input.acceptLanguage) ?? "pt-BR";
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
+import { apiErrorText } from "@/lib/api-error";
 
 type Step = {
   position: number;
@@ -21,11 +23,13 @@ type Sequence = {
   videos?: Video[];
 };
 
-async function readJson<T>(response: Response): Promise<T & { message?: string }> {
-  return (await response.json().catch(() => ({}))) as T & { message?: string };
+async function readJson<T>(response: Response): Promise<T & { code?: unknown; message?: unknown }> {
+  return (await response.json().catch(() => ({}))) as T & { code?: unknown; message?: unknown };
 }
 
 export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
+  const t = useTranslations("studio");
+  const errors = useTranslations("errors");
   const [resolvedId, setResolvedId] = useState(creatorId ?? "");
   const [enabled, setEnabled] = useState(true);
   const [steps, setSteps] = useState<Step[]>([]);
@@ -48,7 +52,7 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
           const studio = await readJson<{ creatorId?: string }>(me);
           if (!me.ok || !studio.creatorId) {
             if (!cancelled) {
-              setError(studio.message || "Não foi possível abrir a sequência.");
+              setError(apiErrorText(studio, errors, t("seqOpenFailed")));
               setLoading(false);
             }
             return;
@@ -59,7 +63,7 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
         const data = await readJson<Sequence>(response);
         if (cancelled) return;
         if (!response.ok || !data.creatorId) {
-          setError(data.message || "Não foi possível abrir a sequência.");
+          setError(apiErrorText(data, errors, t("seqOpenFailed")));
           setLoading(false);
           return;
         }
@@ -74,7 +78,7 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [creatorId]);
+  }, [creatorId, errors, t]);
 
   function updateStep(position: number, patch: Partial<Step>) {
     setSteps((current) => current.map((step) => (step.position === position ? { ...step, ...patch } : step)));
@@ -103,12 +107,12 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
     const data = await readJson<Sequence>(response);
     setSaving(false);
     if (!response.ok || !Array.isArray(data.steps)) {
-      setError(data.message || "Não foi possível salvar a sequência.");
+      setError(apiErrorText(data, errors, t("seqSaveFailed")));
       return;
     }
     setEnabled(data.enabled);
     setSteps(data.steps.map((step) => ({ ...step, recurring: step.recurring === true })));
-    setNotice("Sequência salva.");
+    setNotice(t("seqSaved"));
   }
 
   if (loading) return <div className="mt-4 h-40 rounded-[22px] skeleton" />;
@@ -118,17 +122,17 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
     <div data-testid="chat-sequence" className="mt-4 space-y-4">
       <label className="flex items-center gap-3 text-sm font-bold">
         <input data-testid="sequence-enabled" type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
-        Enviar a sequência para novas assinaturas
+        {t("seqEnable")}
       </label>
       {steps.length === 0 ? (
-        <p className="rounded-[22px] bg-surface/60 px-4 py-6 text-sm text-muted dark:bg-white/5">Nenhum passo nesta sequência.</p>
+        <p className="rounded-[22px] bg-surface/60 px-4 py-6 text-sm text-muted dark:bg-white/5">{t("seqEmpty")}</p>
       ) : (
         steps.map((step, index) => (
           <article key={step.position} data-testid="sequence-step" className="rounded-[22px] bg-surface/60 p-4 dark:bg-white/5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-extrabold">{step.recurring ? `Recorrente ${index + 1}` : index === 0 ? "Boas-vindas" : `Passo ${index + 1}`}</p>
+              <p className="text-xs font-extrabold">{step.recurring ? t("seqRecurring", { index: index + 1 }) : index === 0 ? t("seqWelcome") : t("seqStep", { index: index + 1 })}</p>
               <button type="button" className="text-[10px] font-bold text-muted" onClick={() => setSteps((current) => current.filter((item) => item.position !== step.position))}>
-                Remover
+                {t("seqRemove")}
               </button>
             </div>
             <label className="mt-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-muted">
@@ -137,10 +141,10 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
                 checked={step.recurring}
                 onChange={(event) => updateStep(step.position, { recurring: event.target.checked })}
               />
-              Repete enquanto a assinatura estiver ativa
+              {t("seqRepeat")}
             </label>
             <label className="mt-3 block text-[10px] font-bold uppercase tracking-wide text-muted">
-              {step.recurring ? "Intervalo (minutos)" : "Espera (minutos)"}
+              {step.recurring ? t("seqInterval") : t("seqDelay")}
               <input
                 type="number"
                 min={0}
@@ -150,10 +154,10 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
               />
             </label>
             {step.recurring && (
-              <p className="mt-1 text-[10px] text-muted">O intervalo da rotação é a espera do primeiro passo recorrente. Os textos seguintes se alternam, sem repetir o anterior.</p>
+              <p className="mt-1 text-[10px] text-muted">{t("seqRotation")}</p>
             )}
             <label className="mt-3 block text-[10px] font-bold uppercase tracking-wide text-muted">
-              Texto
+              {t("seqText")}
               <textarea
                 value={step.bodyTemplate}
                 onChange={(event) => updateStep(step.position, { bodyTemplate: event.target.value })}
@@ -161,9 +165,9 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
                 className="mt-1 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold normal-case tracking-normal text-foreground outline-none"
               />
             </label>
-            <p className="mt-1 text-[10px] text-muted">{"Variáveis: {fanName}, {creatorName}, {videoTitle}, {price}, {videosUrl}, {requestUrl}"}</p>
+            <p className="mt-1 text-[10px] text-muted">{t("seqVariables")}</p>
             <label className="mt-3 block text-[10px] font-bold uppercase tracking-wide text-muted">
-              Vídeo
+              {t("seqVideo")}
               <select
                 value={step.offerMode === "post" ? `post:${step.postId ?? ""}` : step.offerMode}
                 onChange={(event) => {
@@ -173,8 +177,8 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
                 }}
                 className="mt-1 h-11 w-full rounded-full border border-border bg-background px-4 text-sm font-semibold normal-case tracking-normal text-foreground outline-none"
               >
-                <option value="none">Nenhum</option>
-                <option value="latest">Último vídeo ainda não comprado</option>
+                <option value="none">{t("seqNone")}</option>
+                <option value="latest">{t("seqLatest")}</option>
                 {videos.map((video) => (
                   <option key={video.id} value={`post:${video.id}`}>
                     {video.title}
@@ -195,7 +199,7 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
               {
                 position: current.reduce((max, step) => Math.max(max, step.position), -1) + 1,
                 delayMinutes: 60,
-                bodyTemplate: "{fanName}, olha a aba Vídeos: {videosUrl}. Se quiser algo só seu, abre um pedido especial: {requestUrl}.",
+                bodyTemplate: t("seqTemplate"),
                 offerMode: "latest",
                 postId: null,
                 recurring: false,
@@ -203,10 +207,10 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
             ])
           }
         >
-          Adicionar passo
+          {t("seqAdd")}
         </Button>
         <Button type="button" data-testid="sequence-save" onClick={() => void save()} disabled={saving}>
-          {saving ? "Salvando..." : "Salvar sequência"}
+          {saving ? t("seqSaving") : t("seqSave")}
         </Button>
       </div>
       {error && <p className="text-sm text-muted">{error}</p>}

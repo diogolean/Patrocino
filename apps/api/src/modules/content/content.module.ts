@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, HttpCode, Module, Param, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { database } from "@mimelux/db/runtime";
@@ -30,16 +31,16 @@ class ContentController {
   async create(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
     const user = await requireUser(authorization);
     const parsed = createPostSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const rows = await database.media.findMany({
       where: { id: { in: parsed.data.mediaIds } },
       select: { post: { select: { creatorId: true, deletedAt: true } } },
     });
     if (rows.length !== parsed.data.mediaIds.length || rows.some((row) => !row.post || row.post.deletedAt)) {
-      throw new BadRequestException("Unknown media");
+      throw apiError(400, "UNKNOWN_MEDIA", "Unknown media");
     }
     const creatorIds = new Set(rows.map((row) => row.post?.creatorId).filter((id): id is string => Boolean(id)));
-    if (creatorIds.size !== 1) throw new ForbiddenException("Creator only");
+    if (creatorIds.size !== 1) throw apiError(403, "CREATOR_ONLY", "Creator only");
     await assertOwnsCreator(user, [...creatorIds][0] ?? "");
     return { input: parsed.data, code: "NOT_IMPLEMENTED" };
   }

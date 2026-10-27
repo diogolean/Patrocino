@@ -10,6 +10,7 @@ import {
   MESSAGE_TOAST_DURATION,
   activeCreatorKey,
   dismissStickyPreview,
+  dismissedPreviewIds,
   freshMessages,
   getDockCreator,
   getStickyPreviews,
@@ -48,11 +49,13 @@ export function MessageAlerts() {
   const pathname = usePathname();
   const t = useTranslations("notifications");
   const dock = useTranslations("dock");
+  const errors = useTranslations("errors");
   const pathnameRef = useRef(pathname);
   const seen = useRef(new Set<string>());
   const primed = useRef(false);
   const previewFallback = t("previewFallback");
   const closeLabel = dock("close");
+  const creatorFallback = errors("CREATOR_FALLBACK");
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -75,6 +78,8 @@ export function MessageAlerts() {
       syncStickyWithUnread(data.items);
       const { visible, opened } = freshMessages(data.items, seen.current, openKey);
       if (!primed.current) {
+        const pending = visible.filter((item) => !dismissedPreviewIds().has(item.id));
+        if (pending.length > 0) upsertStickyPreviews(pending);
         for (const item of data.items) seen.current.add(item.id);
         primed.current = true;
         setUnreadCount(data.count);
@@ -143,11 +148,11 @@ export function MessageAlerts() {
                   <img src={item.creatorAvatar} alt="" className="size-12 shrink-0 rounded-full object-cover" />
                 ) : (
                   <span className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-base font-black text-ink">
-                    {item.creatorName.slice(0, 1).toUpperCase()}
+                    {(item.creatorName || creatorFallback).slice(0, 1).toUpperCase()}
                   </span>
                 )}
                 <span className="min-w-0">
-                  <span className="block truncate text-base font-extrabold text-foreground">{item.creatorName}</span>
+                  <span className="block truncate text-base font-extrabold text-foreground">{item.creatorName || creatorFallback}</span>
                   <span className="mt-1 block text-[15px] leading-5 text-muted">{item.preview || previewFallback}</span>
                 </span>
               </button>
@@ -167,7 +172,7 @@ export function MessageAlerts() {
     };
     sync();
     return subscribeStickyPreviews(sync);
-  }, [closeLabel, previewFallback]);
+  }, [closeLabel, creatorFallback, previewFallback]);
 
   return null;
 }

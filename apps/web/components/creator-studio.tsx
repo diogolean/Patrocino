@@ -1,7 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
+import { apiErrorText } from "@/lib/api-error";
 
 type Profile = {
   name: string;
@@ -37,16 +39,18 @@ function centsFromReais(value: string) {
   return Math.round(amount * 100);
 }
 
-async function readJson<T>(response: Response): Promise<T & { message?: string }> {
-  return (await response.json().catch(() => ({}))) as T & { message?: string };
+async function readJson<T>(response: Response): Promise<T & { code?: unknown; message?: unknown }> {
+  return (await response.json().catch(() => ({}))) as T & { code?: unknown; message?: unknown };
 }
 
 export function CreatorStudio({ creatorId }: { creatorId?: string }) {
+  const t = useTranslations("studio");
+  const errors = useTranslations("errors");
   const [studio, setStudio] = useState<Studio | null>(null);
   const [profile, setProfile] = useState<Profile>({ name: "", username: "", bio: "", city: "" });
   const [plans, setPlans] = useState<Plan[]>([]);
   const [drafts, setDrafts] = useState<Record<string, { name: string; price: string; discount: string; months: string }>>({});
-  const [nextPlan, setNextPlan] = useState({ name: "Mensal", price: "", discount: "0", months: "1" });
+  const [nextPlan, setNextPlan] = useState({ name: t("defaultPlanName"), price: "", discount: "0", months: "1" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -64,7 +68,7 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
         if (cancelled) return;
         if (!response.ok || !data.creatorId) {
           setStudio(null);
-          setError(data.message || "Não foi possível abrir o estúdio.");
+          setError(apiErrorText(data, errors, t("openFailed")));
           setLoading(false);
           return;
         }
@@ -91,7 +95,7 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [creatorId]);
+  }, [creatorId, errors, t]);
 
   function draftOf(plan: Plan) {
     return drafts[plan.id] ?? { name: plan.name, price: reais(plan.priceCents), discount: String(plan.discountPercent), months: String(plan.durationMonths) };
@@ -111,11 +115,11 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
     const data = await readJson<{ profile: Profile }>(response);
     setSaving(false);
     if (!response.ok || !data.profile) {
-      setError(data.message || "Não foi possível salvar o perfil.");
+      setError(apiErrorText(data, errors, t("profileSaveFailed")));
       return;
     }
     setProfile(data.profile);
-    setNotice("Perfil atualizado.");
+    setNotice(t("profileUpdated"));
   }
 
   async function savePlan(plan: Plan) {
@@ -125,7 +129,7 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
     const durationMonths = Number(draft.months);
     const discountPercent = Number(draft.discount);
     if (!draft.name.trim() || priceCents === null || !Number.isInteger(durationMonths) || durationMonths < 1) {
-      setError("Informe nome, preço e duração válidos.");
+      setError(t("invalidPlan"));
       return;
     }
     setSaving(true);
@@ -144,7 +148,7 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
     const data = await readJson<{ plan: Plan }>(response);
     setSaving(false);
     if (!response.ok || !data.plan) {
-      setError(data.message || "Não foi possível salvar o plano.");
+      setError(apiErrorText(data, errors, t("planSaveFailed")));
       return;
     }
     setPlans((current) => current.map((item) => (item.id === plan.id ? data.plan : item)));
@@ -157,7 +161,7 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
         months: String(data.plan.durationMonths),
       },
     }));
-    setNotice("Plano atualizado.");
+    setNotice(t("planUpdated"));
   }
 
   async function setActive(plan: Plan, active: boolean) {
@@ -173,11 +177,11 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
     const data = await readJson<{ plan: Plan }>(response);
     setSaving(false);
     if (!response.ok || !data.plan) {
-      setError(data.message || "Não foi possível alterar o plano.");
+      setError(apiErrorText(data, errors, t("planToggleFailed")));
       return;
     }
     setPlans((current) => current.map((item) => (item.id === plan.id ? data.plan : item)));
-    setNotice(active ? "Plano reativado." : "Plano desativado.");
+    setNotice(active ? t("planReactivated") : t("planDeactivated"));
   }
 
   async function createPlan(event: FormEvent) {
@@ -187,7 +191,7 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
     const durationMonths = Number(nextPlan.months);
     const discountPercent = Number(nextPlan.discount);
     if (!nextPlan.name.trim() || priceCents === null || !Number.isInteger(durationMonths) || durationMonths < 1) {
-      setError("Informe nome, preço e duração válidos.");
+      setError(t("invalidPlan"));
       return;
     }
     setSaving(true);
@@ -207,7 +211,7 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
     const data = await readJson<{ plan: Plan }>(response);
     setSaving(false);
     if (!response.ok || !data.plan) {
-      setError(data.message || "Não foi possível criar o plano.");
+      setError(apiErrorText(data, errors, t("planCreateFailed")));
       return;
     }
     setPlans((current) => [...current, data.plan].sort((a, b) => a.durationMonths - b.durationMonths));
@@ -221,43 +225,43 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
       },
     }));
     setNextPlan({ name: "", price: "", discount: "0", months: "1" });
-    setNotice("Plano criado.");
+    setNotice(t("planCreated"));
   }
 
-  if (loading) return <p className="text-sm text-muted">Carregando planos e perfil…</p>;
-  if (!studio) return <p className="text-sm text-muted">{error || "Estúdio indisponível."}</p>;
+  if (loading) return <p className="text-sm text-muted">{t("loading")}</p>;
+  if (!studio) return <p className="text-sm text-muted">{error || t("unavailable")}</p>;
 
   return (
     <div data-testid="creator-studio" className="space-y-6">
       <form onSubmit={saveProfile} className="grid gap-3 sm:grid-cols-2">
-        <h3 className="sm:col-span-2 text-sm font-extrabold">Perfil</h3>
-        <Field label="Nome" value={profile.name} onChange={(name) => setProfile({ ...profile, name })} />
-        <Field label="Usuário" value={profile.username} onChange={(username) => setProfile({ ...profile, username })} />
-        <Field label="Cidade" value={profile.city} onChange={(city) => setProfile({ ...profile, city })} />
-        <Field label="Bio" value={profile.bio} onChange={(bio) => setProfile({ ...profile, bio })} />
+        <h3 className="sm:col-span-2 text-sm font-extrabold">{t("profile")}</h3>
+        <Field label={t("name")} value={profile.name} onChange={(name) => setProfile({ ...profile, name })} />
+        <Field label={t("username")} value={profile.username} onChange={(username) => setProfile({ ...profile, username })} />
+        <Field label={t("city")} value={profile.city} onChange={(city) => setProfile({ ...profile, city })} />
+        <Field label={t("bio")} value={profile.bio} onChange={(bio) => setProfile({ ...profile, bio })} />
         <div className="sm:col-span-2">
-          <Button data-testid="profile-save" type="submit" disabled={saving}>Salvar perfil</Button>
+          <Button data-testid="profile-save" type="submit" disabled={saving}>{t("saveProfile")}</Button>
         </div>
       </form>
 
       <div className="space-y-3">
-        <h3 className="text-sm font-extrabold">Planos</h3>
-        {plans.length === 0 && <p className="text-sm text-muted">Nenhum plano ainda. Crie o primeiro abaixo.</p>}
+        <h3 className="text-sm font-extrabold">{t("plans")}</h3>
+        {plans.length === 0 && <p className="text-sm text-muted">{t("noPlans")}</p>}
         {plans.map((plan) => {
           const draft = draftOf(plan);
           return (
             <article key={plan.id} data-testid="creator-plan" data-months={plan.durationMonths} className={`rounded-3xl border border-border p-4 ${plan.active ? "bg-background" : "bg-surface/60 opacity-70"}`}>
               <div className="grid gap-3 sm:grid-cols-4">
-                <Field label="Nome do plano" value={draft.name} onChange={(name) => setDrafts({ ...drafts, [plan.id]: { ...draft, name } })} />
-                <Field label="Preço (R$)" value={draft.price} onChange={(price) => setDrafts({ ...drafts, [plan.id]: { ...draft, price } })} testId={`plan-price-${plan.durationMonths}`} />
-                <Field label="Meses" value={draft.months} onChange={(months) => setDrafts({ ...drafts, [plan.id]: { ...draft, months } })} />
-                <Field label="Desconto %" value={draft.discount} onChange={(discount) => setDrafts({ ...drafts, [plan.id]: { ...draft, discount } })} />
+                <Field label={t("planName")} value={draft.name} onChange={(name) => setDrafts({ ...drafts, [plan.id]: { ...draft, name } })} />
+                <Field label={t("price")} value={draft.price} onChange={(price) => setDrafts({ ...drafts, [plan.id]: { ...draft, price } })} testId={`plan-price-${plan.durationMonths}`} />
+                <Field label={t("months")} value={draft.months} onChange={(months) => setDrafts({ ...drafts, [plan.id]: { ...draft, months } })} />
+                <Field label={t("discount")} value={draft.discount} onChange={(discount) => setDrafts({ ...drafts, [plan.id]: { ...draft, discount } })} />
               </div>
-              <p className="mt-2 text-xs text-muted">{plan.active ? "Ativo" : "Desativado"} · cobrança {reais(plan.chargeCents)} reais</p>
+              <p className="mt-2 text-xs text-muted">{t("chargeLine", { state: plan.active ? t("active") : t("inactive"), amount: reais(plan.chargeCents) })}</p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button data-testid={`plan-save-${plan.durationMonths}`} type="button" disabled={saving} onClick={() => void savePlan(plan)}>Salvar plano</Button>
+                <Button data-testid={`plan-save-${plan.durationMonths}`} type="button" disabled={saving} onClick={() => void savePlan(plan)}>{t("savePlan")}</Button>
                 <Button data-testid={`plan-active-${plan.durationMonths}`} type="button" variant="outline" disabled={saving} onClick={() => void setActive(plan, !plan.active)}>
-                  {plan.active ? "Desativar" : "Reativar"}
+                  {plan.active ? t("deactivate") : t("reactivate")}
                 </Button>
               </div>
             </article>
@@ -266,14 +270,14 @@ export function CreatorStudio({ creatorId }: { creatorId?: string }) {
       </div>
 
       <form onSubmit={createPlan} className="rounded-3xl border border-dashed border-border p-4">
-        <h3 className="text-sm font-extrabold">Novo plano</h3>
+        <h3 className="text-sm font-extrabold">{t("newPlan")}</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-4">
-          <Field label="Nome do plano" value={nextPlan.name} onChange={(name) => setNextPlan({ ...nextPlan, name })} />
-          <Field label="Preço (R$)" value={nextPlan.price} onChange={(price) => setNextPlan({ ...nextPlan, price })} testId="plan-create-price" />
-          <Field label="Meses" value={nextPlan.months} onChange={(months) => setNextPlan({ ...nextPlan, months })} />
-          <Field label="Desconto %" value={nextPlan.discount} onChange={(discount) => setNextPlan({ ...nextPlan, discount })} />
+          <Field label={t("planName")} value={nextPlan.name} onChange={(name) => setNextPlan({ ...nextPlan, name })} />
+          <Field label={t("price")} value={nextPlan.price} onChange={(price) => setNextPlan({ ...nextPlan, price })} testId="plan-create-price" />
+          <Field label={t("months")} value={nextPlan.months} onChange={(months) => setNextPlan({ ...nextPlan, months })} />
+          <Field label={t("discount")} value={nextPlan.discount} onChange={(discount) => setNextPlan({ ...nextPlan, discount })} />
         </div>
-        <Button data-testid="plan-create" className="mt-3" type="submit" disabled={saving}>Criar plano</Button>
+        <Button data-testid="plan-create" className="mt-3" type="submit" disabled={saving}>{t("createPlan")}</Button>
       </form>
 
       {error && <p role="alert" className="rounded-2xl bg-accent/25 px-4 py-3 text-xs font-medium">{error}</p>}

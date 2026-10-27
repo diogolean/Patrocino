@@ -1,7 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
+import { apiErrorText } from "@/lib/api-error";
 
 type CreatorRow = {
   id: string;
@@ -12,6 +14,8 @@ type CreatorRow = {
 };
 
 export function RevenueSettings() {
+  const t = useTranslations("admin");
+  const errors = useTranslations("errors");
   const [creatorShare, setCreatorShare] = useState("80");
   const [affiliateShare, setAffiliateShare] = useState("20");
   const [query, setQuery] = useState("");
@@ -20,25 +24,33 @@ export function RevenueSettings() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  async function loadCreators(nextQuery: string) {
+  const loadCreators = useCallback(async (nextQuery: string) => {
     const response = await fetch(`/api/admin/creators?q=${encodeURIComponent(nextQuery)}`, { cache: "no-store" });
-    const data = (await response.json()) as { creators?: CreatorRow[] };
+    const data = (await response.json()) as { code?: unknown; message?: unknown; creators?: CreatorRow[] };
+    if (!response.ok) {
+      setError(apiErrorText(data, errors, t("creatorsFailed")));
+      return;
+    }
     setCreators(data.creators ?? []);
-  }
+  }, [errors, t]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
       void fetch("/api/admin/settings", { cache: "no-store" })
-        .then((response) => response.json())
-        .then((data: { creatorSharePercent?: number; affiliateCommissionPercent?: number }) => {
+        .then(async (response) => {
+          const data = (await response.json().catch(() => ({}))) as { code?: unknown; message?: unknown; creatorSharePercent?: number; affiliateCommissionPercent?: number };
+          if (!response.ok) {
+            setError(apiErrorText(data, errors, t("loadFailed")));
+            return;
+          }
           if (typeof data.creatorSharePercent === "number") setCreatorShare(String(data.creatorSharePercent));
           if (typeof data.affiliateCommissionPercent === "number") setAffiliateShare(String(data.affiliateCommissionPercent));
         })
-        .catch(() => setError("Não foi possível carregar o repasse."));
+        .catch(() => setError(t("loadFailed")));
       void loadCreators("");
     }, 0);
     return () => window.clearTimeout(handle);
-  }, []);
+  }, [errors, loadCreators, t]);
 
   async function saveDefaults(event: FormEvent) {
     event.preventDefault();
@@ -52,12 +64,12 @@ export function RevenueSettings() {
         affiliateCommissionPercent: Number(affiliateShare),
       }),
     });
-    const data = (await response.json().catch(() => ({}))) as { message?: string };
+    const data = (await response.json().catch(() => ({}))) as { code?: unknown; message?: unknown };
     if (!response.ok) {
-      setError(data.message || "Não foi possível salvar o repasse.");
+      setError(apiErrorText(data, errors, t("saveFailedSplit")));
       return;
     }
-    setNotice("Repasse padrão salvo.");
+    setNotice(t("savedSplit"));
   }
 
   async function saveCreator(event: FormEvent) {
@@ -73,38 +85,38 @@ export function RevenueSettings() {
         affiliateCommissionPercent: selected.affiliateCommissionPercent,
       }),
     });
-    const data = (await response.json().catch(() => ({}))) as { message?: string; creator?: CreatorRow };
+    const data = (await response.json().catch(() => ({}))) as { code?: unknown; message?: unknown; creator?: CreatorRow };
     if (!response.ok || !data.creator) {
-      setError(data.message || "Não foi possível salvar o criador.");
+      setError(apiErrorText(data, errors, t("creatorSaveFailed")));
       return;
     }
     setSelected(data.creator);
     setCreators((current) => current.map((creator) => (creator.id === data.creator?.id ? data.creator : creator)));
-    setNotice("Criador atualizado.");
+    setNotice(t("creatorUpdated"));
   }
 
   return (
     <section className="mx-auto mt-6 w-full max-w-6xl space-y-4 px-4 sm:px-8">
       <form onSubmit={saveDefaults} className="rounded-3xl border border-border bg-elevated/70 p-4 sm:p-5">
-        <h2 className="text-lg font-extrabold">Repasse</h2>
+        <h2 className="text-lg font-extrabold">{t("splitTitle")}</h2>
         <p className="mt-1 text-xs leading-5 text-muted">
-          Participação padrão do criador e comissão padrão do afiliado. Um criador pode ter valores próprios.
+          {t("splitBody")}
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="text-xs font-bold uppercase tracking-wide text-muted">
-            Participação do criador (%)
+            {t("creatorShare")}
             <input data-testid="admin-creator-share" value={creatorShare} onChange={(event) => setCreatorShare(event.target.value)} inputMode="numeric" className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm font-semibold normal-case tracking-normal" />
           </label>
           <label className="text-xs font-bold uppercase tracking-wide text-muted">
-            Comissão do afiliado (%)
+            {t("affiliateShare")}
             <input data-testid="admin-affiliate-share" value={affiliateShare} onChange={(event) => setAffiliateShare(event.target.value)} inputMode="numeric" className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm font-semibold normal-case tracking-normal" />
           </label>
         </div>
-        <Button data-testid="admin-split-save" type="submit" className="mt-4">Salvar repasse</Button>
+        <Button data-testid="admin-split-save" type="submit" className="mt-4">{t("saveSplit")}</Button>
       </form>
       <form onSubmit={saveCreator} className="rounded-3xl border border-border bg-elevated/70 p-4 sm:p-5">
-        <h2 className="text-lg font-extrabold">Criadores</h2>
-        <input data-testid="admin-creator-search" value={query} onChange={(event) => { setQuery(event.target.value); void loadCreators(event.target.value); }} placeholder="Buscar criador" aria-label="Buscar criador" className="mt-3 h-11 w-full rounded-full border border-border bg-background px-4 text-sm" />
+        <h2 className="text-lg font-extrabold">{t("creators")}</h2>
+        <input data-testid="admin-creator-search" value={query} onChange={(event) => { setQuery(event.target.value); void loadCreators(event.target.value); }} placeholder={t("searchCreator")} aria-label={t("searchLabel")} className="mt-3 h-11 w-full rounded-full border border-border bg-background px-4 text-sm" />
         <div className="mt-3 flex gap-2 overflow-x-auto">
           {creators.slice(0, 8).map((creator) => (
             <button key={creator.id} type="button" data-testid="admin-creator" data-username={creator.username} onClick={() => setSelected(creator)} className={`shrink-0 rounded-full border px-3 py-2 text-xs font-bold ${selected?.id === creator.id ? "border-primary bg-primary/15" : "border-border"}`}>
@@ -115,16 +127,16 @@ export function RevenueSettings() {
         {selected && (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-bold uppercase tracking-wide text-muted">
-              Participação própria (%)
-              <input data-testid="admin-creator-override" value={selected.creatorSharePercent ?? ""} placeholder="Padrão" onChange={(event) => setSelected({ ...selected, creatorSharePercent: event.target.value === "" ? null : Number(event.target.value) })} className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm normal-case" />
+              {t("ownShare")}
+              <input data-testid="admin-creator-override" value={selected.creatorSharePercent ?? ""} placeholder={t("defaultPlaceholder")} onChange={(event) => setSelected({ ...selected, creatorSharePercent: event.target.value === "" ? null : Number(event.target.value) })} className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm normal-case" />
             </label>
             <label className="text-xs font-bold uppercase tracking-wide text-muted">
-              Comissão própria (%)
-              <input data-testid="admin-affiliate-override" value={selected.affiliateCommissionPercent ?? ""} placeholder="Padrão" onChange={(event) => setSelected({ ...selected, affiliateCommissionPercent: event.target.value === "" ? null : Number(event.target.value) })} className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm normal-case" />
+              {t("ownCommission")}
+              <input data-testid="admin-affiliate-override" value={selected.affiliateCommissionPercent ?? ""} placeholder={t("defaultPlaceholder")} onChange={(event) => setSelected({ ...selected, affiliateCommissionPercent: event.target.value === "" ? null : Number(event.target.value) })} className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm normal-case" />
             </label>
           </div>
         )}
-        {selected && <Button data-testid="admin-creator-save" type="submit" className="mt-4">Salvar criador</Button>}
+        {selected && <Button data-testid="admin-creator-save" type="submit" className="mt-4">{t("saveCreator")}</Button>}
         {notice && <p className="mt-3 text-sm font-semibold text-primary-strong">{notice}</p>}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </form>

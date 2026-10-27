@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Prisma, database } from "@mimelux/db/runtime";
 import { chargeForPlan } from "./plan-price";
@@ -71,7 +72,7 @@ async function findCreator(creatorKey: string) {
 
 function billable(amountCents: number) {
   if (!Number.isInteger(amountCents) || amountCents <= 0) {
-    throw new BadRequestException("This item is not billable.");
+    throw apiError(400, "THIS_ITEM_IS_NOT_BILLABLE", "This item is not billable.");
   }
   return amountCents;
 }
@@ -120,7 +121,7 @@ export async function quoteCharge(
     });
     if (!post?.priceCents) throw unavailable();
     if (post.visibility === "SUBSCRIBER_PPV" && !(await fanSubscribed(user.id, creator.id))) {
-      throw new ForbiddenException("An active subscription is required.");
+      throw apiError(403, "AN_ACTIVE_SUBSCRIPTION_IS_REQUIRED", "An active subscription is required.");
     }
     return {
       buyerId: user.id,
@@ -184,7 +185,7 @@ export async function quoteCharge(
 
 export async function chargeDraftForUser(user: { id: string; email: string }, body: unknown): Promise<ChargeDraft> {
   const parsed = chargeRequestSchema.safeParse(body);
-  if (!parsed.success) throw new BadRequestException("Invalid payment request.");
+  if (!parsed.success) throw apiError(400, "INVALID_PAYMENT_REQUEST", "Invalid payment request.");
   const quote = await quoteCharge(user, parsed.data);
   const profile = await database.profile.findUnique({ where: { userId: user.id } });
   const document = parsed.data.customer?.document?.replace(/\D/g, "") ?? "";
@@ -227,7 +228,7 @@ function samePurchase(
 export async function ensureQuotedPurchase(draft: ChargeDraft) {
   const existing = await database.purchase.findUnique({ where: { idempotencyKey: draft.idempotencyKey } });
   if (existing) {
-    if (!samePurchase(existing, draft)) throw new ConflictException("Idempotency key already used.");
+    if (!samePurchase(existing, draft)) throw apiError(409, "IDEMPOTENCY_KEY_ALREADY_USED", "Idempotency key already used.");
     return existing;
   }
 
@@ -277,7 +278,7 @@ export async function ensureQuotedPurchase(draft: ChargeDraft) {
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
     const raced = await database.purchase.findUnique({ where: { idempotencyKey: draft.idempotencyKey } });
-    if (!raced || !samePurchase(raced, draft)) throw new ConflictException("Idempotency key already used.");
+    if (!raced || !samePurchase(raced, draft)) throw apiError(409, "IDEMPOTENCY_KEY_ALREADY_USED", "Idempotency key already used.");
     return raced;
   }
 }

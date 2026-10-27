@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import {
   BadRequestException,
   Body,
@@ -108,7 +109,7 @@ async function readLimited(req: Request, limit: number) {
   const raw = (req as Request & { rawBody?: Buffer }).rawBody;
   if (req.readableEnded) {
     const body = Buffer.isBuffer(raw) ? raw : Buffer.alloc(0);
-    if (body.length > limit) throw new PayloadTooLargeException("Chunk is too large");
+    if (body.length > limit) throw apiError(413, "CHUNK_IS_TOO_LARGE", "Chunk is too large");
     return body;
   }
   const chunks: Buffer[] = [];
@@ -116,7 +117,7 @@ async function readLimited(req: Request, limit: number) {
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > limit) throw new PayloadTooLargeException("Chunk is too large");
+    if (size > limit) throw apiError(413, "CHUNK_IS_TOO_LARGE", "Chunk is too large");
     chunks.push(buffer);
   }
   return Buffer.concat(chunks);
@@ -148,19 +149,19 @@ export class MediaController {
   private async manager(authorization: string | undefined, creatorId?: string): Promise<Manager> {
     const user = await requireUser(authorization);
     if (user.role === "ADMIN") {
-      if (!creatorId) throw new BadRequestException("creatorId is required");
+      if (!creatorId) throw apiError(400, "CREATORID_IS_REQUIRED", "creatorId is required");
       const creator = await database.creator.findUnique({ where: { id: creatorId } });
-      if (!creator) throw new BadRequestException("Creator not found");
+      if (!creator) throw apiError(400, "CREATOR_NOT_FOUND", "Creator not found");
       return { user, creator, admin: true };
     }
-    if (user.role !== "CREATOR") throw new ForbiddenException("Creator only");
+    if (user.role !== "CREATOR") throw apiError(403, "CREATOR_ONLY", "Creator only");
     let creator = await database.creator.findUnique({ where: { userId: user.id } });
     if (!creator) {
       creator = await database.creator.create({
         data: { userId: user.id, status: "ACTIVE", category: "Geral", ownership: "HOUSE" },
       });
     }
-    if (creatorId && creatorId !== creator.id) throw new ForbiddenException("Creator only");
+    if (creatorId && creatorId !== creator.id) throw apiError(403, "CREATOR_ONLY", "Creator only");
     return { user, creator, admin: false };
   }
 
@@ -184,7 +185,7 @@ export class MediaController {
   @Patch("media/video-price")
   async videoPrice(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
     const parsed = videoPriceSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const actor = await this.manager(authorization, parsed.data.creatorId);
     const creator = await database.creator.update({
       where: { id: actor.creator.id },
@@ -276,11 +277,11 @@ export class MediaController {
   @Post("media/uploads")
   async start(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
     const parsed = startSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const actor = await this.manager(authorization, parsed.data.creatorId);
     const chunkSize = Math.min(parsed.data.chunkSize ?? chunkSizeBytes, chunkSizeBytes);
     const totalChunks = Math.ceil(parsed.data.byteSize / chunkSize);
-    if (totalChunks > 500) throw new BadRequestException("File needs fewer, larger chunks");
+    if (totalChunks > 500) throw apiError(400, "FILE_NEEDS_FEWER_LARGER_CHUNKS", "File needs fewer, larger chunks");
     const storage = await this.storage();
     const upload = await database.mediaUpload.create({
       data: {
@@ -327,22 +328,22 @@ export class MediaController {
     @Req() request: Request,
   ) {
     const upload = await this.ownedUpload(authorization, id);
-    if (upload.status !== "open") throw new BadRequestException("Upload is already finished");
+    if (upload.status !== "open") throw apiError(400, "UPLOAD_IS_ALREADY_FINISHED", "Upload is already finished");
     const index = Number(indexRaw);
     if (!Number.isInteger(index) || index < 0 || index >= upload.totalChunks) {
-      throw new BadRequestException("Chunk index is out of range");
+      throw apiError(400, "CHUNK_INDEX_IS_OUT_OF_RANGE", "Chunk index is out of range");
     }
     const expected =
       index === upload.totalChunks - 1
         ? upload.byteSize - upload.chunkSize * (upload.totalChunks - 1)
         : upload.chunkSize;
     const body = await readLimited(request, expected);
-    if (body.length !== expected) throw new BadRequestException("Chunk size does not match");
+    if (body.length !== expected) throw apiError(400, "CHUNK_SIZE_DOES_NOT_MATCH", "Chunk size does not match");
     if (index === 0) {
       const detected = detectFile(body.subarray(0, 64));
-      if (!detected) throw new BadRequestException("File type is not allowed");
-      if (!declaredMimeMatches(upload.mimeType, detected)) throw new BadRequestException("File type does not match");
-      if (upload.byteSize > maxBytes(detected.kind)) throw new PayloadTooLargeException("File is too large");
+      if (!detected) throw apiError(400, "FILE_TYPE_IS_NOT_ALLOWED", "File type is not allowed");
+      if (!declaredMimeMatches(upload.mimeType, detected)) throw apiError(400, "FILE_TYPE_DOES_NOT_MATCH", "File type does not match");
+      if (upload.byteSize > maxBytes(detected.kind)) throw apiError(413, "FILE_IS_TOO_LARGE", "File is too large");
     }
     const storage = await this.storage();
     const directory = storage.resolve(upload.tempDir);
@@ -358,9 +359,9 @@ export class MediaController {
     @Body() body: unknown,
   ) {
     const upload = await this.ownedUpload(authorization, id);
-    if (upload.status !== "open") throw new BadRequestException("Upload is already finished");
+    if (upload.status !== "open") throw apiError(400, "UPLOAD_IS_ALREADY_FINISHED", "Upload is already finished");
     const parsed = completeSchema.safeParse(body ?? {});
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const visibility = toVisibility(parsed.data.visibility);
     const creator = await database.creator.findUniqueOrThrow({ where: { id: upload.creatorId } });
     const priceCents = resolveVideoPrice({
@@ -369,25 +370,25 @@ export class MediaController {
       defaultVideoPriceCents: creator.defaultVideoPriceCents,
     });
     if ((visibility === "PPV" || visibility === "SUBSCRIBER_PPV") && !priceCents) {
-      throw new BadRequestException("PPV price is required");
+      throw apiError(400, "PPV_PRICE_IS_REQUIRED", "PPV price is required");
     }
     const storage = await this.storage();
     const directory = storage.resolve(upload.tempDir);
     const received = await receivedChunkIndexes(directory);
-    if (received.length !== upload.totalChunks) throw new BadRequestException("Upload is incomplete");
+    if (received.length !== upload.totalChunks) throw apiError(400, "UPLOAD_IS_INCOMPLETE", "Upload is incomplete");
     const assembled = path.join(directory, "assembled");
     await assembleChunks(directory, upload.totalChunks, assembled);
     const info = await stat(assembled);
-    if (info.size !== upload.byteSize) throw new BadRequestException("Uploaded size does not match");
+    if (info.size !== upload.byteSize) throw apiError(400, "UPLOADED_SIZE_DOES_NOT_MATCH", "Uploaded size does not match");
     const handle = await open(assembled, "r");
     const sample = Buffer.alloc(64);
     await handle.read(sample, 0, 64, 0);
     await handle.close();
     const detected = detectFile(sample);
     if (!detected || !declaredMimeMatches(upload.mimeType, detected)) {
-      throw new BadRequestException("File type is not allowed");
+      throw apiError(400, "FILE_TYPE_IS_NOT_ALLOWED", "File type is not allowed");
     }
-    if (info.size > maxBytes(detected.kind)) throw new PayloadTooLargeException("File is too large");
+    if (info.size > maxBytes(detected.kind)) throw apiError(413, "FILE_IS_TOO_LARGE", "File is too large");
     const locked = isLocked(visibility);
     const post = await database.post.create({
       data: {
@@ -440,14 +441,14 @@ export class MediaController {
   @HttpCode(200)
   async reorder(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
     const parsed = orderSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const actor = await this.manager(authorization, parsed.data.creatorId);
     const posts = await database.post.findMany({
       where: { id: { in: parsed.data.ids }, deletedAt: null },
       select: { id: true, creatorId: true },
     });
-    if (posts.some((post) => post.creatorId !== actor.creator.id)) throw new ForbiddenException("Creator only");
-    if (posts.length !== parsed.data.ids.length) throw new BadRequestException("Unknown media item");
+    if (posts.some((post) => post.creatorId !== actor.creator.id)) throw apiError(403, "CREATOR_ONLY", "Creator only");
+    if (posts.length !== parsed.data.ids.length) throw apiError(400, "UNKNOWN_MEDIA_ITEM", "Unknown media item");
     await database.$transaction(
       parsed.data.ids.map((id, index) => database.post.update({ where: { id }, data: { sortOrder: index } })),
     );
@@ -462,9 +463,9 @@ export class MediaController {
     @Body() body: unknown,
   ) {
     const parsed = patchSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const post = await database.post.findUnique({ where: { id }, include: { media: true } });
-    if (!post || post.deletedAt) throw new NotFoundException("Media not found");
+    if (!post || post.deletedAt) throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
     const actor = await this.manager(authorization, post.creatorId);
     const visibility = parsed.data.visibility ? toVisibility(parsed.data.visibility) : post.visibility;
     const creator = await database.creator.findUniqueOrThrow({ where: { id: post.creatorId } });
@@ -476,7 +477,7 @@ export class MediaController {
       defaultVideoPriceCents: creator.defaultVideoPriceCents,
     });
     if ((visibility === "PPV" || visibility === "SUBSCRIBER_PPV") && !priceCents) {
-      throw new BadRequestException("PPV price is required");
+      throw apiError(400, "PPV_PRICE_IS_REQUIRED", "PPV price is required");
     }
     const locked = isLocked(visibility);
     const storage = await this.storage();
@@ -515,7 +516,7 @@ export class MediaController {
   @HttpCode(200)
   async remove(@Headers("authorization") authorization: string | undefined, @Param("id") id: string) {
     const post = await database.post.findUnique({ where: { id } });
-    if (!post || post.deletedAt) throw new NotFoundException("Media not found");
+    if (!post || post.deletedAt) throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
     const actor = await this.manager(authorization, post.creatorId);
     await database.post.update({ where: { id: post.id }, data: { deletedAt: new Date() } });
     if (actor.admin) await audit(actor.user.id, "media.delete", post.id, { creatorId: post.creatorId });
@@ -526,10 +527,10 @@ export class MediaController {
   async access(@Param("id") id: string, @Headers("authorization") authorization?: string) {
     const user = await requireUser(authorization);
     const media = await database.media.findUnique({ where: { id }, include: { post: true } });
-    if (!media?.post || media.post.deletedAt || media.storageKey === "pending") throw new NotFoundException("Media not found");
+    if (!media?.post || media.post.deletedAt || media.storageKey === "pending") throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
     const allowed = await this.canRead(authorization, media.post);
     if (!allowed) {
-      throw new ForbiddenException(media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
+      throw apiError(403, media.post.visibility === "SUBSCRIBER_PPV" ? "PURCHASE_REQUIRED" : "SUBSCRIPTION_REQUIRED", media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
     }
     const exp = Math.floor(Date.now() / 1000) + MEDIA_GRANT_TTL_SECONDS;
     const token = signMediaGrant({ mediaId: media.id, userId: user.id, exp, kind: "file" });
@@ -549,12 +550,12 @@ export class MediaController {
     @Query("token") token?: string,
   ) {
     const media = await database.media.findUnique({ where: { id }, include: { post: true } });
-    if (!media?.post || media.post.deletedAt || media.storageKey === "pending") throw new NotFoundException("Media not found");
+    if (!media?.post || media.post.deletedAt || media.storageKey === "pending") throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
     if (token) {
       const grant = readMediaGrant(token);
-      if (!grant || grant.mediaId !== id) throw new UnauthorizedException("Media link expired");
+      if (!grant || grant.mediaId !== id) throw apiError(401, "MEDIA_LINK_EXPIRED", "Media link expired");
       const user = await database.user.findUnique({ where: { id: grant.userId } });
-      if (!user || user.deletedAt || user.suspendedAt) throw new UnauthorizedException("Media link expired");
+      if (!user || user.deletedAt || user.suspendedAt) throw apiError(401, "MEDIA_LINK_EXPIRED", "Media link expired");
       const owner = await database.creator.findUnique({ where: { userId: user.id } });
       const allowed = await viewerCanReadPost({
         user,
@@ -562,22 +563,22 @@ export class MediaController {
         post: media.post,
       });
       if (!allowed) {
-        throw new ForbiddenException(media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
+        throw apiError(403, media.post.visibility === "SUBSCRIBER_PPV" ? "PURCHASE_REQUIRED" : "SUBSCRIPTION_REQUIRED", media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
       }
     } else {
       const allowed = await this.canRead(authorization, media.post);
       if (!allowed) {
-        if (!authorization) throw new UnauthorizedException("Missing access token");
-        throw new ForbiddenException(media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
+        if (!authorization) throw apiError(401, "MISSING_ACCESS_TOKEN", "Missing access token");
+        throw apiError(403, media.post.visibility === "SUBSCRIBER_PPV" ? "PURCHASE_REQUIRED" : "SUBSCRIPTION_REQUIRED", media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
       }
       const user = authorization ? await requireUser(authorization) : null;
       const owner = user ? await database.creator.findUnique({ where: { userId: user.id } }) : null;
       if (user?.role !== "ADMIN" && owner?.id !== media.post.creatorId && media.post.visibility !== "FREE") {
-        throw new UnauthorizedException("Media link expired");
+        throw apiError(401, "MEDIA_LINK_EXPIRED", "Media link expired");
       }
     }
     const storage = await this.storage();
-    if (!(await storage.exists(media.storageKey))) throw new NotFoundException("Media not found");
+    if (!(await storage.exists(media.storageKey))) throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
     const size = await storage.size(media.storageKey);
     const absolute = storage.resolve(media.storageKey);
     response.setHeader("Content-Type", servedMimeType(media.mimeType));
@@ -629,7 +630,7 @@ export class MediaController {
 
   private async ownedUpload(authorization: string | undefined, id: string) {
     const upload = await database.mediaUpload.findUnique({ where: { id } });
-    if (!upload || upload.expiresAt.getTime() < Date.now()) throw new NotFoundException("Upload not found");
+    if (!upload || upload.expiresAt.getTime() < Date.now()) throw apiError(404, "UPLOAD_NOT_FOUND", "Upload not found");
     await this.manager(authorization, upload.creatorId);
     return upload;
   }

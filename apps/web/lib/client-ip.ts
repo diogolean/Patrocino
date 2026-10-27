@@ -3,14 +3,20 @@ const ipToken = /^[0-9a-fA-F:.]+$/;
 export const CLIENT_IP_HEADER = "x-patrocino-client-ip";
 export const PROXY_SECRET_HEADER = "x-patrocino-proxy-secret";
 
-function firstIp(value: string | null): string | undefined {
-  const token = value?.split(",")[0]?.trim() ?? "";
+function validIp(value: string): string | undefined {
+  const token = value.trim().replace(/^\[|\]$/g, "");
   if (!token || token.length > 64 || !ipToken.test(token)) return undefined;
   return token;
 }
 
+export function proxyClientIp(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const hops = value.split(",").map((part) => validIp(part)).filter((part): part is string => Boolean(part));
+  return hops.at(-1);
+}
+
 export function clientIpFrom(headers: { get(name: string): string | null }): string | undefined {
-  return firstIp(headers.get("cf-connecting-ip")) ?? firstIp(headers.get("x-forwarded-for"));
+  return proxyClientIp(headers.get("x-forwarded-for"));
 }
 
 export function upstreamAuthHeaders(request?: { headers: { get(name: string): string | null } }): Record<string, string> {

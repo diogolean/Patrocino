@@ -120,6 +120,7 @@ model User {
   acceptedTermsAt  DateTime?
   termsVersion     String?
   acceptedTermsIp  String?
+  locale           String?
   isDemo           Boolean          @default(false)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt

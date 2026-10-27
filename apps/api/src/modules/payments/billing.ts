@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Prisma, database } from "@mimelux/db/runtime";
 import { planChargeCents, reverseLedger, splitRevenue, subscriptionGrantsAccess } from "@mimelux/core/monetization";
@@ -236,7 +237,7 @@ export async function listMySubscriptions(userId: string) {
 
 export async function cancelSubscription(userId: string, subscriptionId: string) {
   const row = await database.subscription.findFirst({ where: { id: subscriptionId, fanId: userId } });
-  if (!row) throw new BadRequestException("Subscription not found");
+  if (!row) throw apiError(400, "SUBSCRIPTION_NOT_FOUND", "Subscription not found");
   const secret = readStripeSecret();
   if (row.stripeSubscriptionId && secret.ok) {
     const stripe = new Stripe(secret.key);
@@ -383,11 +384,11 @@ async function pricedPlan(user: AccountUser, creatorKey: string, planKey: string
   try {
     quote = await quoteCharge(user, { creatorId: creatorKey, purpose: "subscription", subjectId: planKey });
   } catch (error) {
-    if (error instanceof NotFoundException) throw new BadRequestException("Plan not found");
+    if (error instanceof NotFoundException) throw apiError(400, "PLAN_NOT_FOUND", "Plan not found");
     throw error;
   }
   const resolved = await resolvePlan(quote.creatorId, quote.subjectId);
-  if (!resolved) throw new BadRequestException("Plan not found");
+  if (!resolved) throw apiError(400, "PLAN_NOT_FOUND", "Plan not found");
   return { resolved, amountCents: quote.amountCents };
 }
 
@@ -395,7 +396,7 @@ export async function startSubscriptionCheckout(user: AccountUser, creatorKey: s
   const { resolved, amountCents } = await pricedPlan(user, creatorKey, planKey);
   const secret = readStripeSecret();
   if (!secret.ok) {
-    if (secret.reason === "live_disabled") throw new BadRequestException("Live Stripe keys are disabled");
+    if (secret.reason === "live_disabled") throw apiError(400, "LIVE_STRIPE_KEYS_ARE_DISABLED", "Live Stripe keys are disabled");
     return simulateSubscription(user, resolved, amountCents);
   }
   const stripe = new Stripe(secret.key);
@@ -464,7 +465,9 @@ export async function startPlanCheckout(
   const { resolved, amountCents } = await pricedPlan(user, input.creatorId, input.planId);
   const secret = readStripeSecret();
   if (input.provider === "stripe" && !secret.ok) {
-    throw new BadRequestException(
+    throw apiError(
+      400,
+      secret.reason === "live_disabled" ? "LIVE_STRIPE_KEYS_ARE_DISABLED" : "STRIPE_IS_NOT_CONFIGURED",
       secret.reason === "live_disabled" ? "Live Stripe keys are disabled" : "Stripe is not configured",
     );
   }

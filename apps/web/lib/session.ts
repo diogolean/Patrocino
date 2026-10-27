@@ -2,6 +2,7 @@
 
 import type { AccountRole } from "@mimelux/core";
 import type { SessionUser } from "./api-auth";
+import { apiErrorText } from "./api-error";
 
 export type { SessionUser };
 
@@ -37,9 +38,34 @@ function setSnapshot(next: SessionSnapshot) {
   emit();
 }
 
+export class SessionRequestError extends Error {
+  readonly code?: string;
+  readonly apiMessage?: unknown;
+
+  constructor(code?: string, apiMessage?: unknown) {
+    super(typeof apiMessage === "string" ? apiMessage : "");
+    this.name = "SessionRequestError";
+    this.code = code;
+    this.apiMessage = apiMessage;
+  }
+}
+
+export function sessionErrorText(
+  caught: unknown,
+  errors: { has: (key: string) => boolean; (key: string): string },
+  fallback: string,
+) {
+  if (caught instanceof SessionRequestError) {
+    return apiErrorText({ code: caught.code, message: caught.apiMessage }, errors, fallback);
+  }
+  return fallback;
+}
+
 async function readUser(response: Response) {
-  const data = (await response.json().catch(() => ({}))) as { user?: SessionUser | null; message?: string };
-  if (!response.ok) throw new Error(data.message || "Não foi possível entrar.");
+  const data = (await response.json().catch(() => ({}))) as { user?: SessionUser | null; message?: unknown; code?: unknown };
+  if (!response.ok) {
+    throw new SessionRequestError(typeof data.code === "string" ? data.code : undefined, data.message);
+  }
   setSnapshot({ status: "ready", user: data.user ?? null });
   return data.user ?? null;
 }
@@ -69,7 +95,7 @@ export async function loginAccount(email: string, password: string) {
     body: JSON.stringify({ email, password }),
   });
   const user = await readUser(response);
-  if (!user) throw new Error("Não foi possível entrar.");
+  if (!user) throw new SessionRequestError();
   return user;
 }
 
@@ -80,6 +106,7 @@ export async function registerAccount(input: {
   role: AccountRole;
   acceptTerms: true;
   acceptCreatorTerms?: boolean;
+  locale?: string;
 }) {
   const response = await fetch("/api/session/register", {
     method: "POST",
@@ -87,7 +114,7 @@ export async function registerAccount(input: {
     body: JSON.stringify(input),
   });
   const user = await readUser(response);
-  if (!user) throw new Error("Não foi possível criar a conta.");
+  if (!user) throw new SessionRequestError();
   return user;
 }
 
@@ -102,7 +129,7 @@ export async function socialAccount(
     body: JSON.stringify({ provider, role, ...acceptance }),
   });
   const user = await readUser(response);
-  if (!user) throw new Error("Não foi possível entrar.");
+  if (!user) throw new SessionRequestError();
   return user;
 }
 

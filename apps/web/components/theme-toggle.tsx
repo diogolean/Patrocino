@@ -2,10 +2,13 @@
 
 import { Moon, Sun } from "lucide-react";
 import { useSyncExternalStore } from "react";
+import { useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
 import { Button } from "@mimelux/ui";
 
-export function ThemeToggle({ label = "Alternar tema" }: { label?: string }) {
+export function ThemeToggle({ label }: { label?: string }) {
+  const themeLabel = useTranslations("nav")("theme");
+  const text = label ?? themeLabel;
   const { resolvedTheme, setTheme } = useTheme();
   const mounted = useSyncExternalStore(
     () => () => undefined,
@@ -16,7 +19,7 @@ export function ThemeToggle({ label = "Alternar tema" }: { label?: string }) {
     <Button
       variant="ghost"
       size="icon"
-      aria-label={label}
+      aria-label={text}
       onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
     >
       {mounted && resolvedTheme === "dark" ? (

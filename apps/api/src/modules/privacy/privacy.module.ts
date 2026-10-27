@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import {
   BadRequestException,
   Body,
@@ -47,8 +48,8 @@ class PrivacyController {
   async saveConsent(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
     const user = await requireUser(authorization);
     const parsed = consentSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
-    if (parsed.data.version !== consentVersion) throw new BadRequestException("Consent version is outdated");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
+    if (parsed.data.version !== consentVersion) throw apiError(400, "CONSENT_VERSION_IS_OUTDATED", "Consent version is outdated");
     const record = await database.consentRecord.create({
       data: {
         userId: user.id,
@@ -77,7 +78,7 @@ class PrivacyController {
     const recent = await database.privacyRequest.count({
       where: { userId: user.id, kind: "export", createdAt: { gte: since } },
     });
-    if (recent >= exportLimit()) throw new HttpException("Export rate limit", HttpStatus.TOO_MANY_REQUESTS);
+    if (recent >= exportLimit()) throw apiError(429, "EXPORT_RATE_LIMIT", "Export rate limit");
     await database.privacyRequest.create({ data: { userId: user.id, kind: "export" } });
     await database.auditLog.create({
       data: {
@@ -163,11 +164,11 @@ class PrivacyController {
   async deleteAccount(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
     const user = await requireUser(authorization);
     const parsed = deletionSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
-    if (parsed.data.confirm !== "EXCLUIR") throw new BadRequestException("Confirmation required");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
+    if (parsed.data.confirm !== "EXCLUIR") throw apiError(400, "CONFIRMATION_REQUIRED", "Confirmation required");
     const current = await database.user.findUnique({ where: { id: user.id } });
     if (!current || !(await compare(parsed.data.password, current.passwordHash))) {
-      throw new UnauthorizedException("Wrong password");
+      throw apiError(401, "WRONG_PASSWORD", "Wrong password");
     }
 
     const owned = await database.subscription.findMany({

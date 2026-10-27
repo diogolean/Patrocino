@@ -1,10 +1,12 @@
+import { verificationEmail } from "./email-copy";
+
 export interface EmailSender {
-  sendVerification(to: string, link: string): Promise<void>;
+  sendVerification(to: string, link: string, locale?: string | null): Promise<void>;
 }
 
 class LogEmailSender implements EmailSender {
-  async sendVerification(to: string, link: string) {
-    console.log(`[patrocino] verification link for ${to}: ${link}`);
+  async sendVerification(to: string, link: string, locale?: string | null) {
+    console.log(`[patrocino] verification link for ${to} (${locale || "pt-BR"}): ${link}`);
   }
 }
 
@@ -14,7 +16,8 @@ class ResendEmailSender implements EmailSender {
     private readonly from: string,
   ) {}
 
-  async sendVerification(to: string, link: string) {
+  async sendVerification(to: string, link: string, locale?: string | null) {
+    const copy = verificationEmail(locale, link);
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -24,8 +27,8 @@ class ResendEmailSender implements EmailSender {
       body: JSON.stringify({
         from: this.from,
         to: [to],
-        subject: "Confirme seu e-mail no Patrocino",
-        html: `<p>Confirme seu e-mail para usar o Patrocino.</p><p><a href="${link}">${link}</a></p>`,
+        subject: copy.subject,
+        html: copy.html,
       }),
     });
     if (!response.ok) {

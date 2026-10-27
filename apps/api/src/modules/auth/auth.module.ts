@@ -25,6 +25,8 @@ import { sign, verify } from "jsonwebtoken";
 import { z } from "zod";
 import { resolveClientIp } from "./client-ip";
 import { createEmailSender } from "./email-sender";
+import { localeFromAcceptLanguage, normalizeUserLocale } from "./user-locale";
+import { apiError } from "../../http/api-error";
 import { clearEmailLoginFailures, emailLoginBlocked, recordEmailLoginFailure } from "./login-failures";
 
 const demoEmailAliases: Record<string, string> = {
@@ -57,6 +59,7 @@ const registerSchema = credentialsSchema.extend({
   role: z.enum(["FAN", "CREATOR", "AFFILIATE"]).default("FAN"),
   acceptTerms: z.literal(true),
   acceptCreatorTerms: z.boolean().optional(),
+  locale: z.string().max(12).optional(),
 });
 const refreshSchema = z.object({ refreshToken: z.string().min(20) });
 const verifySchema = z.object({ token: z.string().min(20) });
@@ -71,7 +74,7 @@ type AccountUser = {
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
   if (!result.success) {
-    throw new BadRequestException(result.error.issues[0]?.message ?? "Invalid request");
+    throw apiError(400, "INVALID_REQUEST", result.error.issues[0]?.message ?? "Invalid request");
   }
   return result.data;
 }
@@ -153,7 +156,7 @@ async function rotateRefresh(refreshToken: string): Promise<SessionPayload> {
   }
 }
 
-async function sendVerification(user: { id: string; email: string }) {
+async function sendVerification(user: { id: string; email: string; locale?: string | null }) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   await database.user.update({
@@ -166,7 +169,7 @@ async function sendVerification(user: { id: string; email: string }) {
   const origin = process.env.WEB_ORIGIN ?? "http://127.0.0.1:3333";
   const link = `${origin}/api/session/verify?token=${encodeURIComponent(token)}`;
   try {
-    await createEmailSender().sendVerification(user.email, link);
+    await createEmailSender().sendVerification(user.email, link, user.locale);
   } catch (error) {
     console.error("[patrocino] verification email failed; logging the link instead");
     console.log(`[patrocino] verification link for ${user.email}: ${link}`);
@@ -181,7 +184,7 @@ class AuthController {
   @ApiOperation({ summary: "Return the account for a valid access token" })
   async me(@Headers("authorization") authorization?: string) {
     const token = authorization?.replace(/^Bearer\s+/i, "");
-    if (!token) throw new UnauthorizedException("Missing access token");
+    if (!token) throw apiError(401, "MISSING_ACCESS_TOKEN", "Missing access token");
     try {
       const payload = verify(token, process.env.JWT_ACCESS_SECRET ?? "local-access-only") as {
         sub?: string;
@@ -199,7 +202,7 @@ class AuthController {
         },
       };
     } catch {
-      throw new UnauthorizedException("Invalid access token");
+      throw apiError(401, "INVALID_ACCESS_TOKEN", "Invalid access token");
     }
   }
 
@@ -211,12 +214,12 @@ class AuthController {
     const input = parseBody(credentialsSchema, body);
     const email = canonicalDemoEmail(input.email);
     if (emailLoginBlocked(email)) {
-      throw new HttpException("Too many attempts", HttpStatus.TOO_MANY_REQUESTS);
+      throw apiError(429, "TOO_MANY_ATTEMPTS", "Too many attempts");
     }
     const user = await database.user.findUnique({ where: { email } });
     if (!user || user.deletedAt || user.suspendedAt || !(await compare(input.password, user.passwordHash))) {
       recordEmailLoginFailure(email);
-      throw new UnauthorizedException("Invalid credentials");
+      throw apiError(401, "INVALID_CREDENTIALS", "Invalid credentials");
     }
     clearEmailLoginFailures(email);
     return persistSession(user);
@@ -225,13 +228,13 @@ class AuthController {
   @Post("register")
   @UseGuards(ThrottlerGuard)
   @ApiOperation({ summary: "Register a user and return a token pair" })
-  async register(@Body() body: unknown, @Req() request: Request) {
+  async register(@Body() body: unknown, @Req() request: Request, @Headers("accept-language") acceptLanguage?: string) {
     const input = parseBody(registerSchema, body);
     if (input.role !== "FAN" && input.role !== "CREATOR" && input.role !== "AFFILIATE") {
-      throw new BadRequestException("Role is not allowed");
+      throw apiError(400, "ROLE_IS_NOT_ALLOWED", "Role is not allowed");
     }
     if (input.role === "CREATOR" && input.acceptCreatorTerms !== true) {
-      throw new BadRequestException("Creator terms are required");
+      throw apiError(400, "CREATOR_TERMS_ARE_REQUIRED", "Creator terms are required");
     }
     const email = canonicalDemoEmail(input.email);
     try {
@@ -243,6 +246,7 @@ class AuthController {
           acceptedTermsAt: new Date(),
           termsVersion: legalConfig.termsVersion,
           acceptedTermsIp: resolveClientIp(request),
+          locale: normalizeUserLocale(input.locale) ?? localeFromAcceptLanguage(acceptLanguage) ?? "pt-BR",
           profile: {
             create: {
               name: input.name,
@@ -255,7 +259,7 @@ class AuthController {
       return persistSession(user);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw new ConflictException("Email already registered");
+        throw apiError(409, "EMAIL_ALREADY_REGISTERED", "Email already registered");
       }
       throw error;
     }
@@ -270,7 +274,7 @@ class AuthController {
       return await rotateRefresh(refreshToken);
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
-      throw new UnauthorizedException("Invalid refresh token");
+      throw apiError(401, "INVALID_REFRESH_TOKEN", "Invalid refresh token");
     }
   }
 
@@ -299,6 +303,27 @@ class AuthController {
     return { loggedOut: true };
   }
 
+  @Post("locale")
+  @HttpCode(200)
+  @ApiOperation({ summary: "Store the language chosen by the signed-in account" })
+  async setLocale(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
+    const token = authorization?.replace(/^Bearer\s+/i, "");
+    if (!token) throw apiError(401, "MISSING_ACCESS_TOKEN", "Missing access token");
+    let userId = "";
+    try {
+      const payload = verify(token, process.env.JWT_ACCESS_SECRET ?? "local-access-only") as { sub?: string };
+      if (!payload.sub) throw new Error("Incomplete token");
+      userId = payload.sub;
+    } catch {
+      throw apiError(401, "INVALID_ACCESS_TOKEN", "Invalid access token");
+    }
+    const parsed = z.object({ locale: z.string().min(2).max(12) }).safeParse(body);
+    const locale = parsed.success ? normalizeUserLocale(parsed.data.locale) : null;
+    if (!locale) throw apiError(400, "INVALID_LOCALE", "Locale is not supported");
+    await database.user.update({ where: { id: userId }, data: { locale } });
+    return { locale };
+  }
+
   @Post("verify-email")
   @HttpCode(200)
   @UseGuards(ThrottlerGuard)
@@ -309,7 +334,7 @@ class AuthController {
       where: { emailVerificationTokenHash: tokenHash(token) },
     });
     if (!user?.emailVerificationExpiresAt || user.emailVerificationExpiresAt.getTime() < Date.now()) {
-      throw new UnauthorizedException("Invalid verification token");
+      throw apiError(401, "INVALID_VERIFICATION_TOKEN", "Invalid verification token");
     }
     const verified = await database.user.update({
       where: { id: user.id },

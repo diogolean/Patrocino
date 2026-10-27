@@ -1,9 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useState, useSyncExternalStore } from "react";
+import { FormEvent, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { LoaderCircle, Shield } from "lucide-react";
 import { Button, Logo } from "@mimelux/ui";
+import { apiErrorText } from "@/lib/api-error";
 import { getServerSessionSnapshot, getSessionSnapshot, refreshSession, subscribeSession } from "@/lib/session";
 import { roleHome } from "@/lib/use-role-guard";
 import { AdminCreatorStudio } from "./creator-studio";
@@ -33,23 +35,29 @@ type AuditEntry = {
   createdAt: string;
 };
 
-const roleLabel: Record<AdminRole, string> = {
-  FAN: "Fã",
-  CREATOR: "Criador",
-  AFFILIATE: "Afiliado",
-  ADMIN: "Admin",
-};
+type ErrorTranslator = { has: (key: string) => boolean; (key: string): string };
 
-async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function adminFetch<T>(path: string, errors: ErrorTranslator, fallback: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { ...init, cache: "no-store" });
-  const data = (await response.json().catch(() => ({}))) as T & { message?: string };
-  if (!response.ok) throw new Error(data.message || "Não foi possível concluir a ação.");
+  const data = (await response.json().catch(() => ({}))) as T & { code?: unknown; message?: unknown };
+  if (!response.ok) throw new Error(apiErrorText(data, errors, fallback));
   return data;
 }
 
 export default function AdminPage() {
   const router = useRouter();
+  const locale = useLocale();
+  const t = useTranslations("admin");
+  const auth = useTranslations("auth");
+  const errors = useTranslations("errors");
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
+
+  function roleLabel(role: AdminRole) {
+    if (role === "FAN") return auth("fan");
+    if (role === "CREATOR") return auth("creator");
+    if (role === "AFFILIATE") return auth("affiliate");
+    return t("roleAdmin");
+  }
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -74,44 +82,44 @@ export default function AdminPage() {
     if (session.user.role !== "admin") router.replace(roleHome(session.user.role));
   }, [router, session]);
 
+  const loadUsers = useCallback(async (nextQuery: string) => {
+    setLoadingList(true);
+    setError("");
+    try {
+      const data = await adminFetch<{ users: AdminUser[] }>(`/api/admin/users?q=${encodeURIComponent(nextQuery)}`, errors, t("listFailed"));
+      setUsers(data.users);
+      setSelectedId((current) => (data.users.some((user) => user.id === current) ? current : data.users[0]?.id ?? ""));
+    } catch (caught) {
+      setError(caught instanceof Error && caught.message ? caught.message : t("listFailed"));
+    } finally {
+      setLoadingList(false);
+    }
+  }, [errors, t]);
+
   useEffect(() => {
     if (session.status !== "ready" || session.user?.role !== "admin") return;
     const handle = window.setTimeout(() => {
       void loadUsers(query);
     }, 200);
     return () => window.clearTimeout(handle);
-  }, [query, session.status, session.user?.role]);
-
-  async function loadUsers(nextQuery: string) {
-    setLoadingList(true);
-    setError("");
-    try {
-      const data = await adminFetch<{ users: AdminUser[] }>(`/api/admin/users?q=${encodeURIComponent(nextQuery)}`);
-      setUsers(data.users);
-      setSelectedId((current) => (data.users.some((user) => user.id === current) ? current : data.users[0]?.id ?? ""));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível listar as contas.");
-    } finally {
-      setLoadingList(false);
-    }
-  }
+  }, [loadUsers, query, session.status, session.user?.role]);
 
   useEffect(() => {
     if (!selectedId || session.user?.role !== "admin") return;
     let cancelled = false;
-    void adminFetch<{ user: AdminUser; audit: AuditEntry[] }>(`/api/admin/users/${selectedId}`)
+    void adminFetch<{ user: AdminUser; audit: AuditEntry[] }>(`/api/admin/users/${selectedId}`, errors, t("openFailed"))
       .then((data) => {
         if (cancelled) return;
         setDraft(data.user);
         setAudit(data.audit);
       })
       .catch((caught: unknown) => {
-        if (!cancelled) setError(caught instanceof Error ? caught.message : "Não foi possível abrir a conta.");
+        if (!cancelled) setError(caught instanceof Error && caught.message ? caught.message : t("openFailed"));
       });
     return () => {
       cancelled = true;
     };
-  }, [selectedId, session.user?.role]);
+  }, [errors, selectedId, session.user?.role, t]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -120,7 +128,7 @@ export default function AdminPage() {
     setError("");
     setNotice("");
     try {
-      const data = await adminFetch<{ user: AdminUser }>(`/api/admin/users/${draft.id}`, {
+      const data = await adminFetch<{ user: AdminUser }>(`/api/admin/users/${draft.id}`, errors, t("saveFailed"), {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -133,11 +141,11 @@ export default function AdminPage() {
       });
       setDraft(data.user);
       setUsers((current) => current.map((user) => (user.id === data.user.id ? data.user : user)));
-      setNotice("Conta atualizada.");
-      const fresh = await adminFetch<{ audit: AuditEntry[] }>(`/api/admin/users/${draft.id}`);
+      setNotice(t("updated"));
+      const fresh = await adminFetch<{ audit: AuditEntry[] }>(`/api/admin/users/${draft.id}`, errors, t("openFailed"));
       setAudit(fresh.audit);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível salvar.");
+      setError(caught instanceof Error && caught.message ? caught.message : t("saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -149,16 +157,16 @@ export default function AdminPage() {
     setError("");
     setNotice("");
     try {
-      const data = await adminFetch<{ user: AdminUser }>(`/api/admin/users/${draft.id}`, {
+      const data = await adminFetch<{ user: AdminUser }>(`/api/admin/users/${draft.id}`, errors, t("suspendFailed"), {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ suspended: !draft.suspended }),
       });
       setDraft(data.user);
       setUsers((current) => current.map((user) => (user.id === data.user.id ? data.user : user)));
-      setNotice(data.user.suspended ? "Conta suspensa." : "Conta reativada.");
+      setNotice(data.user.suspended ? t("suspended") : t("reactivated"));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível alterar a suspensão.");
+      setError(caught instanceof Error && caught.message ? caught.message : t("suspendFailed"));
     } finally {
       setSaving(false);
     }
@@ -171,14 +179,14 @@ export default function AdminPage() {
     setNotice("");
     setTemporaryPassword(null);
     try {
-      const data = await adminFetch<{ temporaryPassword: string }>(`/api/admin/users/${draft.id}/reset-password`, {
+      const data = await adminFetch<{ temporaryPassword: string }>(`/api/admin/users/${draft.id}/reset-password`, errors, t("resetFailed"), {
         method: "POST",
       });
       setTemporaryPassword({ id: draft.id, value: data.temporaryPassword });
       setDraft({ ...draft, mustResetPassword: true });
-      setNotice("Senha temporária gerada. Ela aparece só desta vez.");
+      setNotice(t("tempNotice"));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível redefinir a senha.");
+      setError(caught instanceof Error && caught.message ? caught.message : t("resetFailed"));
     } finally {
       setSaving(false);
     }
@@ -186,17 +194,17 @@ export default function AdminPage() {
 
   async function removeUser() {
     if (!draft) return;
-    if (!window.confirm(`Excluir a conta de ${draft.email}? O acesso acaba agora.`)) return;
+    if (!window.confirm(t("deleteConfirm", { email: draft.email }))) return;
     setSaving(true);
     setError("");
     try {
-      await adminFetch(`/api/admin/users/${draft.id}`, { method: "DELETE" });
-      setNotice("Conta excluída.");
+      await adminFetch(`/api/admin/users/${draft.id}`, errors, t("deleteFailed"), { method: "DELETE" });
+      setNotice(t("deleted"));
       setDraft(null);
       setSelectedId("");
       await loadUsers(query);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível excluir a conta.");
+      setError(caught instanceof Error && caught.message ? caught.message : t("deleteFailed"));
     } finally {
       setSaving(false);
     }
@@ -205,7 +213,7 @@ export default function AdminPage() {
   if (session.status !== "ready" || session.user?.role !== "admin") {
     return (
       <main className="grid min-h-dvh place-items-center bg-background text-sm text-muted">
-        Abrindo a administração…
+        {t("opening")}
       </main>
     );
   }
@@ -221,7 +229,7 @@ export default function AdminPage() {
         <Logo compact />
         <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-primary-strong">
           <Shield className="size-4" />
-          Administração
+          {t("adminLabel")}
         </p>
       </header>
       <RevenueSettings />
@@ -229,19 +237,19 @@ export default function AdminPage() {
       <AdminCreatorStudio />
       <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[320px_1fr] sm:px-8">
         <section className="rounded-3xl border border-border bg-elevated/70 p-4">
-          <h1 className="text-lg font-extrabold tracking-[-.03em]">Contas</h1>
-          <p className="mt-1 text-xs leading-5 text-muted">Busque por e-mail, nome ou usuário.</p>
+          <h1 className="text-lg font-extrabold tracking-[-.03em]">{t("accounts")}</h1>
+          <p className="mt-1 text-xs leading-5 text-muted">{t("searchHint")}</p>
           <input
             data-testid="admin-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar conta"
-            aria-label="Buscar conta"
+            placeholder={t("searchPlaceholder")}
+            aria-label={t("searchLabel")}
             className="mt-4 h-11 w-full rounded-full border border-border bg-background px-4 text-sm outline-none focus:border-primary"
           />
           <div className="mt-4 space-y-2">
-            {loadingList && <p className="text-sm text-muted">Carregando contas…</p>}
-            {!loadingList && users.length === 0 && <p className="text-sm text-muted">Nenhuma conta encontrada.</p>}
+            {loadingList && <p className="text-sm text-muted">{t("loading")}</p>}
+            {!loadingList && users.length === 0 && <p className="text-sm text-muted">{t("none")}</p>}
             {users.map((user) => (
               <button
                 key={user.id}
@@ -256,8 +264,8 @@ export default function AdminPage() {
                 <p className="truncate text-sm font-bold">{user.name || user.email}</p>
                 <p className="truncate text-xs text-muted">{user.email}</p>
                 <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-primary-strong">
-                  {roleLabel[user.role]}
-                  {user.suspended ? " · suspensa" : ""}
+                  {roleLabel(user.role)}
+                  {user.suspended ? t("suspendedMark") : ""}
                 </p>
               </button>
             ))}
@@ -265,7 +273,7 @@ export default function AdminPage() {
         </section>
 
         <section className="rounded-3xl border border-border bg-elevated/70 p-4 sm:p-6">
-          {!draft && <p className="text-sm text-muted">Selecione uma conta para ver os detalhes.</p>}
+          {!draft && <p className="text-sm text-muted">{t("select")}</p>}
           {draft && (
             <form onSubmit={save} className="space-y-4">
               <div>
@@ -273,30 +281,30 @@ export default function AdminPage() {
                 <p className="mt-1 text-sm text-muted">{draft.email}</p>
               </div>
               <label className="block text-xs font-bold uppercase tracking-wide text-muted">
-                Papel
+                {t("role")}
                 <select
                   data-testid="admin-role"
                   value={draft.role}
                   onChange={(event) => setDraft({ ...draft, role: event.target.value as AdminRole })}
                   className="mt-2 h-11 w-full rounded-full border border-border bg-background px-4 text-sm font-semibold normal-case tracking-normal text-foreground"
                 >
-                  {(Object.keys(roleLabel) as AdminRole[]).map((role) => (
+                  {(["FAN", "CREATOR", "AFFILIATE", "ADMIN"] as AdminRole[]).map((role) => (
                     <option key={role} value={role}>
-                      {roleLabel[role]}
+                      {roleLabel(role)}
                     </option>
                   ))}
                 </select>
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Nome" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
-                <Field label="Usuário" value={draft.username} onChange={(username) => setDraft({ ...draft, username })} />
-                <Field label="Cidade" value={draft.city} onChange={(city) => setDraft({ ...draft, city })} />
-                <Field label="Bio" value={draft.bio} onChange={(bio) => setDraft({ ...draft, bio })} />
+                <Field label={t("name")} value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
+                <Field label={t("username")} value={draft.username} onChange={(username) => setDraft({ ...draft, username })} />
+                <Field label={t("city")} value={draft.city} onChange={(city) => setDraft({ ...draft, city })} />
+                <Field label={t("bio")} value={draft.bio} onChange={(bio) => setDraft({ ...draft, bio })} />
               </div>
               <p className="text-xs text-muted">
-                {draft.suspended ? "Suspensa" : "Ativa"}
-                {draft.mustResetPassword ? " · senha temporária pendente" : ""}
-                {draft.isDemo ? " · conta de demonstração" : ""}
+                {draft.suspended ? t("statusSuspended") : t("statusActive")}
+                {draft.mustResetPassword ? t("tempPending") : ""}
+                {draft.isDemo ? t("demoAccount") : ""}
               </p>
               {error && (
                 <p role="alert" className="rounded-2xl bg-accent/25 px-4 py-3 text-xs font-medium">
@@ -306,32 +314,32 @@ export default function AdminPage() {
               {notice && <p className="text-sm font-semibold text-primary-strong">{notice}</p>}
               {temporaryPassword?.id === draft.id && (
                 <p data-testid="admin-temp-password" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm">
-                  Senha temporária: <span className="font-bold">{temporaryPassword.value}</span>
+                  {t("tempPassword")} <span className="font-bold">{temporaryPassword.value}</span>
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
                 <Button data-testid="admin-save" type="submit" disabled={saving}>
                   {saving ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                  Salvar
+                  {t("save")}
                 </Button>
                 <Button data-testid="admin-suspend" type="button" variant="outline" disabled={saving} onClick={() => void toggleSuspended()}>
-                  {draft.suspended ? "Reativar" : "Suspender"}
+                  {draft.suspended ? t("reactivate") : t("suspend")}
                 </Button>
                 <Button data-testid="admin-reset" type="button" variant="outline" disabled={saving} onClick={() => void resetPassword()}>
-                  Redefinir senha
+                  {t("reset")}
                 </Button>
                 <Button data-testid="admin-delete" type="button" variant="ghost" disabled={saving} onClick={() => void removeUser()}>
-                  Excluir
+                  {t("remove")}
                 </Button>
               </div>
               <div>
-                <h3 className="text-sm font-extrabold">Auditoria</h3>
-                {audit.length === 0 && <p className="mt-2 text-xs text-muted">Nenhuma ação registrada nesta conta.</p>}
+                <h3 className="text-sm font-extrabold">{t("audit")}</h3>
+                {audit.length === 0 && <p className="mt-2 text-xs text-muted">{t("noAudit")}</p>}
                 <ul className="mt-2 space-y-2">
                   {audit.map((entry) => (
                     <li key={entry.id} className="rounded-2xl border border-border px-3 py-2 text-xs">
                       <span className="font-bold">{entry.action}</span>
-                      <span className="text-muted"> · {new Date(entry.createdAt).toLocaleString("pt-BR")}</span>
+                      <span className="text-muted"> · {new Date(entry.createdAt).toLocaleString(locale)}</span>
                     </li>
                   ))}
                 </ul>

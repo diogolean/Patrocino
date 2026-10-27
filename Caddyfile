@@ -4,7 +4,9 @@
 (app) {
 	encode zstd gzip
 	handle /v1* {
-		reverse_proxy api:3334
+		reverse_proxy api:3334 {
+			header_up X-Forwarded-For {remote_host}
+		}
 	}
 	@private path /media/uploads/*/private /media/uploads/*/private/* /media/uploads/*/tmp /media/uploads/*/tmp/*
 	handle @private {
@@ -18,14 +20,18 @@
 		file_server
 	}
 	handle {
-		reverse_proxy web:3333
+		reverse_proxy web:3333 {
+			header_up X-Forwarded-For {remote_host}
+		}
 	}
 }
 patrocino.com, www.patrocino.com {
 	import app
 }
 api.patrocino.com {
-	reverse_proxy api:3334
+	reverse_proxy api:3334 {
+		header_up X-Forwarded-For {remote_host}
+	}
 }
 http://2.25.182.133, http://localhost {
 	import app

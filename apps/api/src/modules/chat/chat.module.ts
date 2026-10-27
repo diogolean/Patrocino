@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Module, NotFoundException, Param, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { chatSequenceOfferModes } from "@mimelux/core/chat-sequence";
@@ -69,9 +70,9 @@ class ChatController {
   ) {
     const user = await requireUser(authorization);
     const parsed = z.object({ body: z.string().trim().min(1).max(2000) }).safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const message = await sendFanMessage(user.id, creatorKey, parsed.data.body);
-    if (!message) throw new NotFoundException("Conversation not found");
+    if (!message) throw apiError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
     return message;
   }
 
@@ -122,17 +123,17 @@ class ChatSequenceController {
     const user = await requireUser(authorization);
     await assertOwnsCreator(user, id);
     const parsed = sequenceSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const positions = new Set(parsed.data.steps.map((step) => step.position));
-    if (positions.size !== parsed.data.steps.length) throw new BadRequestException("Each step needs its own position");
+    if (positions.size !== parsed.data.steps.length) throw apiError(400, "EACH_STEP_NEEDS_ITS_OWN_POSITION", "Each step needs its own position");
     for (const step of parsed.data.steps) {
       if (step.offerMode !== "post") continue;
-      if (!step.postId) throw new BadRequestException("Choose a video for this step");
+      if (!step.postId) throw apiError(400, "CHOOSE_A_VIDEO_FOR_THIS_STEP", "Choose a video for this step");
       const post = await database.post.findFirst({
         where: { id: step.postId, creatorId: id, deletedAt: null, priceCents: { gt: 0 } },
         select: { id: true },
       });
-      if (!post) throw new BadRequestException("That video is not on this creator");
+      if (!post) throw apiError(400, "THAT_VIDEO_IS_NOT_ON_THIS_CREATOR", "That video is not on this creator");
     }
     const saved = await replaceChatSequence(id, parsed.data.enabled, parsed.data.steps as SequenceStepInput[]);
     if (user.role === "ADMIN") {

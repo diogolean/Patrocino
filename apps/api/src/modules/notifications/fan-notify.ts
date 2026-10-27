@@ -25,6 +25,7 @@ export async function notifyFanOfMessage(messageId: string) {
       include: {
         conversation: {
           include: {
+            fan: { select: { locale: true } },
             creator: { include: { user: { include: { profile: true } } } },
           },
         },
@@ -43,6 +44,7 @@ export async function notifyFanOfMessage(messageId: string) {
       creatorId,
       creatorUsername: profile?.username,
       icon: profile?.avatarUrl,
+      locale: message.conversation.fan?.locale,
     });
     const subscriptions = await database.pushSubscription.findMany({ where: { userId: fanId } });
     if (subscriptions.length === 0) return { enabled: true as const, sent: 0, removed: 0 };

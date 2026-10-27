@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import { BadRequestException, Body, Controller, Get, Headers, Module, Param, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
@@ -34,7 +35,7 @@ class SubscriptionsController {
   async checkout(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
     const user = await requireUser(authorization);
     const parsed = checkoutSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     return startSubscriptionCheckout(user, parsed.data.creatorId, parsed.data.planId);
   }
 

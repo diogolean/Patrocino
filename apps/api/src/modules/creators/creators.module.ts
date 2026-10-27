@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Module, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { planChargeCents } from "@mimelux/core/monetization";
@@ -85,7 +86,7 @@ async function assertDurationAvailable(creatorId: string, durationMonths: number
     },
     select: { id: true },
   });
-  if (clash) throw new BadRequestException("An active plan already uses this duration");
+  if (clash) throw apiError(400, "AN_ACTIVE_PLAN_ALREADY_USES_THIS_DURATION", "An active plan already uses this duration");
 }
 
 @ApiTags("creators")
@@ -152,7 +153,7 @@ class CreatorsController {
   ) {
     const user = await requireUser(authorization);
     const parsed = profileSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const creator = await this.scopedCreator(user, id);
     const input = parsed.data;
     try {
@@ -174,7 +175,7 @@ class CreatorsController {
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw new BadRequestException("Username already taken");
+        throw apiError(400, "USERNAME_ALREADY_TAKEN", "Username already taken");
       }
       throw error;
     }
@@ -194,7 +195,7 @@ class CreatorsController {
   @ApiOperation({ summary: "Read the signed-in creator studio" })
   async me(@Headers("authorization") authorization: string | undefined) {
     const user = await requireUser(authorization);
-    if (user.role !== "CREATOR") throw new ForbiddenException("Creator only");
+    if (user.role !== "CREATOR") throw apiError(403, "CREATOR_ONLY", "Creator only");
     const creator = await this.ensureOwnCreator(user.id);
     return this.studio(creator.id);
   }
@@ -218,7 +219,7 @@ class CreatorsController {
   ) {
     const user = await requireUser(authorization);
     const parsed = planCreateSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const creator = await this.scopedCreator(user, id);
     const input = parsed.data;
     if (input.active !== false) await assertDurationAvailable(creator.id, input.durationMonths);
@@ -252,10 +253,10 @@ class CreatorsController {
   ) {
     const user = await requireUser(authorization);
     const parsed = planPatchSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const creator = await this.scopedCreator(user, id);
     const current = await database.plan.findFirst({ where: { id: planId, creatorId: creator.id } });
-    if (!current) throw new BadRequestException("Plan not found");
+    if (!current) throw apiError(400, "PLAN_NOT_FOUND", "Plan not found");
     const input = parsed.data;
     const nextActive = input.active ?? current.active;
     const nextDuration = input.durationMonths ?? current.durationMonths;
@@ -298,7 +299,7 @@ class CreatorsController {
       where: { id: creatorId },
       include: { user: { include: { profile: true } } },
     });
-    if (!creator) throw new BadRequestException("Creator not found");
+    if (!creator) throw apiError(400, "CREATOR_NOT_FOUND", "Creator not found");
     await assertOwnsCreator(user, creator.id);
     return creator;
   }

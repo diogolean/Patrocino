@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import { BadRequestException, Body, ConflictException, Controller, Get, Headers, HttpCode, HttpException, Module, Param, Post, RawBodyRequest, Req, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
@@ -21,7 +22,7 @@ const checkoutSchema = z.strictObject({
 function parseCheckout(body: unknown) {
   const parsed = checkoutSchema.safeParse(body);
   if (!parsed.success) {
-    throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
   }
   return parsed.data;
 }
@@ -45,7 +46,7 @@ export class PaymentsController {
     const user = await requireUser(authorization);
     const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     if (record.provider === "stripe" && typeof record.purpose === "string") {
-      if (!paymentMethodsEnabled().stripe) throw new ConflictException("Stripe is not enabled.");
+      if (!paymentMethodsEnabled().stripe) throw apiError(409, "STRIPE_IS_NOT_ENABLED", "Stripe is not enabled.");
       const draft = await chargeDraftForUser(user, body);
       const purchase = await ensureQuotedPurchase(draft);
       try {
@@ -74,9 +75,9 @@ export class PaymentsController {
         if (error instanceof HttpException) throw error;
         const message = error instanceof Error ? error.message : "";
         if (!message || /secret|token|rk_|sk_/i.test(message)) {
-          throw new ServiceUnavailableException("Stripe is not configured.");
+          throw apiError(503, "STRIPE_IS_NOT_CONFIGURED", "Stripe is not configured.");
         }
-        throw new ServiceUnavailableException(message);
+        throw apiError(503, "STRIPE_IS_NOT_CONFIGURED", message);
       }
     }
     const input = parseCheckout(body);
@@ -108,13 +109,13 @@ export class PaymentsController {
     if (!secret.ok || !key.ok || !request.rawBody) {
       return { accepted: false, reason: "stripe_webhook_not_configured" };
     }
-    if (!signature) throw new BadRequestException("Invalid Stripe signature");
+    if (!signature) throw apiError(400, "INVALID_STRIPE_SIGNATURE", "Invalid Stripe signature");
     const stripe = new Stripe(key.key);
     let event: Stripe.Event;
     try {
       event = stripe.webhooks.constructEvent(request.rawBody, signature, secret.key);
     } catch {
-      throw new BadRequestException("Invalid Stripe signature");
+      throw apiError(400, "INVALID_STRIPE_SIGNATURE", "Invalid Stripe signature");
     }
     try {
       const result = await handleStripeEvent(event);

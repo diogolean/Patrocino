@@ -16,7 +16,9 @@ describe("locale resolution", () => {
         acceptLanguage: "es-MX,es;q=0.9,en;q=0.4",
         cfIpCountry: "BR",
       }),
-    ).toBe("es");
+    ).toBe("pt-BR");
+    expect(resolveRequestLocale({ acceptLanguage: "de-DE,de;q=0.8,en;q=0.2" })).toBe("de");
+    expect(resolveRequestLocale({ acceptLanguage: "es-MX", cfIpCountry: "US" })).toBe("en");
     expect(resolveRequestLocale({ cfIpCountry: "BR" })).toBe("pt-BR");
     expect(resolveRequestLocale({ cfIpCountry: "PT" })).toBe("pt-BR");
     expect(resolveRequestLocale({ xCountry: "AR" })).toBe("es");

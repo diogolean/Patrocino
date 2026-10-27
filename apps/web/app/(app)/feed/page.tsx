@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { Sparkles } from "lucide-react";
+import { getTranslations } from "next-intl/server";
 import { PostCard } from "@/components/post-card";
 import { creators, posts, type Post } from "@/lib/gateway";
 import { ACCESS_COOKIE } from "@/lib/session-cookies";
@@ -13,18 +14,20 @@ function forVisitor(post: Post, cover: string): Post {
 export default async function FeedPage() {
   const jar = await cookies();
   const signedIn = Boolean(jar.get(ACCESS_COOKIE)?.value);
+  const t = await getTranslations("feed");
+  const nav = await getTranslations("nav");
 
   return (
     <div className="mx-auto grid w-full max-w-6xl gap-7 px-4 py-6 sm:px-8 lg:grid-cols-[minmax(0,640px)_300px] lg:py-9">
       <section className="min-w-0">
         <div className="mb-5">
-          <p className="text-[10px] font-bold uppercase tracking-[.2em] text-primary-strong">Para você</p>
-          <h1 className="mt-1 text-2xl font-extrabold tracking-[-.04em]">Seu feed</h1>
-          <p className="mt-2 text-xs text-muted">Estreias no topo e o catálogo de demonstração em seguida.</p>
+          <p className="text-[10px] font-bold uppercase tracking-[.2em] text-primary-strong">{t("forYou")}</p>
+          <h1 className="mt-1 text-2xl font-extrabold tracking-[-.04em]">{t("title")}</h1>
+          <p className="mt-2 text-xs text-muted">{t("body")}</p>
         </div>
 
         <div data-testid="trending-strip" className="mb-6">
-          <h2 className="text-sm font-extrabold">Em alta</h2>
+          <h2 className="text-sm font-extrabold">{nav("trending")}</h2>
           <div className="-mx-4 mt-3 flex gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
             {creators.map((creator) => (
               <Link
@@ -61,12 +64,12 @@ export default async function FeedPage() {
         <div className="sticky top-24 space-y-4">
           <div className="rounded-[26px] bg-ink p-5 text-white">
             <Sparkles className="size-5 text-primary" />
-            <h2 className="mt-4 text-base font-extrabold">Feito para descobrir</h2>
-            <p className="mt-2 text-[10px] leading-5 text-white/60">Seu feed fica melhor conforme você acompanha e apoia novos criadores.</p>
-            <Link href="/topcreators?tab=destaques" className="mt-4 inline-block text-[10px] font-bold text-primary">Explorar destaques →</Link>
+            <h2 className="mt-4 text-base font-extrabold">{t("discoverTitle")}</h2>
+            <p className="mt-2 text-[10px] leading-5 text-white/60">{t("discoverBody")}</p>
+            <Link href="/topcreators?tab=destaques" className="mt-4 inline-block text-[10px] font-bold text-primary">{t("explore")}</Link>
           </div>
           <div className="rounded-[26px] border border-black/5 bg-white/55 p-5 dark:bg-white/5">
-            <h3 className="text-xs font-extrabold">Sugestões para você</h3>
+            <h3 className="text-xs font-extrabold">{t("suggestions")}</h3>
             <div className="mt-3 space-y-4">
               {creators.slice(4, 7).map((creator) => (
                 <Link key={creator.id} href={`/creator/${creator.username}`} className="block overflow-visible">

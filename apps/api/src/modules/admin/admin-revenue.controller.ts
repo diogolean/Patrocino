@@ -1,3 +1,4 @@
+import { apiError } from "../../http/api-error";
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Param, Patch, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { database } from "@mimelux/db/runtime";
@@ -17,7 +18,7 @@ const creatorSchema = z.object({
 
 async function requireAdmin(authorization?: string) {
   const user = await requireUser(authorization);
-  if (user.role !== "ADMIN") throw new ForbiddenException("Admin only");
+  if (user.role !== "ADMIN") throw apiError(403, "ADMIN_ONLY", "Admin only");
   return user;
 }
 
@@ -49,9 +50,9 @@ export class AdminRevenueController {
   async updateSettings(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
     const actor = await requireAdmin(authorization);
     const parsed = settingsSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     if (parsed.data.affiliateCommissionPercent > parsed.data.creatorSharePercent) {
-      throw new BadRequestException("Affiliate commission cannot exceed the creator share");
+      throw apiError(400, "AFFILIATE_COMMISSION_CANNOT_EXCEED_THE_CREATOR_SHARE", "Affiliate commission cannot exceed the creator share");
     }
     const settings = await database.platformSettings.upsert({
       where: { id: "default" },
@@ -123,9 +124,9 @@ export class AdminRevenueController {
   ) {
     const actor = await requireAdmin(authorization);
     const parsed = creatorSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
     const current = await database.creator.findUnique({ where: { id } });
-    if (!current) throw new BadRequestException("Creator not found");
+    if (!current) throw apiError(400, "CREATOR_NOT_FOUND", "Creator not found");
     const settings = await database.platformSettings.findUnique({ where: { id: "default" } });
     const creatorBps =
       parsed.data.creatorSharePercent === undefined
@@ -142,7 +143,7 @@ export class AdminRevenueController {
     const effectiveCreator = creatorBps ?? settings?.creatorShareBps ?? 8000;
     const effectiveAffiliate = affiliateBps ?? settings?.affiliateCommissionBps ?? 2000;
     if (effectiveAffiliate > effectiveCreator) {
-      throw new BadRequestException("Affiliate commission cannot exceed the creator share");
+      throw apiError(400, "AFFILIATE_COMMISSION_CANNOT_EXCEED_THE_CREATOR_SHARE", "Affiliate commission cannot exceed the creator share");
     }
     const creator = await database.creator.update({
       where: { id },
