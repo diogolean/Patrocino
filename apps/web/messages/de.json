@@ -291,5 +291,16 @@
     "confirmButton": "Löschung bestätigen",
     "wrongPassword": "Falsches Passwort.",
     "confirmHint": "Gib EXCLUIR ein, um zu bestätigen."
+  },
+  "notifications": {
+    "title": "Nachrichtenhinweise",
+    "body": "Erhalte einen Hinweis, wenn ein Creator eine Nachricht schickt, auch wenn Patrocino geschlossen ist.",
+    "enable": "Hinweise aktivieren",
+    "later": "Jetzt nicht",
+    "iosHint": "Füge Patrocino zum Home-Bildschirm hinzu, um Hinweise zu erhalten",
+    "unavailable": "Hinweise sind gerade nicht verfügbar.",
+    "denied": "Hinweise sind in diesem Browser blockiert.",
+    "unread": "{count, plural, one {# ungelesene Nachricht} other {# ungelesene Nachrichten}}",
+    "previewFallback": "Neue Nachricht"
   }
 }

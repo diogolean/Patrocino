@@ -5,6 +5,7 @@ import {
   renderChatSequence,
   type ChatSequenceOfferMode,
 } from "@mimelux/core/chat-sequence";
+import { findCreatorByKey } from "./creator-key";
 
 type Db = {
   chatSequence: Prisma.TransactionClient["chatSequence"];
@@ -271,13 +272,7 @@ export function startChatSequenceWorker() {
 }
 
 export async function readFanThread(fanId: string, creatorKey: string) {
-  const keys = Array.from(new Set([creatorKey, creatorKey.replace(/-/g, "")]));
-  const creator = await database.creator.findFirst({
-    where: {
-      OR: [{ id: { in: keys } }, { user: { profile: { is: { username: { in: keys } } } } }],
-    },
-    include: { user: { include: { profile: true } } },
-  });
+  const creator = await findCreatorByKey(creatorKey);
   if (!creator) return { messages: [] as ThreadMessage[] };
   const conversation = await database.conversation.findUnique({
     where: { fanId_creatorId: { fanId, creatorId: creator.id } },

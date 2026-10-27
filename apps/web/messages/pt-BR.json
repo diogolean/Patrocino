@@ -291,5 +291,16 @@
     "confirmButton": "Confirmar exclusão",
     "wrongPassword": "Senha incorreta.",
     "confirmHint": "Digite EXCLUIR para confirmar."
+  },
+  "notifications": {
+    "title": "Avisos de mensagens",
+    "body": "Receba um aviso quando um criador enviar uma mensagem, mesmo com o Patrocino fechado.",
+    "enable": "Ativar notificações",
+    "later": "Agora não",
+    "iosHint": "Adicione à tela inicial para receber notificações",
+    "unavailable": "As notificações não estão disponíveis neste momento.",
+    "denied": "As notificações estão bloqueadas neste navegador.",
+    "unread": "{count, plural, one {# mensagem não lida} other {# mensagens não lidas}}",
+    "previewFallback": "Nova mensagem"
   }
 }
