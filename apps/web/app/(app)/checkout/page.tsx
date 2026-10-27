@@ -248,12 +248,12 @@ function CheckoutContent() {
         <Logo compact />
         <p className="mt-10 text-[10px] font-black uppercase tracking-[.2em] text-primary-strong">Checkout protegido</p>
         <h1 className="mt-2 text-3xl font-extrabold tracking-[-.05em]">{kind === "subscription" ? "Falta pouco para fazer parte." : "Uma experiência só sua."}</h1>
-        <p className="mt-4 max-w-md text-sm leading-6 text-muted">{realCheckout ? (methods.expay && methods.stripe ? "Escolha Pix ou cartão. Os dois cobram de verdade." : methods.expay ? "Pague com Pix. A cobrança é real." : "Pague com cartão. A cobrança é real.") : "Finalize com Pix. Este é um ambiente de demonstração: o QR é fictício e o botão apenas simula a confirmação."}</p>
+        <p className="mt-4 max-w-md text-sm leading-6 text-muted">{checkoutLead(realCheckout, methods.expay, methods.stripe)}</p>
 
         <div className="mt-7 flex items-center gap-4 rounded-[24px] border border-black/5 bg-white/60 p-4 dark:bg-white/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={creator.avatar} alt={creator.name} className="size-16 rounded-[20px] object-cover" />
-          <div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{kind === "subscription" ? `Assinatura de ${creator.name}` : specialRequest ? `Pedido para ${creator.name}` : `Conteúdo de ${creator.name}`}</p><p className="mt-1 text-[9px] text-muted">{kind === "subscription" ? `${catalogPlan?.name ?? plan.name}` : message ? "Mensagem exclusiva · acesso permanente" : pack ? (catalogPack?.name ?? "Pacote") : specialRequest ? "Valor combinado · ambiente demo" : "Post exclusivo · acesso permanente"}</p></div>
+          <div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{kind === "subscription" ? `Assinatura de ${creator.name}` : specialRequest ? `Pedido para ${creator.name}` : `Conteúdo de ${creator.name}`}</p><p data-testid="checkout-plan" className="mt-1 text-[9px] text-muted">{kind === "subscription" ? `${catalogPlan?.name ?? plan.name}` : message ? "Mensagem exclusiva · acesso permanente" : pack ? (catalogPack?.name ?? "Pacote") : specialRequest ? "Valor combinado · ambiente demo" : "Post exclusivo · acesso permanente"}</p></div>
           <p data-testid="checkout-amount" className="text-sm font-black">{shownCents == null ? "…" : brl(shownCents)}</p>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
@@ -282,7 +282,7 @@ function CheckoutContent() {
               <DemoPaymentGraphic seed={`${kind}-${id}-${amount}`} />
               <div className="mt-5 flex items-center gap-2 text-[10px] font-semibold text-muted"><Clock3 className="size-3.5" /> Tela ilustrativa · sem código Pix real</div>
               <div className="mt-5 w-full max-w-sm rounded-2xl bg-surface/65 p-3 text-center text-[9px] font-semibold text-muted dark:bg-white/5">
-                Checkout em modo de demonstração
+                Pagamento com Pix
               </div>
             </>
           )}
@@ -309,7 +309,7 @@ function CheckoutContent() {
               {paying ? "Confirmando..." : "Simular pagamento"}
             </Button>
           )}
-          <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">{realCheckout ? "O Pix abre o código na hora. O cartão é confirmado pela Stripe." : "Ao continuar, você confirma que entende que este checkout é apenas uma simulação de produto."}</p>
+          <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">{checkoutFoot(methods.expay, methods.stripe)}</p>
         </div>
       </section>
       {pixOpen && <ExpayCheckoutModal
@@ -341,6 +341,19 @@ function CheckoutContent() {
       />}
     </div>
   );
+}
+
+function checkoutLead(real: boolean, expay: boolean, stripe: boolean) {
+  if (!real) return "Finalize com Pix.";
+  if (expay && stripe) return "Escolha Pix ou cartão. Os dois cobram de verdade.";
+  if (expay) return "Pague com Pix. A cobrança é real.";
+  return "Pague com cartão. A cobrança é real.";
+}
+
+function checkoutFoot(expay: boolean, stripe: boolean) {
+  if (expay && stripe) return "O Pix abre o código na hora. O cartão é confirmado pela Stripe.";
+  if (stripe) return "O cartão é confirmado pela Stripe.";
+  return "O Pix abre o código na hora.";
 }
 
 export default function CheckoutPage() {
