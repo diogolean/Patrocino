@@ -83,6 +83,49 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
+button:not(:disabled):not([aria-disabled="true"]),
+a[href]:not([aria-disabled="true"]),
+[role="button"]:not(:disabled):not([aria-disabled="true"]),
+[role="link"]:not([aria-disabled="true"]),
+[role="tab"]:not([aria-disabled="true"]),
+[role="switch"]:not([aria-disabled="true"]),
+[role="menuitem"]:not([aria-disabled="true"]),
+[role="menuitemcheckbox"]:not([aria-disabled="true"]),
+[role="menuitemradio"]:not([aria-disabled="true"]),
+[role="option"]:not([aria-disabled="true"]),
+summary,
+label[for]:not(:has(:is(:disabled, [aria-disabled="true"]))),
+label:has(:is(input, select, textarea, button):not(:disabled):not([aria-disabled="true"])),
+select:not(:disabled):not([aria-disabled="true"]),
+input[type="button"]:not(:disabled):not([aria-disabled="true"]),
+input[type="submit"]:not(:disabled):not([aria-disabled="true"]),
+input[type="reset"]:not(:disabled):not([aria-disabled="true"]),
+input[type="checkbox"]:not(:disabled):not([aria-disabled="true"]),
+input[type="radio"]:not(:disabled):not([aria-disabled="true"]),
+input[type="file"]:not(:disabled):not([aria-disabled="true"]),
+.clickable:not(:disabled):not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+.clickable:not(:disabled):not([aria-disabled="true"]) :is(img, video, canvas) {
+  cursor: pointer;
+}
+
+input:not(:disabled):not([aria-disabled="true"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="image"]):not([type="range"]),
+textarea:not(:disabled):not([aria-disabled="true"]) {
+  cursor: text;
+}
+
+button:disabled,
+button[disabled],
+input:disabled,
+select:disabled,
+textarea:disabled,
+[disabled],
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 :where(a, button, input, textarea, select):focus-visible {
   outline: 3px solid color-mix(in srgb, var(--primary) 55%, transparent);
   outline-offset: 2px;

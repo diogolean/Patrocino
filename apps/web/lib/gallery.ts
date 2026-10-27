@@ -74,7 +74,7 @@ function hashSeed(value: string) {
   return hash >>> 0;
 }
 
-/** Spreads videos through photos. The same creator id always yields the same order. */
+/** Spreads videos through photos. The same seed always yields the same order. */
 export function interleaveMedia<T>(photos: readonly T[], videos: readonly T[], seedKey: string): T[] {
   if (videos.length === 0) return [...photos];
   if (photos.length === 0) return [...videos];
@@ -107,7 +107,27 @@ export function interleaveMedia<T>(photos: readonly T[], videos: readonly T[], s
   return result;
 }
 
-type GalleryPost = { mediaType: string; publishedAt: string };
+type GalleryPost = { mediaType: string; publishedAt: string; visibility?: string };
+
+const LOCKED_POST_VISIBILITY = new Set(["subscriber", "ppv", "subscriber_ppv"]);
+
+function clipIsLocked<T extends GalleryPost>(entry: GalleryEntry<T>) {
+  if (entry.kind === "video") return entry.video.purchased === false;
+  return entry.post.mediaType === "video" && LOCKED_POST_VISIBILITY.has(entry.post.visibility ?? "");
+}
+
+/** Moves the first locked clip into a stable slot among the first three items. */
+function placeLockedVideoEarly<T extends GalleryPost>(items: GalleryEntry<T>[], seedKey: string): GalleryEntry<T>[] {
+  const index = items.findIndex(clipIsLocked);
+  if (index < 0) return items;
+  const slot = mix32(hashSeed(`${seedKey}:early`) || 1)() % 3;
+  const target = Math.min(slot, items.length - 1);
+  if (index === target) return items;
+  const next = items.slice();
+  const [clip] = next.splice(index, 1);
+  next.splice(target, 0, clip as GalleryEntry<T>);
+  return next;
+}
 
 export function buildProfileGallery<T extends GalleryPost>(
   tab: "posts" | "media" | "videos",
@@ -128,5 +148,5 @@ export function buildProfileGallery<T extends GalleryPost>(
   if (tab !== "posts") return merged;
   const photos = merged.filter((entry) => entry.kind === "post" && entry.post.mediaType !== "video");
   const clips = merged.filter((entry) => entry.kind === "video" || (entry.kind === "post" && entry.post.mediaType === "video"));
-  return interleaveMedia(photos, clips, creatorId);
+  return placeLockedVideoEarly(interleaveMedia(photos, clips, creatorId), creatorId);
 }

@@ -33,10 +33,12 @@ export function CreatorProfile({
   creator,
   posts,
   offers = null,
+  gallerySession = "",
 }: {
   creator: Creator;
   posts: Post[];
   offers?: ProfileOffers | null;
+  gallerySession?: string;
 }) {
   const router = useRouter();
   const t = useTranslations("profile");
@@ -231,7 +233,8 @@ export function CreatorProfile({
     return `/checkout?kind=post&id=${video.id}&creator=${creator.username}&return=${back}`;
   }
 
-  const gallery = buildProfileGallery(tab, posts, videos, creator.id);
+  const gallerySeed = gallerySession ? `${creator.id}:${gallerySession}` : creator.id;
+  const gallery = buildProfileGallery(tab, posts, videos, gallerySeed);
 
   function openSlides(id: string) {
     const slides: ViewerSlide[] = [];
@@ -503,7 +506,7 @@ export function CreatorProfile({
           const post = entry.post;
           const locked = postLocked(post);
           return (
-            <div key={post.id} data-testid="profile-post" data-locked={locked} onContextMenu={(event) => event.preventDefault()} className={`media-shield group relative aspect-[3/4] overflow-hidden rounded-[16px] ${post.playback ? "bg-black" : "bg-surface"}`}>
+            <div key={post.id} data-testid="profile-post" data-locked={locked} onContextMenu={(event) => event.preventDefault()} className={`clickable media-shield group relative aspect-[3/4] overflow-hidden rounded-[16px] ${post.playback ? "bg-black" : "bg-surface"}`}>
               <PostVisual post={post} locked={locked} testId={post.playback ? "profile-video" : undefined} autoPlay />
               {!locked && !post.playback && (
                 <button type="button" aria-label="Abrir foto" className="absolute inset-0 z-[2]" onClick={() => openSlides(post.id)} />
@@ -514,14 +517,15 @@ export function CreatorProfile({
                 </button>
               )}
               {locked && (
-                <div className="absolute inset-0 z-[3] grid place-items-center bg-ink/25 p-2 text-center text-white">
-                  <div>
+                <Link
+                  href={post.visibility === "subscriber" ? planHref(1) : `/checkout?kind=post&id=${post.id}&creator=${creator.id}&return=/creator/${creator.username}`}
+                  className="absolute inset-0 z-[3] grid place-items-center bg-ink/25 p-2 text-center text-white"
+                >
+                  <span>
                     <span className="mx-auto grid size-8 place-items-center rounded-full bg-black/40"><LockKeyhole className="size-3.5" /></span>
-                    <Link href={post.visibility === "subscriber" ? planHref(1) : `/checkout?kind=post&id=${post.id}&creator=${creator.id}&return=/creator/${creator.username}`}>
-                      <span className="mt-2 inline-block text-[10px] font-semibold">{post.visibility === "subscriber" ? "Assine para desbloquear" : "Desbloquear conteúdo"}</span>
-                    </Link>
-                  </div>
-                </div>
+                    <span className="mt-2 block text-[10px] font-semibold">{post.visibility === "subscriber" ? "Assine para desbloquear" : "Desbloquear conteúdo"}</span>
+                  </span>
+                </Link>
               )}
             </div>
           );

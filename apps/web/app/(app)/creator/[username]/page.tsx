@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { CreatorProfile } from "@/components/creator-profile";
 import { apiBase } from "@/lib/api-auth";
@@ -38,5 +39,13 @@ export default async function CreatorPage(props: {
     }));
 
   const priced = offers ?? (process.env.NODE_ENV === "production" ? { source: "database" as const, plans: [], packs: [], promotion: null } : null);
-  return <CreatorProfile creator={creator} posts={[...creatorPosts, ...fallbackPosts]} offers={priced} />;
+  const gallerySession = (await headers()).get("x-gallery-session") ?? "";
+  return (
+    <CreatorProfile
+      creator={creator}
+      posts={[...creatorPosts, ...fallbackPosts]}
+      offers={priced}
+      gallerySession={gallerySession}
+    />
+  );
 }

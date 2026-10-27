@@ -95,7 +95,41 @@ describe("profile gallery and subscription copy", () => {
     ];
     const subscriber = [video("ppv-new", new Date(Date.UTC(2026, 3, 1)).toISOString())];
     const grid = buildProfileGallery("posts", posts, subscriber, "creator-sarah");
-    expect(grid[0]).toMatchObject({ kind: "post", post: { mediaType: "image" } });
+    expect(buildProfileGallery("posts", posts, subscriber, "creator-sarah")).toEqual(grid);
+    const lockedAt = grid.findIndex((entry) => entry.kind === "video" && entry.video.id === "ppv-new");
+    expect(lockedAt).toBeGreaterThanOrEqual(0);
+    expect(lockedAt).toBeLessThan(3);
+    expect(grid.slice(0, pageSize).concat(grid.slice(pageSize, pageSize * 2))).toEqual(grid.slice(0, pageSize * 2));
+    const slots = new Set<number>();
+    for (let seed = 0; seed < 24; seed += 1) {
+      const order = buildProfileGallery("posts", posts, subscriber, `viewer-${seed}`);
+      const slot = order.findIndex((entry) => entry.kind === "video" && entry.video.id === "ppv-new");
+      expect(slot).toBeGreaterThanOrEqual(0);
+      expect(slot).toBeLessThan(3);
+      slots.add(slot);
+    }
+    expect(slots.size).toBeGreaterThan(1);
+    const bought = [{ ...subscriber[0]!, id: "bought", purchased: true }];
+    const open = buildProfileGallery(
+      "posts",
+      posts.filter((item) => item.mediaType !== "video"),
+      bought,
+      "creator-sarah",
+    );
+    expect(open.slice(0, 3).every((entry) => entry.kind === "post" && entry.post.mediaType === "image")).toBe(true);
+    const lockedPost = [
+      ...posts.filter((item) => item.mediaType !== "video"),
+      {
+        id: "locked-clip",
+        mediaType: "video",
+        visibility: "subscriber",
+        publishedAt: new Date(Date.UTC(2026, 2, 1)).toISOString(),
+      },
+    ];
+    const fromPost = buildProfileGallery("posts", lockedPost, [], "creator-sarah");
+    const postSlot = fromPost.findIndex((entry) => entry.kind === "post" && entry.post.id === "locked-clip");
+    expect(postSlot).toBeGreaterThanOrEqual(0);
+    expect(postSlot).toBeLessThan(3);
     const videos = buildProfileGallery("videos", posts, subscriber, "creator-sarah");
     expect(videos).toHaveLength(2);
     expect(videos.every((entry) => entry.kind === "video" || entry.post.mediaType === "video")).toBe(true);
