@@ -138,6 +138,7 @@ model User {
   consents         ConsentRecord[]
   privacyRequests  PrivacyRequest[]
   fanConversations Conversation[]   @relation("FanConversations")
+  pushSubscriptions PushSubscription[]
 
   @@map("users")
 }
@@ -393,6 +394,21 @@ model Message {
   @@index([conversationId, readAt])
   @@index([offerPostId])
   @@map("messages")
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 model ChatSequence {

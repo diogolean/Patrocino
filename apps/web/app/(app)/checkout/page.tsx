@@ -19,6 +19,7 @@ import { paymentGateway } from "@/lib/payments";
 import { mockDelay, readDemo, writeDemo } from "@/lib/demo-store";
 import { toast } from "sonner";
 import { ExpayCheckoutModal } from "@/components/expay-checkout-modal";
+import { PushOptIn } from "@/components/push-opt-in";
 import { StripeCheckoutModal } from "@/components/stripe-checkout-modal";
 import { parseProfileOffers, type ProfileOffers } from "@/lib/creator-offers";
 
@@ -234,6 +235,7 @@ function CheckoutContent() {
           <p className="mt-6 text-xs font-black uppercase tracking-[.2em] text-emerald-600">{paidVia === "demo" ? "Pagamento simulado" : "Pagamento confirmado"}</p>
           <h1 className="mt-2 text-2xl font-extrabold tracking-[-.04em]">{kind === "subscription" ? "Você faz parte!" : specialRequest ? "Pedido confirmado" : "Conteúdo liberado"}</h1>
           <p className="mt-3 text-xs leading-5 text-muted">{kind === "subscription" ? `Sua assinatura de ${creator.name} está ativa neste navegador.` : "A experiência já está disponível para você neste navegador."}</p>
+          {kind === "subscription" && <PushOptIn className="mt-6" />}
           <Button size="lg" className="mt-7 w-full" onClick={() => router.push(returnPath)}>Ver agora <Sparkles className="size-4" /></Button>
           {paidVia === "demo" && <p className="mt-4 text-[9px] text-muted">Nenhuma cobrança real foi realizada.</p>}
         </div>

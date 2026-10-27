@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Check } from "lucide-react";
+import { PushOptIn } from "@/components/push-opt-in";
 
 export default function SubscriptionSuccessPage() {
   return (
@@ -12,6 +13,7 @@ export default function SubscriptionSuccessPage() {
         <p className="mt-3 text-sm leading-6 text-muted">
           O Stripe recebeu o pagamento de teste. O acesso aparece em Minhas assinaturas assim que a confirmação chega.
         </p>
+        <PushOptIn className="mt-6" />
         <Link href="/assinaturas" className="mt-6 inline-flex h-11 items-center justify-center rounded-full bg-primary px-6 text-sm font-bold text-ink">
           Minhas assinaturas
         </Link>
