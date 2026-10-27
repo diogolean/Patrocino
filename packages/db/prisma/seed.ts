@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type OwnershipType, type UserRole } from "@prisma/client";
 import { hash } from "bcryptjs";
 import {
   demoCreatorCreatedAt,
@@ -36,7 +36,93 @@ const creators = [
   ["Alana Reis", "alanareis", "travel", "Ilhas, barcos e pôr do sol.", "alana-reis", null],
 ] as const;
 
-async function main() {
+type EnsureUserInput = {
+  email: string;
+  passwordHash: string;
+  role: UserRole;
+  isDemo?: boolean;
+  createdAt?: Date;
+};
+
+async function ensureUser(data: EnsureUserInput) {
+  const existing = await prisma.user.findUnique({ where: { email: data.email } });
+  if (existing) return existing;
+  return prisma.user.create({
+    data: {
+      email: data.email,
+      passwordHash: data.passwordHash,
+      role: data.role,
+      emailVerifiedAt: new Date(),
+      isDemo: data.isDemo ?? false,
+      createdAt: data.createdAt,
+    },
+  });
+}
+
+async function ensureProfile(data: {
+  userId: string;
+  name: string;
+  username: string;
+  bio?: string | null;
+  city?: string | null;
+  avatarUrl?: string | null;
+  coverUrl?: string | null;
+  isDemo?: boolean;
+}) {
+  const existing = await prisma.profile.findUnique({ where: { userId: data.userId } });
+  if (existing) return existing;
+  return prisma.profile.create({ data });
+}
+
+async function ensureCreator(data: {
+  userId: string;
+  status?: "ACTIVE";
+  category: string;
+  ownership?: OwnershipType;
+  aiGenerated?: boolean;
+  fictitious?: boolean;
+  isDemo?: boolean;
+  createdAt?: Date;
+}) {
+  const existing = await prisma.creator.findUnique({ where: { userId: data.userId } });
+  if (existing) return existing;
+  return prisma.creator.create({
+    data: {
+      userId: data.userId,
+      status: data.status ?? "ACTIVE",
+      category: data.category,
+      ownership: data.ownership,
+      aiGenerated: data.aiGenerated ?? false,
+      fictitious: data.fictitious ?? false,
+      isDemo: data.isDemo ?? false,
+      createdAt: data.createdAt,
+    },
+  });
+}
+
+async function ensurePlan(data: {
+  creatorId: string;
+  name: string;
+  description: string;
+  priceCents: number;
+  durationMonths: number;
+  discountPercent: number;
+  isDemo?: boolean;
+}) {
+  const existing = await prisma.plan.findFirst({
+    where: { creatorId: data.creatorId, durationMonths: data.durationMonths },
+  });
+  if (existing) return existing;
+  return prisma.plan.create({ data });
+}
+
+async function ensureAffiliate(data: { userId: string; code: string; displayName: string; isDemo?: boolean }) {
+  const existing = await prisma.affiliate.findUnique({ where: { userId: data.userId } });
+  if (existing) return existing;
+  return prisma.affiliate.create({ data });
+}
+
+export async function seedDatabase() {
   for (const [index, [name, username, category, bio, fileSlug, postFile]] of creators.entries()) {
     const createdAt = demoCreatorCreatedAt(index);
     const avatarUrl = withAssetVersion(`/media/generated/creator-${fileSlug}-avatar.jpg`);
@@ -45,53 +131,43 @@ async function main() {
       username === "lunaferraz"
         ? "criadora@mimelux.com.br"
         : `${username}@creators.patrocino.com`;
-    const user = await prisma.user.upsert({
-      where: { email },
-      update: { passwordHash: demoPasswordHash, isDemo: true, createdAt },
-      create: {
-        email,
-        passwordHash: demoPasswordHash,
-        role: "CREATOR",
-        emailVerifiedAt: new Date(),
-        isDemo: true,
-        createdAt,
-      },
+    const user = await ensureUser({
+      email,
+      passwordHash: demoPasswordHash,
+      role: "CREATOR",
+      isDemo: true,
+      createdAt,
     });
-    await prisma.profile.upsert({
-      where: { userId: user.id },
-      update: { name, username, bio, avatarUrl, coverUrl, isDemo: true },
-      create: {
-        userId: user.id,
-        name,
-        username,
-        bio,
-        city: "Brasil",
-        avatarUrl,
-        coverUrl,
-        isDemo: true,
-      },
+    await ensureProfile({
+      userId: user.id,
+      name,
+      username,
+      bio,
+      city: "Brasil",
+      avatarUrl,
+      coverUrl,
+      isDemo: true,
     });
-    const creator = await prisma.creator.upsert({
-      where: { userId: user.id },
-      update: { status: "ACTIVE", category, isDemo: true, createdAt },
-      create: {
-        userId: user.id,
-        status: "ACTIVE",
-        category,
-        aiGenerated: true,
-        fictitious: true,
-        isDemo: true,
-        createdAt,
-      },
+    const creator = await ensureCreator({
+      userId: user.id,
+      status: "ACTIVE",
+      category,
+      aiGenerated: true,
+      fictitious: true,
+      isDemo: true,
+      createdAt,
     });
     for (const [months, discount] of [[1, 0], [3, 10], [6, 20], [12, 30]] as const) {
-      const name = months === 1 ? "Mensal" : `${months} meses`;
-      const existing = await prisma.plan.findFirst({ where: { creatorId: creator.id, durationMonths: months } });
-      if (!existing) {
-        await prisma.plan.create({
-          data: { creatorId: creator.id, name, description: "Plano fictício de demonstração.", priceCents: 2990 * months, durationMonths: months, discountPercent: discount, isDemo: true },
-        });
-      }
+      const planName = months === 1 ? "Mensal" : `${months} meses`;
+      await ensurePlan({
+        creatorId: creator.id,
+        name: planName,
+        description: "Plano fictício de demonstração.",
+        priceCents: 2990 * months,
+        durationMonths: months,
+        discountPercent: discount,
+        isDemo: true,
+      });
     }
     if (postFile) {
       const bareKey = `/media/generated/${postFile}`;
@@ -174,20 +250,25 @@ async function main() {
     }
   }
 
-  await prisma.user.upsert({
-    where: { email: "fan@mimelux.com.br" },
-    update: { passwordHash: demoPasswordHash, isDemo: true },
-    create: { email: "fan@mimelux.com.br", passwordHash: demoPasswordHash, role: "FAN", emailVerifiedAt: new Date(), isDemo: true, profile: { create: { name: "Fã Demo", username: "fandemo", isDemo: true } } },
+  const fan = await ensureUser({
+    email: "fan@mimelux.com.br",
+    passwordHash: demoPasswordHash,
+    role: "FAN",
+    isDemo: true,
   });
-  const affiliateUser = await prisma.user.upsert({
-    where: { email: "afiliado@mimelux.com.br" },
-    update: { passwordHash: demoPasswordHash, isDemo: true },
-    create: { email: "afiliado@mimelux.com.br", passwordHash: demoPasswordHash, role: "AFFILIATE", emailVerifiedAt: new Date(), isDemo: true, profile: { create: { name: "Afiliado Demo", username: "afiliadodemo", isDemo: true } } },
+  await ensureProfile({ userId: fan.id, name: "Fã Demo", username: "fandemo", isDemo: true });
+  const affiliateUser = await ensureUser({
+    email: "afiliado@mimelux.com.br",
+    passwordHash: demoPasswordHash,
+    role: "AFFILIATE",
+    isDemo: true,
   });
-  await prisma.affiliate.upsert({
-    where: { userId: affiliateUser.id },
-    update: { isDemo: true },
-    create: { userId: affiliateUser.id, code: "LUXDEMO", displayName: "Afiliado Demo", isDemo: true },
+  await ensureProfile({ userId: affiliateUser.id, name: "Afiliado Demo", username: "afiliadodemo", isDemo: true });
+  await ensureAffiliate({
+    userId: affiliateUser.id,
+    code: "LUXDEMO",
+    displayName: "Afiliado Demo",
+    isDemo: true,
   });
   await seedInitialCreators();
   await versionStoredAssetUrls();
@@ -267,81 +348,43 @@ async function seedInitialCreators() {
   for (const [index, creator] of initialCreators.entries()) {
     const createdAt = launchCreatorCreatedAt(index);
     const email = `${creator.slug}@creators.patrocino.com`;
-    const user = await prisma.user.upsert({
-      where: { email },
-      update: { passwordHash: demoPasswordHash, isDemo: true, role: "CREATOR", createdAt },
-      create: {
-        email,
-        passwordHash: demoPasswordHash,
-        role: "CREATOR",
-        emailVerifiedAt: new Date(),
-        isDemo: true,
-        createdAt,
-      },
+    const user = await ensureUser({
+      email,
+      passwordHash: demoPasswordHash,
+      role: "CREATOR",
+      isDemo: true,
+      createdAt,
     });
-    await prisma.profile.upsert({
-      where: { userId: user.id },
-      update: {
-        name: creator.displayName,
-        username: creator.slug,
-        bio: creator.bio,
-        city: creator.city,
-        avatarUrl: modelMediaPath(creator.slug, imageFile(1)),
-        coverUrl: modelMediaPath(creator.slug, imageFile(2)),
-        isDemo: true,
-      },
-      create: {
-        userId: user.id,
-        name: creator.displayName,
-        username: creator.slug,
-        bio: creator.bio,
-        city: creator.city,
-        avatarUrl: modelMediaPath(creator.slug, imageFile(1)),
-        coverUrl: modelMediaPath(creator.slug, imageFile(2)),
-        isDemo: true,
-      },
+    await ensureProfile({
+      userId: user.id,
+      name: creator.displayName,
+      username: creator.slug,
+      bio: creator.bio,
+      city: creator.city,
+      avatarUrl: modelMediaPath(creator.slug, imageFile(1)),
+      coverUrl: modelMediaPath(creator.slug, imageFile(2)),
+      isDemo: true,
     });
-    const row = await prisma.creator.upsert({
-      where: { userId: user.id },
-      update: {
-        status: "ACTIVE",
-        category: creator.category,
-        ownership: "HOUSE",
-        isDemo: true,
-        createdAt,
-      },
-      create: {
-        userId: user.id,
-        status: "ACTIVE",
-        category: creator.category,
-        ownership: "HOUSE",
-        fictitious: true,
-        isDemo: true,
-        createdAt,
-      },
+    const row = await ensureCreator({
+      userId: user.id,
+      status: "ACTIVE",
+      category: creator.category,
+      ownership: "HOUSE",
+      fictitious: true,
+      isDemo: true,
+      createdAt,
     });
     for (const [months, discount] of [[1, 0], [3, 10], [6, 20], [12, 30]] as const) {
       const name = months === 1 ? "Mensal" : `${months} meses`;
-      const priceCents = creator.monthlyPriceCents * months;
-      const existing = await prisma.plan.findFirst({ where: { creatorId: row.id, durationMonths: months } });
-      if (!existing) {
-        await prisma.plan.create({
-          data: {
-            creatorId: row.id,
-            name,
-            description: "Assinatura mensal.",
-            priceCents,
-            durationMonths: months,
-            discountPercent: discount,
-            isDemo: true,
-          },
-        });
-      } else if (existing.priceCents !== priceCents || existing.discountPercent !== discount) {
-        await prisma.plan.update({
-          where: { id: existing.id },
-          data: { priceCents, discountPercent: discount, name },
-        });
-      }
+      await ensurePlan({
+        creatorId: row.id,
+        name,
+        description: "Assinatura mensal.",
+        priceCents: creator.monthlyPriceCents * months,
+        durationMonths: months,
+        discountPercent: discount,
+        isDemo: true,
+      });
     }
     for (const [postIndex, post] of initialPosts(creator).entries()) {
       const publishedAt = launchPostPublishedAt(index, postIndex);
@@ -419,9 +462,16 @@ async function ensureSeedAdmins() {
   }
 }
 
-main()
-  .finally(async () => prisma.$disconnect())
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  });
+export async function disconnectSeed() {
+  await prisma.$disconnect();
+}
+
+const entry = process.argv[1]?.replaceAll("\\", "/") ?? "";
+if (entry.endsWith("/prisma/seed.ts") || entry.endsWith("/prisma/seed.js")) {
+  seedDatabase()
+    .finally(async () => prisma.$disconnect())
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    });
+}
