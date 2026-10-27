@@ -80,18 +80,16 @@ describe("profile gallery and subscription copy", () => {
     const pageSize = 9;
     expect(mixed.slice(0, pageSize).concat(mixed.slice(pageSize, pageSize * 2))).toEqual(mixed.slice(0, pageSize * 2));
 
-    const slots = new Set<number>();
+    const laterSlots = new Set<number>();
     for (let seed = 0; seed < 24; seed += 1) {
       const order = layoutGalleryRows(photos, clips, `viewer-${seed}`, columns);
-      const slot = order.findIndex((item) => item.id === "clip-0");
-      expect(slot).toBeGreaterThanOrEqual(0);
-      expect(slot).toBeLessThan(columns);
+      expect(order.findIndex((item) => item.id === "clip-0")).toBe(1);
       const second = order.findIndex((item) => item.id === "clip-1");
       expect(second).toBeGreaterThanOrEqual(columns * 2);
       expect(second).toBeLessThan(columns * 3);
-      slots.add(slot);
+      laterSlots.add(second % columns);
     }
-    expect(slots.size).toBe(columns);
+    expect(laterSlots.size).toBeGreaterThan(1);
 
     const wider = layoutGalleryRows(photos, clips.slice(0, 1), "creator-sarah", 4);
     expect(wider.slice(0, 4).filter((item) => item.id.startsWith("clip-"))).toHaveLength(1);
@@ -124,8 +122,7 @@ describe("profile gallery and subscription copy", () => {
     const grid = buildProfileGallery("posts", posts, subscriber, "creator-sarah");
     expect(buildProfileGallery("posts", posts, subscriber, "creator-sarah")).toEqual(grid);
     const lockedAt = grid.findIndex((entry) => entry.kind === "video" && entry.video.id === "ppv-new");
-    expect(lockedAt).toBeGreaterThanOrEqual(0);
-    expect(lockedAt).toBeLessThan(columns);
+    expect(lockedAt).toBe(1);
     expect(grid.slice(0, columns).filter((entry) => entry.kind === "video" || entry.post.mediaType === "video")).toHaveLength(1);
     expect(grid.slice(columns, columns * 2).every((entry) => entry.kind === "post" && entry.post.mediaType === "image")).toBe(true);
     const freeAt = grid.findIndex((entry) => entry.kind === "post" && entry.post.id === "fixture-video");
@@ -149,8 +146,7 @@ describe("profile gallery and subscription copy", () => {
     ];
     const fromPost = buildProfileGallery("posts", lockedPost, [], "creator-sarah");
     const postSlot = fromPost.findIndex((entry) => entry.kind === "post" && entry.post.id === "locked-clip");
-    expect(postSlot).toBeGreaterThanOrEqual(0);
-    expect(postSlot).toBeLessThan(columns);
+    expect(postSlot).toBe(1);
     const videos = buildProfileGallery("videos", posts, subscriber, "creator-sarah");
     expect(videos).toHaveLength(2);
     expect(videos.every((entry) => entry.kind === "video" || entry.post.mediaType === "video")).toBe(true);

@@ -87,8 +87,9 @@ function clipIsLocked<T extends GalleryPost>(entry: GalleryEntry<T>) {
 }
 
 /**
- * Odd rows hold one video in a seeded column and photos in the rest.
- * Even rows are photos only. The same seed always picks the same columns.
+ * Odd rows hold one video and photos in the rest. Even rows are photos only.
+ * The first video row keeps that video in the middle column. Later video rows
+ * use a seeded column, and the same seed always picks the same columns.
  * Leftover photos stay in order. Leftover videos are appended at the end.
  */
 export function layoutGalleryRows<T>(
@@ -110,7 +111,7 @@ export function layoutGalleryRows<T>(
     if (videoRow) {
       const photosNeeded = width - 1;
       if (photoIndex + photosNeeded > photos.length) break;
-      const column = width === 1 ? 0 : next() % width;
+      const column = width <= 1 ? 0 : row === 0 ? 1 : next() % width;
       for (let cell = 0; cell < width; cell += 1) {
         if (cell === column) {
           result.push(videos[videoIndex] as T);
