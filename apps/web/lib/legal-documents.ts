@@ -52,6 +52,7 @@ const pt: Record<LegalId, LegalDocument> = {
         paragraphs: [
           "Quem publica conteúdo também aceita estes termos do criador. Só pode aparecer quem consentiu, e todo o conteúdo é destinado a adultos.",
           "O criador é responsável pelo que publica, inclusive direitos de imagem. A plataforma pode remover conteúdo e encerrar a conta se as diretrizes forem descumpridas.",
+          "A conta de um criador e o chat dessa conta podem ser operados com ajuda da equipe do criador e de ferramentas de automação.",
           "A remuneração segue as regras de repasse vigentes na conta. Valores devidos podem ser retidos em caso de reembolso, contestação ou investigação.",
         ],
       },
@@ -198,6 +199,7 @@ const en: Record<LegalId, LegalDocument> = {
         paragraphs: [
           "Anyone who publishes also accepts these creator terms. Everyone shown must have consented, and all content is meant for adults.",
           "The creator is responsible for what they publish, including image rights. The platform may remove content and close the account if the guidelines are broken.",
+          "A creator account and that account's chat may be operated with help from the creator's team and automation tools.",
           "Payouts follow the revenue rules on the account. Amounts can be held when there is a refund, a dispute, or an investigation.",
         ],
       },

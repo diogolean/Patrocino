@@ -137,6 +137,7 @@ model User {
   specialRequests  SpecialRequest[] @relation("FanSpecialRequests")
   consents         ConsentRecord[]
   privacyRequests  PrivacyRequest[]
+  fanConversations Conversation[]   @relation("FanConversations")
 
   @@map("users")
 }
@@ -171,6 +172,8 @@ model Creator {
   contentPacks         ContentPack[]
   specialRequests      SpecialRequest[]
   reviews              Review[]
+  conversations        Conversation[]
+  chatSequence         ChatSequence?
 
   @@map("creators")
 }
@@ -232,6 +235,7 @@ model Subscription {
   updatedAt           DateTime           @updatedAt
   isDemo              Boolean            @default(false)
   purchases           Purchase[]
+  chatSequenceJobs    ChatSequenceJob[]
 
   @@unique([fanId, creatorId])
   @@index([creatorId, status])
@@ -258,6 +262,8 @@ model Post {
   reports     Report[]
   packItems   ContentPackItem[]
   comments    PostComment[]
+  offeredIn   Message[]         @relation("MessageOffers")
+  sequenceSteps ChatSequenceStep[]
 
   @@unique([creatorId, contentHash])
   @@index([creatorId, publishedAt])
@@ -353,11 +359,16 @@ model PlatformSettings {
 model Conversation {
   id             String    @id @default(cuid())
   participantIds Json
+  fanId          String?
+  creatorId      String?
+  fan            User?     @relation("FanConversations", fields: [fanId], references: [id], onDelete: Cascade)
+  creator        Creator?  @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   isDemo         Boolean   @default(false)
   messages       Message[]
 
+  @@unique([fanId, creatorId])
   @@map("conversations")
 }
 
@@ -369,6 +380,8 @@ model Message {
   sender         User         @relation("SentMessages", fields: [senderId], references: [id])
   body           String
   ppvPriceCents  Int?
+  offerPostId    String?
+  offerPost      Post?        @relation("MessageOffers", fields: [offerPostId], references: [id], onDelete: SetNull)
   isDemo         Boolean      @default(false)
   createdAt      DateTime     @default(now())
   media          Media[]
@@ -376,7 +389,54 @@ model Message {
   reports        Report[]
 
   @@index([conversationId, createdAt])
+  @@index([offerPostId])
   @@map("messages")
+}
+
+model ChatSequence {
+  id        String             @id @default(cuid())
+  creatorId String             @unique
+  creator   Creator            @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  enabled   Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  steps     ChatSequenceStep[]
+
+  @@map("chat_sequences")
+}
+
+model ChatSequenceStep {
+  id            String       @id @default(cuid())
+  sequenceId    String
+  sequence      ChatSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  position      Int
+  delayMinutes  Int
+  bodyTemplate  String
+  offerMode     String       @default("none")
+  postId        String?
+  post          Post?        @relation(fields: [postId], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([sequenceId, position])
+  @@index([postId])
+  @@map("chat_sequence_steps")
+}
+
+model ChatSequenceJob {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  position       Int
+  runAt          DateTime
+  status         String       @default("pending")
+  messageId      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([subscriptionId, position])
+  @@index([status, runAt])
+  @@map("chat_sequence_jobs")
 }
 
 model LedgerEntry {

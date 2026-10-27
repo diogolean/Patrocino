@@ -5,6 +5,7 @@ import {
   demoExtraPostsFor,
   demoPostPublishedAt,
   imageFile,
+  defaultChatSequenceSteps,
   initialCreators,
   initialPosts,
   launchCreatorCreatedAt,
@@ -271,6 +272,7 @@ export async function seedDatabase() {
     isDemo: true,
   });
   await seedInitialCreators();
+  await seedChatSequenceDefaults();
   await versionStoredAssetUrls();
   await ensureSeedAdmins();
 }
@@ -423,6 +425,28 @@ async function seedInitialCreators() {
         }
       }
     }
+  }
+}
+
+async function seedChatSequenceDefaults() {
+  const rows = await prisma.creator.findMany({ select: { id: true } });
+  for (const row of rows) {
+    const existing = await prisma.chatSequence.findUnique({ where: { creatorId: row.id }, select: { id: true } });
+    if (existing) continue;
+    await prisma.chatSequence.create({
+      data: {
+        creatorId: row.id,
+        enabled: true,
+        steps: {
+          create: defaultChatSequenceSteps.map((step) => ({
+            position: step.position,
+            delayMinutes: step.delayMinutes,
+            bodyTemplate: step.bodyTemplate,
+            offerMode: step.offerMode,
+          })),
+        },
+      },
+    });
   }
 }
 

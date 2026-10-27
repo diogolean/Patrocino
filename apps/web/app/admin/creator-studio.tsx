@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ChatSequenceEditor } from "@/components/chat-sequence-editor";
 import { CreatorStudio } from "@/components/creator-studio";
 
 type CreatorOption = { id: string; name: string; username: string };
@@ -58,8 +59,14 @@ export function AdminCreatorStudio() {
       </label>
       {error && <p className="mt-3 text-sm text-muted">{error}</p>}
       {creatorId ? (
-        <div className="mt-5 rounded-[28px] border border-border bg-elevated/70 p-4 sm:p-6">
-          <CreatorStudio creatorId={creatorId} />
+        <div className="mt-5 space-y-5">
+          <div className="rounded-[28px] border border-border bg-elevated/70 p-4 sm:p-6">
+            <CreatorStudio creatorId={creatorId} />
+          </div>
+          <div className="rounded-[28px] border border-border bg-elevated/70 p-4 sm:p-6">
+            <h3 className="text-sm font-extrabold">Sequência do chat</h3>
+            <ChatSequenceEditor creatorId={creatorId} />
+          </div>
         </div>
       ) : null}
     </section>

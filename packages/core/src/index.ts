@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export * from "./assets";
+export * from "./chat-sequence";
 export * from "./contracts";
 export * from "./demo-extra-posts";
 export * from "./initial-creators";

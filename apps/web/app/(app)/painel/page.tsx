@@ -19,6 +19,7 @@ import { Button, Pill } from "@mimelux/ui";
 import { brl, creators, dashboardMetrics, posts } from "@/lib/gateway";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 import { useRoleGuard } from "@/lib/use-role-guard";
+import { ChatSequenceEditor } from "@/components/chat-sequence-editor";
 import { CreatorStudio } from "@/components/creator-studio";
 import { MediaManager } from "@/components/media-manager";
 import { toast } from "sonner";
@@ -159,6 +160,12 @@ export default function DashboardPage() {
             </article>
           ))}
         </div>
+      </section>
+
+      <section className="mt-5 rounded-[28px] border border-black/5 bg-white/65 p-5 dark:bg-white/5 sm:p-6">
+        <h2 className="text-sm font-extrabold">Sequência do chat</h2>
+        <p className="mt-1 max-w-2xl text-[10px] leading-5 text-muted">Estas mensagens entram na conversa quando alguém assina. Você escolhe o texto, a espera e o vídeo de cada passo.</p>
+        <ChatSequenceEditor />
       </section>
 
       <section className="mt-5 grid gap-5 lg:grid-cols-2">

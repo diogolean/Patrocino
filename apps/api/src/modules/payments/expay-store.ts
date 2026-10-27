@@ -1,4 +1,5 @@
 import { database, Prisma } from "@mimelux/db/runtime";
+import { cancelPendingChatSequence, enqueueChatSequence } from "../chat/sequence";
 import {
   billingModes,
   chargeStatuses,
@@ -102,10 +103,14 @@ async function syncSubscription(row: {
     database.plan.findUnique({ where: { id: row.subjectId } }),
   ]);
   if (!fan || !creator || !plan) return;
+  const existing = await database.subscription.findUnique({
+    where: { fanId_creatorId: { fanId: fan.id, creatorId: creator.id } },
+    select: { id: true, status: true },
+  });
   if (row.accessActive) {
     const endsAt = new Date();
     endsAt.setMonth(endsAt.getMonth() + plan.durationMonths);
-    await database.subscription.upsert({
+    const subscription = await database.subscription.upsert({
       where: { fanId_creatorId: { fanId: fan.id, creatorId: creator.id } },
       create: {
         fanId: fan.id,
@@ -117,6 +122,7 @@ async function syncSubscription(row: {
       },
       update: { planId: plan.id, status: "ACTIVE", startsAt: new Date(), endsAt },
     });
+    if (existing?.status !== "ACTIVE") await enqueueChatSequence(database, subscription.id);
     return;
   }
   if (row.status === "refunded" || row.status === "canceled") {
@@ -124,6 +130,7 @@ async function syncSubscription(row: {
       where: { fanId: fan.id, creatorId: creator.id, status: "ACTIVE" },
       data: { status: "CANCELED" },
     });
+    if (existing) await cancelPendingChatSequence(database, existing.id);
   }
 }
 

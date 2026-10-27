@@ -23,6 +23,25 @@ export default function ConversationPage() {
   const messageId = `message-${creator.id}`;
   const [unlocked, setUnlocked] = useState(false);
   const [messages, setMessages] = useState<string[]>(() => readDemo().sentMessages[creator.id] ?? []);
+  type ThreadMessage = {
+    id: string;
+    body: string;
+    offer: { postId: string; title: string; priceCents: number; purchased: boolean } | null;
+  };
+  const [thread, setThread] = useState<ThreadMessage[]>([]);
+
+  useEffect(() => {
+    let cancel = false;
+    fetch(`/api/conversations/with/${encodeURIComponent(params.id)}`, { cache: "no-store" })
+      .then(async (response) => (response.ok ? response.json() : { messages: [] }))
+      .then((payload: { messages?: ThreadMessage[] }) => {
+        if (!cancel) setThread(payload.messages ?? []);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, [params.id]);
 
   useEffect(() => {
     const sync = () => setUnlocked(readDemo().unlocks.includes(messageId));
@@ -84,6 +103,25 @@ export default function ConversationPage() {
             <span className="mt-2 block text-right text-[8px] text-white/40">15:13</span>
           </div>
         </div>
+
+        {thread.map((message) => (
+          <div key={message.id} data-testid="chat-sequence-message" className="mt-3 max-w-[82%]">
+            <div className="rounded-[22px_22px_22px_6px] bg-white p-4 shadow-sm dark:bg-white/8">
+              <p className="text-[11px] leading-5">{message.body}</p>
+            </div>
+            {message.offer && (
+              <div data-testid="chat-ppv-offer" className="mt-2 overflow-hidden rounded-[24px_24px_24px_6px] bg-ink p-4 text-white shadow-lg">
+                <p className="text-xs font-extrabold">{message.offer.title}</p>
+                <p className="mt-1 text-[9px] text-white/60">{brl(message.offer.priceCents)}</p>
+                {!message.offer.purchased && (
+                  <Link href={`/checkout?kind=post&id=${message.offer.postId}&creator=${params.id}&return=/chat/${params.id}`}>
+                    <Button size="sm" className="mt-3 w-full"><Sparkles className="size-3.5" /> Desbloquear por {brl(message.offer.priceCents)}</Button>
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
 
         <div className="ml-auto mt-4 max-w-[78%] rounded-[22px_22px_6px_22px] bg-primary p-4 text-ink">
           <p className="text-[11px] leading-5">Amei! Me conta mais sobre esse lugar?</p><span className="mt-2 block text-right text-[8px] text-black/45">15:15 ✓✓</span>

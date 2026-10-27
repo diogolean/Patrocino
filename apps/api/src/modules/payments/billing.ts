@@ -4,6 +4,7 @@ import { planChargeCents, reverseLedger, splitRevenue, subscriptionGrantsAccess 
 import { randomBytes } from "node:crypto";
 import Stripe from "stripe";
 import { paymentProvider, readStripeSecret } from "./payment-gateways";
+import { cancelPendingChatSequence, enqueueChatSequence } from "../chat/sequence";
 import { quoteCharge } from "./quote-charge";
 
 type Tx = Prisma.TransactionClient;
@@ -562,6 +563,7 @@ async function activateSubscription(tx: Tx, purchaseId: string, stripeSubscripti
   const purchase = await tx.purchase.findUnique({ where: { id: purchaseId }, include: { subscription: { include: { plan: true } } } });
   if (!purchase?.subscriptionId || !purchase.subscription) return;
   const end = periodEnd ?? addMonths(new Date(), purchase.subscription.plan.durationMonths);
+  const becameActive = purchase.subscription.status !== "ACTIVE";
   await tx.subscription.update({
     where: { id: purchase.subscriptionId },
     data: {
@@ -572,6 +574,7 @@ async function activateSubscription(tx: Tx, purchaseId: string, stripeSubscripti
       ...(stripeSubscriptionId ? { stripeSubscriptionId } : {}),
     },
   });
+  if (becameActive) await enqueueChatSequence(tx, purchase.subscriptionId);
 }
 
 function coversPurchase(expectedCents: number, paid: unknown) {
@@ -651,10 +654,12 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
             await settlePurchase(tx, created.id, event.id);
           }
           if (periodEnd) {
+            const becameActive = subscription.status !== "ACTIVE";
             await tx.subscription.update({
               where: { id: subscription.id },
               data: { status: "ACTIVE", currentPeriodEnd: periodEnd, endsAt: periodEnd },
             });
+            if (becameActive) await enqueueChatSequence(tx, subscription.id);
           }
         }
       }
@@ -668,7 +673,9 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
         await tx.purchase.updateMany({ where: { id: meta.purchaseId, status: "PENDING" }, data: { status: "FAILED" } });
       }
       if (subscriptionId) {
+        const subscriptions = await tx.subscription.findMany({ where: { stripeSubscriptionId: subscriptionId }, select: { id: true } });
         await tx.subscription.updateMany({ where: { stripeSubscriptionId: subscriptionId }, data: { status: "PAST_DUE" } });
+        for (const subscription of subscriptions) await cancelPendingChatSequence(tx, subscription.id);
       }
     });
     return { processed: true, ...result };
@@ -679,6 +686,7 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
     const status = event.type === "customer.subscription.deleted" ? "CANCELED" : mapStripeStatus(text(object.status));
     const periodEnd = typeof object.current_period_end === "number" ? new Date(object.current_period_end * 1000) : null;
     const result = await withEvent(event.id, event.type, event, undefined, async (tx) => {
+      const subscriptions = await tx.subscription.findMany({ where: { stripeSubscriptionId }, select: { id: true } });
       await tx.subscription.updateMany({
         where: { stripeSubscriptionId },
         data: {
@@ -687,6 +695,9 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
           ...(periodEnd ? { currentPeriodEnd: periodEnd, endsAt: periodEnd } : {}),
         },
       });
+      if (status !== "ACTIVE") {
+        for (const subscription of subscriptions) await cancelPendingChatSequence(tx, subscription.id);
+      }
     });
     return { processed: true, ...result };
   }
