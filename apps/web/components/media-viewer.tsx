@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState, type TouchEvent } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from "lucide-react";
-import { viewerHandleLabel } from "@/lib/gallery";
-import { paintWatermark, watermarkStyle } from "@/lib/watermark";
 
 export type ViewerSlide = {
   id: string;
@@ -14,7 +12,7 @@ export type ViewerSlide = {
   caption?: string;
 };
 
-type Resolved = { id: string; src: string; handle: string };
+type Resolved = { id: string; src: string };
 
 function shield(event: { preventDefault: () => void }) {
   event.preventDefault();
@@ -23,13 +21,11 @@ function shield(event: { preventDefault: () => void }) {
 export function MediaViewer({
   slides,
   index,
-  handle,
   onIndex,
   onClose,
 }: {
   slides: ViewerSlide[];
   index: number;
-  handle: string | null;
   onIndex: (index: number) => void;
   onClose: () => void;
 }) {
@@ -44,9 +40,8 @@ export function MediaViewer({
       ? fetched
       : null
     : slide?.src
-      ? { id: slide.id, src: slide.src, handle: handle ?? "" }
+      ? { id: slide.id, src: slide.src }
       : null;
-  const label = viewerHandleLabel(resolved?.handle || handle);
   const failed = Boolean(slide && failedId === slide.id && !resolved);
 
   useEffect(() => {
@@ -56,9 +51,9 @@ export function MediaViewer({
     const mediaId = slide.mediaId;
     void fetch(`/api/media/access/${encodeURIComponent(mediaId)}`, { cache: "no-store" })
       .then(async (response) => {
-        const data = (await response.json().catch(() => ({}))) as { url?: string; handle?: string | null };
+        const data = (await response.json().catch(() => ({}))) as { url?: string };
         if (!response.ok || !data.url) throw new Error("unavailable");
-        return { id, src: data.url, handle: data.handle ?? handle ?? "" };
+        return { id, src: data.url };
       })
       .then((next) => {
         if (!cancel) setFetched(next);
@@ -69,7 +64,7 @@ export function MediaViewer({
     return () => {
       cancel = true;
     };
-  }, [handle, slide?.id, slide?.mediaId]);
+  }, [slide?.id, slide?.mediaId]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -165,10 +160,9 @@ export function MediaViewer({
               className="media-shield max-h-full max-w-full bg-black"
             />
           ) : (
-            <ShieldedPhoto src={resolved.src} handle={label} onZoom={() => setZoom(zoom === 1 ? 2 : 1)} />
+            <ShieldedPhoto src={resolved.src} onZoom={() => setZoom(zoom === 1 ? 2 : 1)} />
           )}
         </div>
-        {label ? <div aria-hidden className="pointer-events-none absolute inset-0" style={watermarkStyle(label)} /> : null}
       </div>
       <div className="flex items-center justify-between gap-3 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
         <p className="line-clamp-1 text-xs text-white/75">{slide.caption}</p>
@@ -187,7 +181,7 @@ export function MediaViewer({
   );
 }
 
-function ShieldedPhoto({ src, handle, onZoom }: { src: string; handle: string; onZoom: () => void }) {
+function ShieldedPhoto({ src, onZoom }: { src: string; onZoom: () => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -217,14 +211,13 @@ function ShieldedPhoto({ src, handle, onZoom }: { src: string; handle: string; o
         if (!context) return;
         context.setTransform(ratio, 0, 0, ratio, 0, 0);
         context.drawImage(bitmap, 0, 0, width, height);
-        paintWatermark(context, width, height, handle);
         bitmap.close();
       })
       .catch(() => undefined);
     return () => {
       cancel = true;
     };
-  }, [handle, src]);
+  }, [src]);
 
   return <canvas ref={canvas} className="media-shield max-h-full max-w-full" onDoubleClick={onZoom} onContextMenu={shield} onDragStart={shield} />;
 }

@@ -7,6 +7,7 @@ import {
   BadgeCheck,
   ChevronDown,
   Heart,
+  Clapperboard,
   ImageIcon,
   LoaderCircle,
   LockKeyhole,
@@ -24,8 +25,7 @@ import { PostVisual } from "@/components/post-visual";
 import { loadSubscriberCatalog, SubscriberPpvCard, type SubscriberVideo } from "@/components/subscriber-videos";
 import { MediaViewer, type ViewerSlide } from "@/components/media-viewer";
 import type { ProfileOffers } from "@/lib/creator-offers";
-import { formatActiveUntil, formatDuration, mergeGallery, profileVideoCount, renewPlan } from "@/lib/gallery";
-import { watermarkStyle } from "@/lib/watermark";
+import { buildProfileGallery, formatActiveUntil, formatDuration, profileVideoCount, renewPlan } from "@/lib/gallery";
 import { readDemo, writeDemo, type DemoReview, type DemoSpecialRequest } from "@/lib/demo-store";
 import { toast } from "sonner";
 
@@ -43,7 +43,7 @@ export function CreatorProfile({
   const [subscribing, setSubscribing] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [unlocks, setUnlocks] = useState<string[]>([]);
-  const [tab, setTab] = useState<"posts" | "media">("posts");
+  const [tab, setTab] = useState<"posts" | "media" | "videos">("posts");
   const [bioOpen, setBioOpen] = useState(false);
   const [promosOpen, setPromosOpen] = useState(true);
   const [requestOpen, setRequestOpen] = useState(false);
@@ -61,7 +61,6 @@ export function CreatorProfile({
   const [activeUntil, setActiveUntil] = useState<string | null>(null);
   const [renewOpen, setRenewOpen] = useState(false);
   const [videos, setVideos] = useState<SubscriberVideo[]>([]);
-  const [viewerHandle, setViewerHandle] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ slides: ViewerSlide[]; index: number } | null>(null);
   const [purchase, setPurchase] = useState<SubscriberVideo | null>(null);
   const [subscribePrompt, setSubscribePrompt] = useState(false);
@@ -102,10 +101,9 @@ export function CreatorProfile({
       .catch(() => undefined);
     void loadSubscriberCatalog(creator.username).then((catalog) => {
       if (cancel) return;
-      setVideos(catalog.items);
-      setViewerHandle(catalog.viewerHandle);
+      setVideos(catalog);
       const play = new URLSearchParams(window.location.search).get("play");
-      const purchased = catalog.items.filter((video) => video.purchased);
+      const purchased = catalog.filter((video) => video.purchased);
       const index = purchased.findIndex((video) => video.id === play);
       if (index < 0) return;
       setViewer({
@@ -184,7 +182,6 @@ export function CreatorProfile({
   const photoCount = posts.filter((post) => post.mediaType === "image").length;
   const videoCount = profileVideoCount(posts, videos);
   const lockedCount = posts.filter((post) => post.visibility !== "free").length;
-  const visiblePosts = tab === "media" ? posts.filter((post) => post.mediaType === "image" || post.mediaType === "video") : posts;
 
   const databasePlans = offers?.source === "database" ? offers.plans : null;
   const primaryPlan = databasePlans?.find((plan) => plan.months === 1) ?? databasePlans?.[0] ?? null;
@@ -234,8 +231,7 @@ export function CreatorProfile({
     return `/checkout?kind=post&id=${video.id}&creator=${creator.username}&return=${back}`;
   }
 
-  const gallery = mergeGallery(visiblePosts, videos);
-  const mark = viewerHandle ? watermarkStyle(viewerHandle) : undefined;
+  const gallery = buildProfileGallery(tab, posts, videos, creator.id);
 
   function openSlides(id: string) {
     const slides: ViewerSlide[] = [];
@@ -487,26 +483,28 @@ export function CreatorProfile({
         </section>
       )}
 
-      <div className="mt-2 grid grid-cols-2 border-b border-border">
-        <button type="button" onClick={() => setTab("posts")} className={`flex h-9 items-center justify-center gap-2 text-sm ${tab === "posts" ? "border-b-2 border-primary-strong font-semibold" : "text-muted"}`}>
-          <ImageIcon className="size-3.5" /> {posts.length + videos.length} {t("posts")}
+      <div className="mt-2 grid grid-cols-3 border-b border-border">
+        <button type="button" onClick={() => setTab("posts")} className={`flex h-9 min-w-0 items-center justify-center gap-1 px-1 text-xs sm:gap-1.5 sm:text-sm ${tab === "posts" ? "border-b-2 border-primary-strong font-semibold" : "text-muted"}`}>
+          <ImageIcon className="size-3.5 shrink-0" /> <span className="truncate">{posts.length + videos.length} {t("posts")}</span>
         </button>
-        <button type="button" onClick={() => setTab("media")} className={`flex h-9 items-center justify-center gap-2 text-sm ${tab === "media" ? "border-b-2 border-primary-strong font-semibold" : "text-muted"}`}>
-          <Video className="size-3.5" /> {photoCount + videoCount} {t("media")}
+        <button type="button" onClick={() => setTab("media")} className={`flex h-9 min-w-0 items-center justify-center gap-1 px-1 text-xs sm:gap-1.5 sm:text-sm ${tab === "media" ? "border-b-2 border-primary-strong font-semibold" : "text-muted"}`}>
+          <Video className="size-3.5 shrink-0" /> <span className="truncate">{photoCount + videoCount} {t("media")}</span>
+        </button>
+        <button type="button" onClick={() => setTab("videos")} className={`flex h-9 min-w-0 items-center justify-center gap-1 px-1 text-xs sm:gap-1.5 sm:text-sm ${tab === "videos" ? "border-b-2 border-primary-strong font-semibold" : "text-muted"}`}>
+          <Clapperboard className="size-3.5 shrink-0" /> <span className="truncate">{videoCount} {t("videosTab")}</span>
         </button>
       </div>
 
       <div className="mt-1.5 grid grid-cols-3 gap-1.5">
         {gallery.map((entry) => {
           if (entry.kind === "video") {
-            return <SubscriberPpvCard key={entry.video.id} video={entry.video} handle={viewerHandle} onOpen={() => onPpv(entry.video)} />;
+            return <SubscriberPpvCard key={entry.video.id} video={entry.video} onOpen={() => onPpv(entry.video)} />;
           }
           const post = entry.post;
           const locked = postLocked(post);
           return (
             <div key={post.id} data-testid="profile-post" data-locked={locked} onContextMenu={(event) => event.preventDefault()} className={`media-shield group relative aspect-[3/4] overflow-hidden rounded-[16px] ${post.playback ? "bg-black" : "bg-surface"}`}>
               <PostVisual post={post} locked={locked} testId={post.playback ? "profile-video" : undefined} autoPlay />
-              {mark ? <span aria-hidden className="pointer-events-none absolute inset-0 z-[1]" style={mark} /> : null}
               {!locked && !post.playback && (
                 <button type="button" aria-label="Abrir foto" className="absolute inset-0 z-[2]" onClick={() => openSlides(post.id)} />
               )}
@@ -597,7 +595,6 @@ export function CreatorProfile({
         <MediaViewer
           slides={viewer.slides}
           index={viewer.index}
-          handle={viewerHandle}
           onIndex={(index) => setViewer((current) => (current ? { ...current, index } : current))}
           onClose={() => setViewer(null)}
         />

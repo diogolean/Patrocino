@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildProfileGallery,
   formatActiveUntil,
   formatDuration,
+  interleaveMedia,
   mergeGallery,
   profileVideoCount,
   renewPlan,
-  viewerHandleLabel,
   type SubscriberVideo,
 } from "../../apps/web/lib/gallery";
 import { publicMediaAllowed } from "../../apps/web/lib/public-media";
@@ -60,11 +61,46 @@ describe("profile gallery and subscription copy", () => {
     expect(profileVideoCount([{ mediaType: "image" }], [])).toBe(0);
   });
 
-  it("keeps the viewer handle safe for a tiled watermark", () => {
-    expect(viewerHandleLabel("sarah-mitchell")).toBe("@sarah-mitchell");
-    expect(viewerHandleLabel("@fan.demo")).toBe("@fan.demo");
-    expect(viewerHandleLabel("<script>")).toBe("@script");
-    expect(viewerHandleLabel("")).toBe("");
+  it("spreads videos through the posts grid from a stable creator seed", () => {
+    const photos = Array.from({ length: 40 }, (_, index) => ({ id: `photo-${index}` }));
+    const clips = Array.from({ length: 4 }, (_, index) => ({ id: `clip-${index}` }));
+    const mixed = interleaveMedia(photos, clips, "creator-sarah");
+    expect(interleaveMedia(photos, clips, "creator-sarah")).toEqual(mixed);
+    expect(mixed[0]?.id).toBe("photo-0");
+    const positions = mixed.flatMap((item, index) => (item.id.startsWith("clip-") ? [index] : []));
+    expect(positions).toHaveLength(4);
+    let previous = -1;
+    for (const position of positions) {
+      const gap = position - previous - 1;
+      expect(gap).toBeGreaterThanOrEqual(4);
+      expect(gap).toBeLessThanOrEqual(8);
+      previous = position;
+    }
+    const pageSize = 9;
+    expect(mixed.slice(0, pageSize).concat(mixed.slice(pageSize, pageSize * 2))).toEqual(mixed.slice(0, pageSize * 2));
+    expect(interleaveMedia(photos, [], "creator-sarah").map((item) => item.id)).toEqual(photos.map((item) => item.id));
+    expect(interleaveMedia([], clips, "creator-sarah")).toEqual(clips);
+
+    const posts = [
+      ...Array.from({ length: 12 }, (_, index) => ({
+        id: `photo-${index}`,
+        mediaType: "image",
+        publishedAt: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+      })),
+      {
+        id: "fixture-video",
+        mediaType: "video",
+        publishedAt: new Date(Date.UTC(2026, 2, 1)).toISOString(),
+      },
+    ];
+    const subscriber = [video("ppv-new", new Date(Date.UTC(2026, 3, 1)).toISOString())];
+    const grid = buildProfileGallery("posts", posts, subscriber, "creator-sarah");
+    expect(grid[0]).toMatchObject({ kind: "post", post: { mediaType: "image" } });
+    const videos = buildProfileGallery("videos", posts, subscriber, "creator-sarah");
+    expect(videos).toHaveLength(2);
+    expect(videos.every((entry) => entry.kind === "video" || entry.post.mediaType === "video")).toBe(true);
+    expect(videos[0]).toMatchObject({ kind: "video", video: { id: "ppv-new" } });
+    expect(buildProfileGallery("media", posts, subscriber, "creator-sarah")[0]).toMatchObject({ kind: "video" });
   });
 
   it("refuses permanent original folders on the public media route", () => {

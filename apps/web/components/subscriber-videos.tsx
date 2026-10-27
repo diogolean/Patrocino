@@ -3,45 +3,28 @@
 import { LockKeyhole, Play } from "lucide-react";
 import { brl } from "@/lib/gateway";
 import { formatDuration, type SubscriberVideo } from "@/lib/gallery";
-import { watermarkStyle } from "@/lib/watermark";
 
 export type { SubscriberVideo };
 
-export type SubscriberCatalog = {
-  items: SubscriberVideo[];
-  viewerHandle: string | null;
-};
-
-export async function loadSubscriberCatalog(username: string): Promise<SubscriberCatalog> {
+export async function loadSubscriberCatalog(username: string): Promise<SubscriberVideo[]> {
   const response = await fetch(`/api/creators/${encodeURIComponent(username)}/subscriber-videos`, { cache: "no-store" });
-  if (!response.ok) return { items: [], viewerHandle: null };
-  const data = (await response.json().catch(() => ({}))) as {
-    items?: SubscriberVideo[];
-    viewerHandle?: string | null;
-  };
-  return { items: data.items ?? [], viewerHandle: data.viewerHandle ?? null };
+  if (!response.ok) return [];
+  const data = (await response.json().catch(() => ({}))) as { items?: SubscriberVideo[] };
+  return data.items ?? [];
 }
 
 function shield(event: { preventDefault: () => void }) {
   event.preventDefault();
 }
 
-export function SubscriberPpvCard({
-  video,
-  handle,
-  onOpen,
-}: {
-  video: SubscriberVideo;
-  handle: string | null;
-  onOpen: () => void;
-}) {
+export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; onOpen: () => void }) {
   const duration = formatDuration(video.durationMs);
-  const mark = handle ? watermarkStyle(handle) : undefined;
+  const locked = !video.purchased;
   return (
     <button
       type="button"
       data-testid="gallery-ppv"
-      data-locked={video.purchased ? "false" : "true"}
+      data-locked={locked ? "true" : "false"}
       onClick={onOpen}
       onContextMenu={shield}
       onDragStart={shield}
@@ -49,15 +32,14 @@ export function SubscriberPpvCard({
     >
       <span
         aria-hidden
-        className="absolute inset-0 scale-105 bg-cover bg-center blur-md"
+        className={`absolute inset-0 scale-105 bg-cover bg-center ${locked ? "blur-sm" : ""}`}
         style={video.previewUrl ? { backgroundImage: `url("${video.previewUrl.replace(/"/g, "")}")` } : undefined}
       />
-      <span className="absolute inset-0 bg-ink/40" />
-      {mark ? <span aria-hidden className="pointer-events-none absolute inset-0" style={mark} /> : null}
+      <span className={`absolute inset-0 ${locked ? "bg-black/25" : "bg-black/15"}`} />
       <span className="relative grid h-full place-items-center p-2 text-center">
         <span>
           <span className="mx-auto flex items-center justify-center gap-1">
-            {!video.purchased && (
+            {locked && (
               <span className="grid size-8 place-items-center rounded-full bg-black/50">
                 <LockKeyhole className="size-3.5" />
               </span>
@@ -67,7 +49,7 @@ export function SubscriberPpvCard({
             </span>
           </span>
           {duration ? <span className="mt-2 block text-[10px] font-semibold">{duration}</span> : null}
-          {!video.purchased ? <span className="mt-1 block text-[10px] font-semibold">{brl(video.priceCents)}</span> : null}
+          {locked ? <span className="mt-1 block text-[10px] font-semibold">{brl(video.priceCents)}</span> : null}
         </span>
       </span>
     </button>

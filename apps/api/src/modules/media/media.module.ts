@@ -27,7 +27,7 @@ import path from "node:path";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { optionalUser, requireUser } from "../auth/require-user";
-import { writePosterAndPreview } from "./derivatives";
+import { ensureBlurredPreview, writePosterAndPreview } from "./derivatives";
 import { fanSubscribed, paidPostPurchase, resolveVideoPrice, viewerCanReadPost } from "./entitlement";
 import { MEDIA_GRANT_TTL_SECONDS, readMediaGrant, signMediaGrant } from "./signed-url";
 import { chunkSizeBytes, declaredMimeMatches, detectFile, maxBytes, servedMimeType } from "./sniff";
@@ -232,12 +232,37 @@ export class MediaController {
       const media = post.media.find((item) => item.kind === "VIDEO") ?? post.media[0];
       if (!media || media.storageKey === "pending") continue;
       const purchased = viewer ? await paidPostPurchase(viewer.id, post.id) : false;
+      let previewKey = media.previewKey;
+      if (media.kind === "VIDEO") {
+        const storage = await this.storage();
+        if (await storage.exists(media.storageKey)) {
+          const nextPreview = previewKey ?? `uploads/${post.creatorId}/previews/${media.id}.jpg`;
+          const nextPoster = media.posterKey ?? `uploads/${post.creatorId}/private/posters/${media.id}.jpg`;
+          await ensureBlurredPreview(storage.resolve(media.storageKey), storage.resolve(nextPoster), storage.resolve(nextPreview));
+          if (nextPreview !== media.previewKey || nextPoster !== media.posterKey) {
+            await database.media.update({
+              where: { id: media.id },
+              data: { previewKey: nextPreview, posterKey: nextPoster },
+            });
+          }
+          previewKey = nextPreview;
+        }
+      }
+      let previewVersion = "";
+      if (previewKey) {
+        try {
+          const storage = await this.storage();
+          previewVersion = String(Math.floor((await stat(storage.resolve(previewKey))).mtimeMs));
+        } catch {
+          previewVersion = "";
+        }
+      }
       items.push({
         id: post.id,
         mediaId: media.id,
         caption: post.caption,
         priceCents: post.priceCents ?? creator.defaultVideoPriceCents,
-        previewUrl: media.previewKey ? `/media/${media.previewKey}` : null,
+        previewUrl: previewKey ? `/media/${previewKey}${previewVersion ? `?v=${previewVersion}` : ""}` : null,
         fileUrl: null,
         durationMs: media.durationMs,
         publishedAt: post.publishedAt?.toISOString() ?? null,
