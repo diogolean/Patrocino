@@ -1,12 +1,28 @@
 import { notFound } from "next/navigation";
 import { CreatorProfile } from "@/components/creator-profile";
+import { apiBase } from "@/lib/api-auth";
+import { parseProfileOffers, type ProfileOffers } from "@/lib/creator-offers";
 import { creators, posts, postsForCreator } from "@/lib/gateway";
+
+async function loadOffers(username: string): Promise<ProfileOffers | null> {
+  try {
+    const response = await fetch(`${apiBase()}/creators/${encodeURIComponent(username)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(2500),
+    });
+    if (!response.ok) return null;
+    return parseProfileOffers(await response.json());
+  } catch {
+    return null;
+  }
+}
 
 export default async function CreatorPage(props: {
   params: Promise<{ username: string }>;
 }) {
   const { username } = await props.params;
   const creator = creators.find((item) => item.username === username);
+  const offers = await loadOffers(username);
   if (!creator) notFound();
 
   const creatorPosts = postsForCreator(creator.id);
@@ -21,5 +37,6 @@ export default async function CreatorPage(props: {
       price: undefined,
     }));
 
-  return <CreatorProfile creator={creator} posts={[...creatorPosts, ...fallbackPosts]} />;
+  const priced = offers ?? (process.env.NODE_ENV === "production" ? { source: "database" as const, plans: [], packs: [], promotion: null } : null);
+  return <CreatorProfile creator={creator} posts={[...creatorPosts, ...fallbackPosts]} offers={priced} />;
 }

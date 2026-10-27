@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Prisma, database } from "@mimelux/db/runtime";
-import { applyPromotion, planChargeCents, type PromotionRule } from "@mimelux/core/monetization";
+import { chargeForPlan } from "./plan-price";
 import type { ChargeDraft, PaymentPurpose } from "@mimelux/core/expay";
 import { z } from "zod";
 import { fanSubscribed } from "../media/entitlement";
@@ -69,40 +69,6 @@ async function findCreator(creatorKey: string) {
   });
 }
 
-function promotionRule(row: {
-  discountPercent: number;
-  startsAt: Date;
-  endsAt: Date;
-  subscriberCap: number | null;
-  redeemedCount: number;
-  active: boolean;
-}): PromotionRule {
-  return {
-    discountPercent: row.discountPercent,
-    startsAt: row.startsAt,
-    endsAt: row.endsAt,
-    ...(row.subscriberCap == null ? {} : { subscriberCap: row.subscriberCap }),
-    redeemedCount: row.redeemedCount,
-    active: row.active,
-  };
-}
-
-async function promotionFor(creatorId: string, planId: string) {
-  const now = new Date();
-  const rows = await database.promotion.findMany({
-    where: {
-      creatorId,
-      active: true,
-      startsAt: { lte: now },
-      endsAt: { gte: now },
-      OR: [{ planId }, { planId: null }],
-    },
-  });
-  const open = rows.filter((row) => row.subscriberCap == null || row.redeemedCount < row.subscriberCap);
-  open.sort((left, right) => right.discountPercent - left.discountPercent);
-  return open[0] ?? null;
-}
-
 function billable(amountCents: number) {
   if (!Number.isInteger(amountCents) || amountCents <= 0) {
     throw new BadRequestException("This item is not billable.");
@@ -128,14 +94,16 @@ export async function quoteCharge(
       plans.find((item) => item.id === input.subjectId) ??
       (months ? plans.find((item) => item.durationMonths === months) : undefined);
     if (!plan) throw unavailable();
-    const promotion = await promotionFor(creator.id, plan.id);
-    const priced = applyPromotion(planChargeCents(plan), promotion ? promotionRule(promotion) : null);
+    const promotions = await database.promotion.findMany({
+      where: { creatorId: creator.id, active: true, OR: [{ planId: plan.id }, { planId: null }] },
+    });
+    const priced = chargeForPlan(plan, promotions);
     return {
       buyerId: user.id,
       creatorId: creator.id,
       purpose: "subscription",
       subjectId: plan.id,
-      amountCents: billable(priced.priceCents),
+      amountCents: billable(priced.chargeCents),
       description: clip(`${creatorName} · ${plan.name}`),
     };
   }

@@ -43,6 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
   const role: SessionRole = session.user?.role ?? "fan";
   const [demoMode, setDemoMode] = useState(true);
+  const showDemoBadge = process.env.NODE_ENV !== "production";
   const [collapsed, setCollapsed] = useState(() =>
     typeof window === "undefined"
       ? false
@@ -158,15 +159,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <p className="text-xs font-extrabold">{t("space")}</p>
         </div>
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            data-testid="mode-toggle"
-            onClick={() => writeDemo({ demoMode: !demoMode })}
-            className="hidden h-9 items-center gap-2 rounded-full border border-border px-3 text-[9px] font-black uppercase tracking-[.12em] text-muted transition hover:bg-surface sm:flex"
-            title="Alternar dados fictícios"
-          >
-            <Database className="size-3.5" /> {demoMode ? "Demo" : "Real"}
-          </button>
+          {showDemoBadge && (
+            <button
+              type="button"
+              data-testid="mode-toggle"
+              onClick={() => writeDemo({ demoMode: !demoMode })}
+              className="hidden h-9 items-center gap-2 rounded-full border border-border px-3 text-[9px] font-black uppercase tracking-[.12em] text-muted transition hover:bg-surface sm:flex"
+              title="Alternar dados fictícios"
+            >
+              <Database className="size-3.5" /> {demoMode ? "Demo" : "Real"}
+            </button>
+          )}
           <ThemeToggle label={t("theme")} />
           <div className="hidden sm:block">
             <LanguageSwitcher compact />
@@ -216,7 +219,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main className={`min-h-dvh pb-24 pt-16 transition-[margin] duration-300 lg:pb-8 ${
         collapsed ? "lg:ml-[84px]" : "lg:ml-[258px]"
       }`}>
-        {demoMode ? children : (
+        {showDemoBadge && !demoMode ? (
           <div className="grid min-h-[calc(100dvh-64px)] place-items-center px-5 text-center">
             <div className="max-w-md rounded-[32px] border border-border bg-elevated p-8 shadow-xl">
               <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-accent/15 text-accent-strong"><Database className="size-6" /></span>
@@ -226,7 +229,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Button className="mt-6" onClick={() => writeDemo({ demoMode: true })}>Voltar ao modo demo</Button>
             </div>
           </div>
-        )}
+        ) : children}
       </main>
 
       <nav className="glass fixed inset-x-0 bottom-0 z-40 grid h-[72px] grid-cols-4 px-2 pb-[env(safe-area-inset-bottom)] lg:hidden">

@@ -20,6 +20,7 @@ import { mockDelay, readDemo, writeDemo } from "@/lib/demo-store";
 import { toast } from "sonner";
 import { ExpayCheckoutModal } from "@/components/expay-checkout-modal";
 import { StripeCheckoutModal } from "@/components/stripe-checkout-modal";
+import { parseProfileOffers, type ProfileOffers } from "@/lib/creator-offers";
 
 function DemoPaymentGraphic({ seed }: { seed: string }) {
   const cells = useMemo(() => {
@@ -54,12 +55,13 @@ function CheckoutContent() {
   const id = search.get("id") || "luna-ferraz";
   const creatorId = kind === "subscription" ? id : search.get("creator") || "luna-ferraz";
   const creator = creators.find((item) => item.id === creatorId || item.username === creatorId) || creators[0]!;
-  const quoteCreatorId = kind === "subscription" ? creator.username : search.get("creator") || creator.username;
+  const quoteCreatorId = creatorId;
   const post = posts.find((item) => item.id === id);
   const message = kind === "message";
   const pack = kind === "pack";
   const specialRequest = kind === "special_request";
-  const plan = plans.find((item) => item.id === search.get("plan")) || plans[0]!;
+  const planParam = search.get("plan") || "monthly";
+  const plan = plans.find((item) => item.id === planParam) || plans[0]!;
   const subscriptionTotal = Math.round(
     creator.price * plan.months * (1 - plan.discount / 100),
   );
@@ -80,6 +82,7 @@ function CheckoutContent() {
   const [pixOpen, setPixOpen] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
   const [methods, setMethods] = useState({ expay: false, stripe: false, stripePublishableKey: "" });
+  const [catalog, setCatalog] = useState<ProfileOffers | null>(null);
   const returnPath = search.get("return")?.startsWith("/") ? search.get("return")! : `/creator/${creator.username}`;
   const purpose: "subscription" | "post" | "message" | "pack" | "special_request" =
     kind === "subscription" || kind === "message" || kind === "pack" || kind === "special_request" ? kind : "post";
@@ -102,8 +105,23 @@ function CheckoutContent() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancel = false;
+    fetch(`/api/creators/${encodeURIComponent(quoteCreatorId)}`, { cache: "no-store" })
+      .then(async (response) => (response.ok ? parseProfileOffers(await response.json()) : null))
+      .then((parsed) => {
+        if (!cancel) setCatalog(parsed);
+      })
+      .catch(() => {
+        if (!cancel) setCatalog(null);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [quoteCreatorId]);
+
   const realCheckout = methods.expay || methods.stripe;
-  const subjectId = kind === "subscription" ? plan.id : id;
+  const subjectId = kind === "subscription" ? planParam : id;
   const quoteKey = realCheckout ? `${quoteCreatorId}:${purpose}:${subjectId}` : "";
   const [quote, setQuote] = useState<{ key: string; cents: number | null; error: string }>({ key: "", cents: null, error: "" });
   if (quote.key !== quoteKey) {
@@ -111,6 +129,13 @@ function CheckoutContent() {
   }
   const quotedCents = quote.cents;
   const quoteError = quote.error;
+  const catalogPlan =
+    catalog?.plans.find((item) => item.id === planParam) ??
+    catalog?.plans.find((item) => item.months === plan.months);
+  const catalogPack = catalog?.packs.find((item) => item.id === id);
+  const catalogCents = kind === "subscription" ? catalogPlan?.chargeCents : kind === "pack" ? catalogPack?.priceCents : undefined;
+  const fixturePrices = process.env.NODE_ENV !== "production";
+  const shownCents = quotedCents ?? catalogCents ?? (fixturePrices ? amount : null);
   const pixKey = useMemo(() => `pix-${purpose}-${creator.id}-${id}-${crypto.randomUUID()}`, [purpose, creator.id, id]);
   const cardKey = useMemo(() => `card-${purpose}-${creator.id}-${id}-${crypto.randomUUID()}`, [purpose, creator.id, id]);
   const rememberAmount = useCallback((cents: number) => {
@@ -160,7 +185,7 @@ function CheckoutContent() {
     const commissionPatch = commissionForSale(state, {
       creatorId: creator.id,
       creatorName: creator.name,
-      amountCents: quotedCents ?? amount,
+      amountCents: shownCents ?? amount,
       transactionKind,
       reference: id,
     });
@@ -228,8 +253,8 @@ function CheckoutContent() {
         <div className="mt-7 flex items-center gap-4 rounded-[24px] border border-black/5 bg-white/60 p-4 dark:bg-white/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={creator.avatar} alt={creator.name} className="size-16 rounded-[20px] object-cover" />
-          <div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{kind === "subscription" ? `Assinatura de ${creator.name}` : specialRequest ? `Pedido para ${creator.name}` : `Conteúdo de ${creator.name}`}</p><p className="mt-1 text-[9px] text-muted">{kind === "subscription" ? `${plan.name} · renovação simulada` : message ? "Mensagem exclusiva · acesso permanente" : pack ? "Pacote com 8 itens fictícios" : specialRequest ? "Valor combinado · ambiente demo" : "Post exclusivo · acesso permanente"}</p></div>
-          <p data-testid="checkout-amount" className="text-sm font-black">{realCheckout ? (quotedCents == null ? "…" : brl(quotedCents)) : brl(amount)}</p>
+          <div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{kind === "subscription" ? `Assinatura de ${creator.name}` : specialRequest ? `Pedido para ${creator.name}` : `Conteúdo de ${creator.name}`}</p><p className="mt-1 text-[9px] text-muted">{kind === "subscription" ? `${catalogPlan?.name ?? plan.name}` : message ? "Mensagem exclusiva · acesso permanente" : pack ? (catalogPack?.name ?? "Pacote") : specialRequest ? "Valor combinado · ambiente demo" : "Post exclusivo · acesso permanente"}</p></div>
+          <p data-testid="checkout-amount" className="text-sm font-black">{shownCents == null ? "…" : brl(shownCents)}</p>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           {realCheckout ? (
@@ -262,7 +287,7 @@ function CheckoutContent() {
             </>
           )}
           {realCheckout && (
-            <p className="mb-2 text-3xl font-black tracking-[-.04em]">{quotedCents == null ? "…" : brl(quotedCents)}</p>
+            <p className="mb-2 text-3xl font-black tracking-[-.04em]">{shownCents == null ? "…" : brl(shownCents)}</p>
           )}
           {quoteError && <p className="mb-4 max-w-sm text-center text-sm text-accent-strong">{quoteError}</p>}
           {realCheckout ? (

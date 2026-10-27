@@ -4,6 +4,7 @@ import { Prisma, database } from "@mimelux/db/runtime";
 import { z } from "zod";
 import { assertOwnsCreator } from "../access/creator-scope";
 import { requireUser } from "../auth/require-user";
+import { loadCreatorOffers } from "./catalog";
 
 const discoveryQuerySchema = z.object({
   search: z.string().max(80).optional(),
@@ -118,21 +119,7 @@ class CreatorsController {
   @Get(":username")
   @ApiOperation({ summary: "Get a creator profile" })
   async get(@Param("username") username: string) {
-    const creator = await database.creator.findFirst({
-      where: {
-        ...(this.includeDemo ? {} : { isDemo: false }),
-        status: "ACTIVE",
-        user: { deletedAt: null, profile: { is: { username } } },
-      },
-      include: {
-        user: { include: { profile: true } },
-        plans: { where: { active: true } },
-        promotions: { where: { active: true } },
-        contentPacks: { where: { active: true } },
-        posts: { where: { deletedAt: null }, select: { likeCount: true } },
-      },
-    });
-    return creator ? this.present(creator) : null;
+    return loadCreatorOffers(username);
   }
 
   private async scopedCreator(

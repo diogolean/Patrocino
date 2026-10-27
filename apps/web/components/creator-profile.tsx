@@ -21,10 +21,19 @@ import type { Creator, Post } from "@/lib/gateway";
 import { brl, compact, plans, reviewsFor } from "@/lib/gateway";
 import { PostVisual } from "@/components/post-visual";
 import { SubscriberVideos } from "@/components/subscriber-videos";
+import type { ProfileOffers } from "@/lib/creator-offers";
 import { readDemo, writeDemo, type DemoReview, type DemoSpecialRequest } from "@/lib/demo-store";
 import { toast } from "sonner";
 
-export function CreatorProfile({ creator, posts }: { creator: Creator; posts: Post[] }) {
+export function CreatorProfile({
+  creator,
+  posts,
+  offers = null,
+}: {
+  creator: Creator;
+  posts: Post[];
+  offers?: ProfileOffers | null;
+}) {
   const router = useRouter();
   const t = useTranslations("profile");
   const [subscribing, setSubscribing] = useState(false);
@@ -127,6 +136,10 @@ export function CreatorProfile({ creator, posts }: { creator: Creator; posts: Po
   const lockedCount = posts.filter((post) => post.visibility !== "free").length;
   const visiblePosts = tab === "media" ? posts.filter((post) => post.mediaType === "image" || post.mediaType === "video") : posts;
 
+  const databasePlans = offers?.source === "database" ? offers.plans : null;
+  const primaryPlan = databasePlans?.find((plan) => plan.months === 1) ?? databasePlans?.[0] ?? null;
+  const extraPlans = databasePlans?.filter((plan) => plan !== primaryPlan) ?? [];
+
   function planTotal(months: 1 | 3 | 6 | 12) {
     const plan = plans.find((item) => item.months === months);
     if (!plan || creator.free) return 0;
@@ -140,7 +153,11 @@ export function CreatorProfile({ creator, posts }: { creator: Creator; posts: Po
 
   function planHref(months: number) {
     const plan = plans.find((item) => item.months === months);
-    return `/checkout?kind=subscription&id=${creator.id}&plan=${plan?.id ?? "monthly"}&return=/creator/${creator.username}`;
+    return `/checkout?kind=subscription&id=${creator.username}&plan=${plan?.id ?? "monthly"}&return=/creator/${creator.username}`;
+  }
+
+  function databaseHref(planId: string) {
+    return `/checkout?kind=subscription&id=${creator.username}&plan=${planId}&return=/creator/${creator.username}`;
   }
 
   function subscribeWithCard() {
@@ -254,12 +271,19 @@ export function CreatorProfile({ creator, posts }: { creator: Creator; posts: Po
           </button>
         </div>
         <div className="mt-1.5 space-y-1.5">
-          {subscribed ? (
+          {databasePlans && databasePlans.length === 0 ? (
+            <p className="text-sm text-muted">Preços indisponíveis no momento.</p>
+          ) : subscribed ? (
             <Button variant="dark" className="h-11 w-full rounded-full"><BadgeCheck className="size-4" /> {t("active")}</Button>
+          ) : primaryPlan ? (
+            <Link href={databaseHref(primaryPlan.id)} className={`flex h-11 w-full items-center justify-between rounded-full bg-gradient-to-r from-primary to-primary-strong/90 px-5 text-sm font-semibold text-ink ${planGlow}`}>
+              <span>{primaryPlan.months === 1 ? `1 ${t("month")}` : primaryPlan.name}</span>
+              <span data-testid="plan-price" data-months={primaryPlan.months}>{brl(primaryPlan.chargeCents)}</span>
+            </Link>
           ) : (
             <Link href={planHref(1)} className={`flex h-11 w-full items-center justify-between rounded-full bg-gradient-to-r from-primary to-primary-strong/90 px-5 text-sm font-semibold text-ink ${planGlow}`}>
               <span>1 {t("month")}</span>
-              <span>{creator.free ? t("free") : brl(planTotal(1))}</span>
+              <span data-testid="plan-price" data-months={1}>{creator.free ? t("free") : brl(planTotal(1))}</span>
             </Link>
           )}
           <button type="button" aria-expanded={promosOpen} onClick={() => setPromosOpen((value) => !value)} className="flex h-7 w-full items-center justify-between text-xs font-semibold leading-4">
@@ -268,22 +292,47 @@ export function CreatorProfile({ creator, posts }: { creator: Creator; posts: Po
           </button>
           {promosOpen && (
             <div className="space-y-1.5">
-              {promotionActive && (
+              {databasePlans ? (
+                offers?.promotion ? (
+                  <div data-testid="promotion-banner" className="flex h-8 items-center justify-between gap-3 rounded-full bg-gradient-to-r from-primary/20 to-accent/20 px-4">
+                    <p className="truncate text-xs font-semibold">{t("promoBody", { percent: offers.promotion.discountPercent })}</p>
+                    {offers.promotion.spotsLeft != null && (
+                      <p className="hidden shrink-0 text-[10px] text-muted sm:block">{t("promoMeta", { spots: offers.promotion.spotsLeft })}</p>
+                    )}
+                  </div>
+                ) : null
+              ) : promotionActive ? (
                 <div data-testid="promotion-banner" className="flex h-8 items-center justify-between gap-3 rounded-full bg-gradient-to-r from-primary/20 to-accent/20 px-4">
                   <p className="truncate text-xs font-semibold">{t("promoBody", { percent: promotion.discountPercent })}</p>
                   <p className="hidden shrink-0 text-[10px] text-muted sm:block">{t("promoMeta", { spots: (promotion.subscriberCap ?? 0) - promotion.redeemedCount })}</p>
                 </div>
-              )}
-              {([3, 6, 12] as const).map((months) => (
-                <Link key={months} href={planHref(months)} className={`flex h-11 w-full items-center justify-between rounded-full border border-primary/35 bg-gradient-to-r from-primary/20 via-elevated to-accent/20 px-5 text-sm font-semibold ${planGlow}`}>
-                  <span>{months} {t("months")}</span>
-                  <span>{creator.free ? t("free") : brl(planTotal(months))}</span>
-                </Link>
-              ))}
-              <Link href={`/checkout?kind=pack&id=summer-pack&creator=${creator.id}&return=/creator/${creator.username}`} className={`flex h-10 w-full items-center justify-between rounded-full border border-accent/40 bg-gradient-to-r from-accent/15 to-primary/10 px-5 text-sm font-semibold ${planGlow}`}>
-                <span>Pacote Bastidores</span>
-                <span>{brl(4_990)}</span>
-              </Link>
+              ) : null}
+              {databasePlans
+                ? extraPlans.map((plan) => (
+                    <Link key={plan.id} href={databaseHref(plan.id)} className={`flex h-11 w-full items-center justify-between rounded-full border border-primary/35 bg-gradient-to-r from-primary/20 via-elevated to-accent/20 px-5 text-sm font-semibold ${planGlow}`}>
+                      <span>{plan.name}</span>
+                      <span data-testid="plan-price" data-months={plan.months}>{brl(plan.chargeCents)}</span>
+                    </Link>
+                  ))
+                : ([3, 6, 12] as const).map((months) => (
+                    <Link key={months} href={planHref(months)} className={`flex h-11 w-full items-center justify-between rounded-full border border-primary/35 bg-gradient-to-r from-primary/20 via-elevated to-accent/20 px-5 text-sm font-semibold ${planGlow}`}>
+                      <span>{months} {t("months")}</span>
+                      <span data-testid="plan-price" data-months={months}>{creator.free ? t("free") : brl(planTotal(months))}</span>
+                    </Link>
+                  ))}
+              {databasePlans
+                ? offers?.packs.map((pack) => (
+                    <Link key={pack.id} href={`/checkout?kind=pack&id=${pack.id}&creator=${creator.username}&return=/creator/${creator.username}`} className={`flex h-10 w-full items-center justify-between rounded-full border border-accent/40 bg-gradient-to-r from-accent/15 to-primary/10 px-5 text-sm font-semibold ${planGlow}`}>
+                      <span>{pack.name}</span>
+                      <span data-testid="pack-price">{brl(pack.priceCents)}</span>
+                    </Link>
+                  ))
+                : (
+                    <Link href={`/checkout?kind=pack&id=summer-pack&creator=${creator.id}&return=/creator/${creator.username}`} className={`flex h-10 w-full items-center justify-between rounded-full border border-accent/40 bg-gradient-to-r from-accent/15 to-primary/10 px-5 text-sm font-semibold ${planGlow}`}>
+                      <span>Pacote Bastidores</span>
+                      <span>{brl(4_990)}</span>
+                    </Link>
+                  )}
             </div>
           )}
         </div>
