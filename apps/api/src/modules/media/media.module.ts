@@ -29,6 +29,7 @@ import { z } from "zod";
 import { optionalUser, requireUser } from "../auth/require-user";
 import { writePosterAndPreview } from "./derivatives";
 import { fanSubscribed, paidPostPurchase, resolveVideoPrice, viewerCanReadPost } from "./entitlement";
+import { MEDIA_GRANT_TTL_SECONDS, readMediaGrant, signMediaGrant } from "./signed-url";
 import { chunkSizeBytes, declaredMimeMatches, detectFile, maxBytes } from "./sniff";
 import { assembleChunks, openStorage, receivedChunkIndexes, type DiskStorage } from "./storage";
 
@@ -213,7 +214,7 @@ export class MediaController {
         OR: [{ id: { in: keys } }, { user: { profile: { is: { username: { in: keys } } } } }],
       },
     });
-    if (!creator) return { items: [], subscribed: false };
+    if (!creator) return { items: [], subscribed: false, viewerHandle: null };
     const subscribed = viewer ? await fanSubscribed(viewer.id, creator.id) : false;
     const posts = await database.post.findMany({
       where: {
@@ -224,7 +225,7 @@ export class MediaController {
         media: { some: { kind: "VIDEO" } },
       },
       include: { media: { orderBy: { createdAt: "asc" } } },
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      orderBy: [{ publishedAt: "desc" }, { sortOrder: "asc" }],
     });
     const items = [];
     for (const post of posts) {
@@ -237,12 +238,14 @@ export class MediaController {
         caption: post.caption,
         priceCents: post.priceCents ?? creator.defaultVideoPriceCents,
         previewUrl: media.previewKey ? `/media/${media.previewKey}` : null,
-        fileUrl: purchased ? `/v1/media/${media.id}/file` : null,
+        fileUrl: null,
+        durationMs: media.durationMs,
+        publishedAt: post.publishedAt?.toISOString() ?? null,
         purchased,
         subscribed,
       });
     }
-    return { items, subscribed };
+    return { items, subscribed, viewerHandle: viewer ? await this.viewerHandle(viewer.id) : null };
   }
 
   @Post("media/uploads")
@@ -494,27 +497,68 @@ export class MediaController {
     return { deleted: true };
   }
 
+  @Get("media/:id/access")
+  async access(@Param("id") id: string, @Headers("authorization") authorization?: string) {
+    const user = await requireUser(authorization);
+    const media = await database.media.findUnique({ where: { id }, include: { post: true } });
+    if (!media?.post || media.post.deletedAt || media.storageKey === "pending") throw new NotFoundException("Media not found");
+    const allowed = await this.canRead(authorization, media.post);
+    if (!allowed) {
+      throw new ForbiddenException(media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
+    }
+    const exp = Math.floor(Date.now() / 1000) + MEDIA_GRANT_TTL_SECONDS;
+    const token = signMediaGrant({ mediaId: media.id, userId: user.id, exp, kind: "file" });
+    return {
+      url: `/v1/media/${media.id}/file?token=${encodeURIComponent(token)}`,
+      expiresAt: new Date(exp * 1000).toISOString(),
+      handle: await this.viewerHandle(user.id),
+    };
+  }
+
   @Get("media/:id/file")
   async file(
     @Param("id") id: string,
     @Headers("authorization") authorization: string | undefined,
     @Headers("range") range: string | undefined,
     @Res() response: Response,
+    @Query("token") token?: string,
   ) {
     const media = await database.media.findUnique({ where: { id }, include: { post: true } });
     if (!media?.post || media.post.deletedAt || media.storageKey === "pending") throw new NotFoundException("Media not found");
-    const allowed = await this.canRead(authorization, media.post);
-    if (!allowed) {
-      if (!authorization) throw new UnauthorizedException("Missing access token");
-      throw new ForbiddenException(media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
+    if (token) {
+      const grant = readMediaGrant(token);
+      if (!grant || grant.mediaId !== id) throw new UnauthorizedException("Media link expired");
+      const user = await database.user.findUnique({ where: { id: grant.userId } });
+      if (!user || user.deletedAt || user.suspendedAt) throw new UnauthorizedException("Media link expired");
+      const owner = await database.creator.findUnique({ where: { userId: user.id } });
+      const allowed = await viewerCanReadPost({
+        user,
+        owns: owner?.id === media.post.creatorId,
+        post: media.post,
+      });
+      if (!allowed) {
+        throw new ForbiddenException(media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
+      }
+    } else {
+      const allowed = await this.canRead(authorization, media.post);
+      if (!allowed) {
+        if (!authorization) throw new UnauthorizedException("Missing access token");
+        throw new ForbiddenException(media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
+      }
+      const user = authorization ? await requireUser(authorization) : null;
+      const owner = user ? await database.creator.findUnique({ where: { userId: user.id } }) : null;
+      if (user?.role !== "ADMIN" && owner?.id !== media.post.creatorId && media.post.visibility !== "FREE") {
+        throw new UnauthorizedException("Media link expired");
+      }
     }
     const storage = await this.storage();
     if (!(await storage.exists(media.storageKey))) throw new NotFoundException("Media not found");
     const size = await storage.size(media.storageKey);
     const absolute = storage.resolve(media.storageKey);
     response.setHeader("Content-Type", media.mimeType);
+    response.setHeader("Content-Disposition", "inline");
     response.setHeader("X-Content-Type-Options", "nosniff");
-    response.setHeader("Cache-Control", media.private ? "private, no-store" : "private, max-age=3600");
+    response.setHeader("Cache-Control", token || media.private ? "private, no-store" : "private, max-age=3600");
     response.setHeader("Accept-Ranges", "bytes");
     const match = range?.match(/bytes=(\d+)-(\d*)/);
     if (!match) {
@@ -532,6 +576,14 @@ export class MediaController {
     response.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
     response.setHeader("Content-Length", String(end - start + 1));
     await pipeStream(createReadStream(absolute, { start, end }), response);
+  }
+
+  private async viewerHandle(userId: string) {
+    const profile = await database.user.findUnique({
+      where: { id: userId },
+      select: { profile: { select: { username: true } } },
+    });
+    return profile?.profile?.username ?? null;
   }
 
   private async canRead(

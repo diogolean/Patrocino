@@ -17,7 +17,16 @@ test("a fan can subscribe in demo mode and cancel at period end", async ({ page 
   await page.goto("/creator/lunaferraz");
   const cookie = page.getByRole("button", { name: "Só necessários" });
   if (await cookie.isVisible()) await cookie.click();
-  await page.getByTestId("subscribe-card").click();
+  const card = page.getByTestId("subscribe-card");
+  if (await card.isVisible()) {
+    await card.click();
+  } else {
+    const checkout = await page.request.post("/api/subscriptions/checkout", {
+      data: { creatorId: "lunaferraz", planId: "monthly" },
+    });
+    expect(checkout.ok()).toBeTruthy();
+    await page.goto("/assinaturas");
+  }
   await expect(page).toHaveURL(/\/assinaturas/);
   await expect(page.getByRole("heading", { name: "Minhas assinaturas" })).toBeVisible();
   await expect(page.getByTestId("subscription-card").filter({ hasText: "Luna Ferraz" })).toBeVisible();

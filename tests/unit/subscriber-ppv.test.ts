@@ -13,7 +13,9 @@ import { database } from "../../packages/db/src/index";
 import { processExpayWebhook, type ExpayClient } from "../../packages/core/src/expay";
 import { createPrismaPaymentStore } from "../../apps/api/src/modules/payments/expay-store";
 import { chargeDraftForUser, ensureQuotedPurchase } from "../../apps/api/src/modules/payments/quote-charge";
+import { Writable } from "node:stream";
 import { MediaController } from "../../apps/api/src/modules/media/media.module";
+import { signMediaGrant } from "../../apps/api/src/modules/media/signed-url";
 import { resolveVideoPrice, viewerCanReadPost } from "../../apps/api/src/modules/media/entitlement";
 import { importCreatorMedia } from "../../apps/api/src/media-import";
 
@@ -42,6 +44,30 @@ function statusOf(error: unknown) {
 
 function token(userId: string) {
   return `Bearer ${sign({ sub: userId }, secret)}`;
+}
+
+function memoryResponse() {
+  const headers = new Map<string, string>();
+  const chunks: Buffer[] = [];
+  const sink = new Writable({
+    write(chunk, _encoding, callback) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      callback();
+    },
+  });
+  return Object.assign(sink, {
+    setHeader(name: string, value: string | number) {
+      headers.set(name.toLowerCase(), String(value));
+    },
+    status(code: number) {
+      void code;
+      return this;
+    },
+    headers,
+    body() {
+      return Buffer.concat(chunks);
+    },
+  });
 }
 
 function paidClient(amountCents: number): ExpayClient {
@@ -244,6 +270,25 @@ describe("subscriber pay-per-view videos", () => {
     expect(locked?.fileUrl).toBeNull();
     expect(locked?.previewUrl).toContain("/previews/");
     expect(JSON.stringify(hidden)).not.toContain("private/posters");
+    expect(JSON.stringify(hidden)).not.toContain(`/v1/media/${ids.mediaId}/file`);
+    const early = signMediaGrant({
+      mediaId: ids.mediaId,
+      userId: ids.fanId,
+      exp: Math.floor(Date.now() / 1000) + 60,
+      kind: "file",
+    });
+    await expect(list.file(ids.mediaId, undefined, undefined, memoryResponse() as never, early)).rejects.toSatisfy(
+      (error: unknown) => statusOf(error) === 403,
+    );
+    await expect(
+      list.file(
+        ids.mediaId,
+        undefined,
+        undefined,
+        memoryResponse() as never,
+        signMediaGrant({ mediaId: ids.mediaId, userId: ids.fanId, exp: Math.floor(Date.now() / 1000) - 30, kind: "file" }),
+      ),
+    ).rejects.toSatisfy((error: unknown) => statusOf(error) === 401);
 
     const anonymous = await list.subscriberVideos(ids.username);
     expect(anonymous.subscribed).toBe(false);
@@ -307,7 +352,29 @@ describe("subscriber pay-per-view videos", () => {
     const visible = await list.subscriberVideos(ids.username, token(ids.fanId));
     const opened = visible.items.find((item) => item.id === ids.postId);
     expect(opened?.purchased).toBe(true);
-    expect(opened?.fileUrl).toBe(`/v1/media/${ids.mediaId}/file`);
+    expect(opened?.fileUrl).toBeNull();
+    expect(JSON.stringify(visible)).not.toContain(`/v1/media/${ids.mediaId}/file`);
+    expect(visible.viewerHandle).toBe(`ppvfan${suffix}`);
+
+    await expect(list.file(ids.mediaId, token(ids.fanId), undefined, memoryResponse() as never)).rejects.toSatisfy(
+      (error: unknown) => statusOf(error) === 401,
+    );
+    const access = await list.access(ids.mediaId, token(ids.fanId));
+    expect(access.handle).toBe(`ppvfan${suffix}`);
+    const grant = new URL(access.url, "http://127.0.0.1").searchParams.get("token") ?? "";
+    expect(grant.length).toBeGreaterThan(20);
+    const root = await mkdtemp(path.join(tmpdir(), `ppv-file-${suffix}-`));
+    process.env.MEDIA_ROOT = root;
+    const relative = `uploads/${ids.creatorId}/private/sample.mp4`;
+    await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    await writeFile(path.join(root, relative), Buffer.from("entitled-bytes"));
+    const playback = new MediaController();
+    const response = memoryResponse();
+    await playback.file(ids.mediaId, undefined, undefined, response as never, grant);
+    expect(response.headers.get("content-disposition")).toBe("inline");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.body().toString("utf8")).toBe("entitled-bytes");
+    await rm(root, { recursive: true, force: true });
   });
 
   it("imports a creator folder once and keeps the chosen price", async () => {

@@ -65,11 +65,10 @@ class ContentController {
         visibility: post.visibility,
         locked: !access,
         media: access
-          ? post.media.map((item) => ({
+            ? post.media.map((item) => ({
               id: item.id,
               kind: item.kind,
               mimeType: item.mimeType,
-              fileUrl: `/v1/media/${item.id}/file`,
             }))
           : [],
       },

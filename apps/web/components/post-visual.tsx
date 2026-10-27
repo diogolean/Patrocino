@@ -13,6 +13,9 @@ export function PostVisual({
   autoPlay?: boolean;
   lockedClassName?: string;
 }) {
+  function shield(event: { preventDefault: () => void }) {
+    event.preventDefault();
+  }
   if (post.playback && !locked) {
     return (
       <video
@@ -24,8 +27,13 @@ export function PostVisual({
         loop
         playsInline
         controls
+        controlsList="nodownload"
+        disablePictureInPicture
         preload="metadata"
-        className="h-full w-full bg-black object-cover"
+        draggable={false}
+        onContextMenu={shield}
+        onDragStart={shield}
+        className="media-shield h-full w-full bg-black object-cover"
       />
     );
   }
@@ -37,7 +45,10 @@ export function PostVisual({
       alt={post.caption}
       loading="lazy"
       decoding="async"
-      className={`h-full w-full object-cover transition duration-500 ${locked ? lockedClassName : ""}`}
+      draggable={false}
+      onContextMenu={shield}
+      onDragStart={shield}
+      className={`media-shield h-full w-full object-cover transition duration-500 ${locked ? lockedClassName : ""}`}
     />
   );
 }

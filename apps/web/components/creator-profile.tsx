@@ -10,6 +10,7 @@ import {
   ImageIcon,
   LoaderCircle,
   LockKeyhole,
+  Maximize2,
   MessageCircle,
   Sparkles,
   Star,
@@ -20,8 +21,11 @@ import { Button, Pill, PremiumModal } from "@mimelux/ui";
 import type { Creator, Post } from "@/lib/gateway";
 import { brl, compact, plans, reviewsFor } from "@/lib/gateway";
 import { PostVisual } from "@/components/post-visual";
-import { SubscriberVideos } from "@/components/subscriber-videos";
+import { loadSubscriberCatalog, SubscriberPpvCard, type SubscriberVideo } from "@/components/subscriber-videos";
+import { MediaViewer, type ViewerSlide } from "@/components/media-viewer";
 import type { ProfileOffers } from "@/lib/creator-offers";
+import { formatActiveUntil, formatDuration, mergeGallery, renewPlan } from "@/lib/gallery";
+import { watermarkStyle } from "@/lib/watermark";
 import { readDemo, writeDemo, type DemoReview, type DemoSpecialRequest } from "@/lib/demo-store";
 import { toast } from "sonner";
 
@@ -52,6 +56,15 @@ export function CreatorProfile({
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewBody, setReviewBody] = useState("");
   const [now] = useState(() => Date.now());
+  const [stripeOn, setStripeOn] = useState(false);
+  const [serverSubscribed, setServerSubscribed] = useState(false);
+  const [activeUntil, setActiveUntil] = useState<string | null>(null);
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [videos, setVideos] = useState<SubscriberVideo[]>([]);
+  const [viewerHandle, setViewerHandle] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<{ slides: ViewerSlide[]; index: number } | null>(null);
+  const [purchase, setPurchase] = useState<SubscriberVideo | null>(null);
+  const [subscribePrompt, setSubscribePrompt] = useState(false);
 
   useEffect(() => {
     const sync = () => {
@@ -67,6 +80,43 @@ export function CreatorProfile({
     window.addEventListener("mimelux:state", sync);
     return () => window.removeEventListener("mimelux:state", sync);
   }, [creator.id]);
+
+  useEffect(() => {
+    let cancel = false;
+    void fetch("/api/payments/provider", { cache: "no-store" })
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((data: { stripe?: boolean } | null) => {
+        if (!cancel) setStripeOn(data?.stripe === true);
+      })
+      .catch(() => undefined);
+    void fetch("/api/subscriptions/me", { cache: "no-store" })
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((data: { items?: { access?: boolean; creatorUsername?: string; creatorId?: string; currentPeriodEnd?: string | null }[] } | null) => {
+        if (cancel || !data?.items) return;
+        const match = data.items.find(
+          (item) => item.access && (item.creatorUsername === creator.username || item.creatorId === creator.id),
+        );
+        setServerSubscribed(Boolean(match));
+        setActiveUntil(match?.currentPeriodEnd ?? null);
+      })
+      .catch(() => undefined);
+    void loadSubscriberCatalog(creator.username).then((catalog) => {
+      if (cancel) return;
+      setVideos(catalog.items);
+      setViewerHandle(catalog.viewerHandle);
+      const play = new URLSearchParams(window.location.search).get("play");
+      const purchased = catalog.items.filter((video) => video.purchased);
+      const index = purchased.findIndex((video) => video.id === play);
+      if (index < 0) return;
+      setViewer({
+        slides: purchased.map((video) => ({ id: video.id, kind: "video" as const, mediaId: video.mediaId, caption: video.caption })),
+        index,
+      });
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [creator.id, creator.username]);
 
   const promotion = monetization.promotion;
   const promotionActive =
@@ -158,6 +208,66 @@ export function CreatorProfile({
 
   function databaseHref(planId: string) {
     return `/checkout?kind=subscription&id=${creator.username}&plan=${planId}&return=/creator/${creator.username}`;
+  }
+
+  const memberSubscribed = subscribed || serverSubscribed;
+  const until = formatActiveUntil(activeUntil);
+  const activeLabel = until ? `Assinatura ativa até ${until}` : t("active");
+  const showCard = stripeOn && !memberSubscribed;
+  const databaseRenew = databasePlans ? renewPlan(databasePlans) : null;
+  const renewal = memberSubscribed
+    ? databasePlans
+      ? databaseRenew
+        ? { href: databaseHref(databaseRenew.id), label: databaseRenew.name, cents: databaseRenew.chargeCents }
+        : null
+      : { href: planHref(3), label: `3 ${t("months")}`, cents: planTotal(3) }
+    : null;
+
+  function postLocked(post: Post) {
+    if (post.visibility === "subscriber") return !memberSubscribed;
+    if (post.visibility === "ppv") return !unlocks.includes(post.id);
+    return false;
+  }
+
+  function videoCheckout(video: SubscriberVideo) {
+    const back = encodeURIComponent(`/creator/${creator.username}?play=${video.id}`);
+    return `/checkout?kind=post&id=${video.id}&creator=${creator.username}&return=${back}`;
+  }
+
+  const gallery = mergeGallery(visiblePosts, videos);
+  const mark = viewerHandle ? watermarkStyle(viewerHandle) : undefined;
+
+  function openSlides(id: string) {
+    const slides: ViewerSlide[] = [];
+    for (const entry of gallery) {
+      if (entry.kind === "video") {
+        if (!entry.video.purchased) continue;
+        slides.push({ id: entry.video.id, kind: "video", mediaId: entry.video.mediaId, caption: entry.video.caption });
+        continue;
+      }
+      if (postLocked(entry.post)) continue;
+      slides.push({
+        id: entry.post.id,
+        kind: entry.post.playback ? "video" : "image",
+        src: entry.post.playback || entry.post.image,
+        poster: entry.post.poster || entry.post.image,
+        caption: entry.post.caption,
+      });
+    }
+    const index = slides.findIndex((slide) => slide.id === id);
+    if (index >= 0) setViewer({ slides, index });
+  }
+
+  function onPpv(video: SubscriberVideo) {
+    if (video.purchased) {
+      openSlides(video.id);
+      return;
+    }
+    if (video.subscribed || memberSubscribed) {
+      setPurchase(video);
+      return;
+    }
+    setSubscribePrompt(true);
   }
 
   function subscribeWithCard() {
@@ -259,22 +369,40 @@ export function CreatorProfile({
       <section data-testid="profile-plans" className="mt-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-xs font-semibold leading-4">{t("subscriptions")}</h2>
-          <button
-            type="button"
-            data-testid="subscribe-card"
-            disabled={subscribing || creator.free}
-            onClick={subscribeWithCard}
-            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-border px-2.5 text-[11px] font-semibold leading-none disabled:opacity-50"
-          >
-            {subscribing ? <LoaderCircle className="size-3 animate-spin" /> : null}
-            Assinar com cartão
-          </button>
+          {showCard && (
+            <button
+              type="button"
+              data-testid="subscribe-card"
+              disabled={subscribing || creator.free}
+              onClick={subscribeWithCard}
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-border px-2.5 text-[11px] font-semibold leading-none disabled:opacity-50"
+            >
+              {subscribing ? <LoaderCircle className="size-3 animate-spin" /> : null}
+              Assinar com cartão
+            </button>
+          )}
         </div>
         <div className="mt-1.5 space-y-1.5">
-          {databasePlans && databasePlans.length === 0 ? (
+          {memberSubscribed ? (
+            <>
+              <Button variant="dark" className="h-11 w-full rounded-full"><BadgeCheck className="size-4" /> {activeLabel}</Button>
+              {renewal && (
+                <>
+                  <button type="button" aria-expanded={renewOpen} onClick={() => setRenewOpen((value) => !value)} className="flex h-7 w-full items-center justify-between text-xs font-medium text-muted">
+                    Estender assinatura
+                    <ChevronDown className={`size-3.5 transition motion-reduce:transition-none ${renewOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {renewOpen && (
+                    <Link href={renewal.href} className={`flex h-11 w-full items-center justify-between rounded-full border border-primary/35 bg-gradient-to-r from-primary/20 via-elevated to-accent/20 px-5 text-sm font-semibold ${planGlow}`}>
+                      <span>{renewal.label}</span>
+                      <span>{creator.free ? t("free") : brl(renewal.cents)}</span>
+                    </Link>
+                  )}
+                </>
+              )}
+            </>
+          ) : databasePlans && databasePlans.length === 0 ? (
             <p className="text-sm text-muted">Preços indisponíveis no momento.</p>
-          ) : subscribed ? (
-            <Button variant="dark" className="h-11 w-full rounded-full"><BadgeCheck className="size-4" /> {t("active")}</Button>
           ) : primaryPlan ? (
             <Link href={databaseHref(primaryPlan.id)} className={`flex h-11 w-full items-center justify-between rounded-full bg-gradient-to-r from-primary to-primary-strong/90 px-5 text-sm font-semibold text-ink ${planGlow}`}>
               <span>{primaryPlan.months === 1 ? `1 ${t("month")}` : primaryPlan.name}</span>
@@ -286,11 +414,13 @@ export function CreatorProfile({
               <span data-testid="plan-price" data-months={1}>{creator.free ? t("free") : brl(planTotal(1))}</span>
             </Link>
           )}
+          {!memberSubscribed && (
           <button type="button" aria-expanded={promosOpen} onClick={() => setPromosOpen((value) => !value)} className="flex h-7 w-full items-center justify-between text-xs font-semibold leading-4">
             {t("promotions")}
             <ChevronDown className={`size-3.5 transition motion-reduce:transition-none ${promosOpen ? "rotate-180" : ""}`} />
           </button>
-          {promosOpen && (
+          )}
+          {!memberSubscribed && promosOpen && (
             <div className="space-y-1.5">
               {databasePlans ? (
                 offers?.promotion ? (
@@ -359,21 +489,34 @@ export function CreatorProfile({
 
       <div className="mt-2 grid grid-cols-2 border-b border-border">
         <button type="button" onClick={() => setTab("posts")} className={`flex h-9 items-center justify-center gap-2 text-sm ${tab === "posts" ? "border-b-2 border-primary-strong font-semibold" : "text-muted"}`}>
-          <ImageIcon className="size-3.5" /> {posts.length} {t("posts")}
+          <ImageIcon className="size-3.5" /> {posts.length + videos.length} {t("posts")}
         </button>
         <button type="button" onClick={() => setTab("media")} className={`flex h-9 items-center justify-center gap-2 text-sm ${tab === "media" ? "border-b-2 border-primary-strong font-semibold" : "text-muted"}`}>
-          <Video className="size-3.5" /> {photoCount + videoCount} {t("media")}
+          <Video className="size-3.5" /> {photoCount + videoCount + videos.length} {t("media")}
         </button>
       </div>
 
       <div className="mt-1.5 grid grid-cols-3 gap-1.5">
-        {visiblePosts.map((post) => {
-          const locked = post.visibility === "subscriber" ? !subscribed : post.visibility === "ppv" ? !unlocks.includes(post.id) : false;
+        {gallery.map((entry) => {
+          if (entry.kind === "video") {
+            return <SubscriberPpvCard key={entry.video.id} video={entry.video} handle={viewerHandle} onOpen={() => onPpv(entry.video)} />;
+          }
+          const post = entry.post;
+          const locked = postLocked(post);
           return (
-            <div key={post.id} data-testid="profile-post" data-locked={locked} className={`group relative aspect-[3/4] overflow-hidden rounded-[16px] ${post.playback ? "bg-black" : "bg-surface"}`}>
+            <div key={post.id} data-testid="profile-post" data-locked={locked} onContextMenu={(event) => event.preventDefault()} className={`media-shield group relative aspect-[3/4] overflow-hidden rounded-[16px] ${post.playback ? "bg-black" : "bg-surface"}`}>
               <PostVisual post={post} locked={locked} testId={post.playback ? "profile-video" : undefined} autoPlay />
+              {mark ? <span aria-hidden className="pointer-events-none absolute inset-0 z-[1]" style={mark} /> : null}
+              {!locked && !post.playback && (
+                <button type="button" aria-label="Abrir foto" className="absolute inset-0 z-[2]" onClick={() => openSlides(post.id)} />
+              )}
+              {!locked && post.playback && (
+                <button type="button" aria-label="Abrir vídeo" className="absolute right-2 top-2 z-10 grid size-8 place-items-center rounded-full bg-black/50 text-white" onClick={() => openSlides(post.id)}>
+                  <Maximize2 className="size-3.5" />
+                </button>
+              )}
               {locked && (
-                <div className="absolute inset-0 grid place-items-center bg-ink/25 p-2 text-center text-white">
+                <div className="absolute inset-0 z-[3] grid place-items-center bg-ink/25 p-2 text-center text-white">
                   <div>
                     <span className="mx-auto grid size-8 place-items-center rounded-full bg-black/40"><LockKeyhole className="size-3.5" /></span>
                     <Link href={post.visibility === "subscriber" ? planHref(1) : `/checkout?kind=post&id=${post.id}&creator=${creator.id}&return=/creator/${creator.username}`}>
@@ -386,8 +529,6 @@ export function CreatorProfile({
           );
         })}
       </div>
-
-      <SubscriberVideos username={creator.username} subscribeHref={planHref(1)} />
 
       <section data-testid="profile-reviews" className="mt-8 rounded-[28px] border border-border bg-elevated p-5">
         <div className="flex items-end justify-between gap-3">
@@ -434,6 +575,33 @@ export function CreatorProfile({
         </label>
         <Button className="mt-5 w-full" onClick={submitSpecialRequest}>Enviar pedido demo</Button>
       </PremiumModal>
+      <PremiumModal open={subscribePrompt} onClose={() => setSubscribePrompt(false)} title="Assine para assistir" description="Este vídeo fica disponível depois da assinatura. A compra avulsa é só para quem já assina.">
+        <Link href={primaryPlan ? databaseHref(primaryPlan.id) : planHref(1)} className="inline-flex h-11 w-full items-center justify-center rounded-full bg-primary text-sm font-semibold text-ink">
+          Ver assinatura
+        </Link>
+      </PremiumModal>
+      <PremiumModal open={Boolean(purchase)} onClose={() => setPurchase(null)} title={purchase?.caption || "Vídeo"} description="O pagamento libera este vídeo para assistir aqui.">
+        {purchase && (
+          <div className="space-y-3">
+            <p className="text-sm font-semibold">
+              {formatDuration(purchase.durationMs) ? `${formatDuration(purchase.durationMs)} · ` : ""}
+              {brl(purchase.priceCents)}
+            </p>
+            <Link href={videoCheckout(purchase)} className="inline-flex h-11 w-full items-center justify-center rounded-full bg-primary text-sm font-semibold text-ink">
+              Desbloquear por {brl(purchase.priceCents)}
+            </Link>
+          </div>
+        )}
+      </PremiumModal>
+      {viewer && (
+        <MediaViewer
+          slides={viewer.slides}
+          index={viewer.index}
+          handle={viewerHandle}
+          onIndex={(index) => setViewer((current) => (current ? { ...current, index } : current))}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </div>
   );
 }

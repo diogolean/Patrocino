@@ -3,6 +3,7 @@ import { access, stat } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
+import { publicMediaAllowed } from "@/lib/public-media";
 
 const roots = [process.env.MEDIA_ROOT, "/opt/patrocino/media", "/tmp/patrocino-media"].filter(
   (root): root is string => Boolean(root),
@@ -20,7 +21,7 @@ function contentType(file: string) {
 
 export async function GET(_request: Request, context: { params: Promise<{ path: string[] }> }) {
   const parts = (await context.params).path;
-  if (parts.some((part) => part === "private" || part === "tmp" || part === ".." || part === "." || part === "")) {
+  if (!publicMediaAllowed(parts)) {
     return new NextResponse(null, { status: 404 });
   }
   const relative = parts.join("/");

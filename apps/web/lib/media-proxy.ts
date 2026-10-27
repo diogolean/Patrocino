@@ -50,7 +50,10 @@ export async function proxyMediaFile(request: Request, mediaId: string) {
   if (access) headers.set("authorization", `Bearer ${access}`);
   const range = request.headers.get("range");
   if (range) headers.set("range", range);
-  const response = await fetch(`${apiBase()}/media/${encodeURIComponent(mediaId)}/file`, {
+  const token = new URL(request.url).searchParams.get("token");
+  const target = new URL(`${apiBase()}/media/${encodeURIComponent(mediaId)}/file`);
+  if (token) target.searchParams.set("token", token);
+  const response = await fetch(target, {
     headers,
     cache: "no-store",
   });
@@ -59,6 +62,7 @@ export async function proxyMediaFile(request: Request, mediaId: string) {
     "content-type",
     "content-length",
     "content-range",
+    "content-disposition",
     "accept-ranges",
     "cache-control",
     "x-content-type-options",
