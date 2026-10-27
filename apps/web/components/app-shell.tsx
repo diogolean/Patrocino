@@ -22,6 +22,7 @@ import {
 import { Button, Logo, Mark } from "@mimelux/ui";
 import type { SessionRole } from "@mimelux/core";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { ChatDock } from "@/components/chat-dock";
 import { MessageAlerts } from "@/components/message-alerts";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { readDemo, writeDemo } from "@/lib/demo-store";
@@ -76,6 +77,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh" data-testid="session-user" data-email={session.user?.email ?? ""} data-role={role}>
       <MessageAlerts />
+      <ChatDock />
       <aside
         data-collapsed={collapsed}
         className={`fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-border bg-background/92 backdrop-blur-xl transition-[width,padding] duration-300 lg:flex ${

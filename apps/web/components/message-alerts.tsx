@@ -6,8 +6,10 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { playMessageSound, unlockMessageSound } from "@/lib/message-sound";
 import {
+  activeCreatorKey,
   freshMessages,
-  openCreatorKey,
+  getDockCreator,
+  publishIncoming,
   THREAD_REFRESH_EVENT,
   UNREAD_POLL_MS,
   UNREAD_REFRESH_EVENT,
@@ -60,7 +62,7 @@ export function MessageAlerts() {
       if (stop || document.hidden) return;
       const data = await fetchUnread().catch(() => null);
       if (stop || !data) return;
-      const openKey = openCreatorKey(pathnameRef.current);
+      const openKey = activeCreatorKey(pathnameRef.current, getDockCreator());
       const { visible, opened } = freshMessages(data.items, seen.current, openKey);
       if (!primed.current) {
         for (const item of data.items) seen.current.add(item.id);
@@ -70,6 +72,7 @@ export function MessageAlerts() {
       }
       if (visible.length > 0) {
         void playMessageSound();
+        publishIncoming(visible);
         for (const item of visible) {
           seen.current.add(item.id);
           toast.custom(

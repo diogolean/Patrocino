@@ -1,12 +1,12 @@
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Module, Param, Post, Put } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Module, NotFoundException, Param, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { chatSequenceOfferModes } from "@mimelux/core/chat-sequence";
 import { database } from "@mimelux/db/runtime";
 import { z } from "zod";
 import { assertOwnsCreator } from "../access/creator-scope";
 import { optionalUser, requireUser } from "../auth/require-user";
-import { markFanThreadRead } from "../notifications/unread";
-import { ensureChatSequence, readFanThread, replaceChatSequence, type SequenceStepInput } from "./sequence";
+import { listFanInbox, markFanThreadRead } from "../notifications/unread";
+import { ensureChatSequence, readFanThread, replaceChatSequence, sendFanMessage, type SequenceStepInput } from "./sequence";
 
 const messageSchema = z.object({
   body: z.string().min(1).max(2000),
@@ -33,8 +33,10 @@ const sequenceSchema = z.object({
 class ChatController {
   @Get()
   @ApiOperation({ summary: "List conversations" })
-  list() {
-    return { items: [], source: "api-shell" };
+  async list(@Headers("authorization") authorization: string | undefined) {
+    const user = await optionalUser(authorization);
+    if (!user) return { items: [] };
+    return { items: await listFanInbox(user.id) };
   }
 
   @Get("with/:creatorKey")
@@ -54,6 +56,23 @@ class ChatController {
   async markRead(@Headers("authorization") authorization: string | undefined, @Param("creatorKey") creatorKey: string) {
     const user = await requireUser(authorization);
     return markFanThreadRead(user.id, creatorKey);
+  }
+
+  @Post("with/:creatorKey/messages")
+  @HttpCode(200)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Send a fan message to a creator" })
+  async sendToCreator(
+    @Headers("authorization") authorization: string | undefined,
+    @Param("creatorKey") creatorKey: string,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(authorization);
+    const parsed = z.object({ body: z.string().trim().min(1).max(2000) }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid request");
+    const message = await sendFanMessage(user.id, creatorKey, parsed.data.body);
+    if (!message) throw new NotFoundException("Conversation not found");
+    return message;
   }
 
   @Get(":id/messages")

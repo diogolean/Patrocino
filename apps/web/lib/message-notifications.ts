@@ -2,6 +2,26 @@ export const UNREAD_POLL_MS = 12_000;
 export const PUSH_CHOICE_KEY = "patrocino-push-choice";
 export const UNREAD_REFRESH_EVENT = "patrocino:unread";
 export const THREAD_REFRESH_EVENT = "patrocino:thread";
+export const INCOMING_MESSAGE_EVENT = "patrocino:incoming";
+
+let dockCreator: string | null = null;
+
+export function setDockCreator(key: string | null) {
+  dockCreator = key;
+}
+
+export function getDockCreator() {
+  return dockCreator;
+}
+
+export function activeCreatorKey(pathname: string, dockKey: string | null = null) {
+  return openCreatorKey(pathname) ?? dockKey;
+}
+
+export function publishIncoming(items: IncomingMessage[]) {
+  if (typeof window === "undefined" || items.length === 0) return;
+  window.dispatchEvent(new CustomEvent(INCOMING_MESSAGE_EVENT, { detail: items }));
+}
 
 export type IncomingMessage = {
   id: string;

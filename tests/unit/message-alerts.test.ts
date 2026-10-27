@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { messagePreview } from "../../apps/api/src/modules/notifications/preview";
 import {
+  activeCreatorKey,
   freshMessages,
   matchesOpenCreator,
   needsHomeScreenInstall,
@@ -42,6 +43,9 @@ describe("message alerts", () => {
     expect(openCreatorKey("/chat/luna")).toBe("luna");
     expect(openCreatorKey("/chat")).toBeNull();
     expect(openCreatorKey("/feed")).toBeNull();
+    expect(activeCreatorKey("/feed", "sarah-mitchell")).toBe("sarah-mitchell");
+    expect(activeCreatorKey("/chat/luna", "sarah-mitchell")).toBe("luna");
+    expect(activeCreatorKey("/chat", null)).toBeNull();
   });
 
   it("asks for the home screen only on iOS outside the installed app", () => {

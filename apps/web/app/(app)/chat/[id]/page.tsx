@@ -30,6 +30,7 @@ export default function ConversationPage() {
   type ThreadMessage = {
     id: string;
     body: string;
+    mine?: boolean;
     offer: { postId: string; title: string; priceCents: number; purchased: boolean } | null;
   };
   const [thread, setThread] = useState<ThreadMessage[]>([]);
@@ -126,8 +127,8 @@ export default function ConversationPage() {
         </div>}
 
         {thread.map((message) => (
-          <div key={message.id} data-testid="chat-sequence-message" className="mt-3 max-w-[82%]">
-            <div className="rounded-[22px_22px_22px_6px] bg-white p-4 shadow-sm dark:bg-white/8">
+          <div key={message.id} data-testid="chat-sequence-message" className={`mt-3 max-w-[82%] ${message.mine ? "ml-auto" : ""}`}>
+            <div className={`p-4 shadow-sm ${message.mine ? "rounded-[22px_22px_6px_22px] bg-primary text-ink" : "rounded-[22px_22px_22px_6px] bg-white dark:bg-white/8"}`}>
               <p className="text-[11px] leading-5">
                 {messageBodyParts(message.body).map((part, index) =>
                   part.kind === "link" ? (

@@ -47,6 +47,48 @@ export async function listUnreadForFan(fanId: string) {
   };
 }
 
+export async function listFanInbox(fanId: string) {
+  const conversations = await database.conversation.findMany({
+    where: { fanId, creatorId: { not: null } },
+    include: {
+      creator: { include: { user: { include: { profile: true } } } },
+      messages: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { body: true, createdAt: true },
+      },
+    },
+  });
+  const unread = await database.message.groupBy({
+    by: ["conversationId"],
+    where: {
+      readAt: null,
+      senderId: { not: fanId },
+      conversation: { fanId },
+    },
+    _count: { _all: true },
+  });
+  const unreadByConversation = new Map(unread.map((row) => [row.conversationId, row._count._all]));
+  return conversations
+    .map((conversation) => {
+      const profile = conversation.creator?.user.profile;
+      const latest = conversation.messages[0];
+      const creatorId = conversation.creatorId ?? "";
+      const username = profile?.username ?? null;
+      return {
+        id: conversation.id,
+        creatorId,
+        creatorUsername: username,
+        creatorName: profile?.name?.trim() || username || "Criador",
+        creatorAvatar: profile?.avatarUrl ?? null,
+        preview: latest ? messagePreview(latest.body) : "",
+        unread: unreadByConversation.get(conversation.id) ?? 0,
+        lastAt: (latest?.createdAt ?? conversation.updatedAt).toISOString(),
+      };
+    })
+    .sort((left, right) => right.lastAt.localeCompare(left.lastAt));
+}
+
 export async function markFanThreadRead(fanId: string, creatorKey: string) {
   const creator = await findCreatorByKey(creatorKey);
   if (!creator) return { read: 0 };

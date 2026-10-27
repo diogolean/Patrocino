@@ -186,6 +186,35 @@ textarea:disabled,
   animation: enter 420ms cubic-bezier(.2,.7,.2,1) both;
 }
 
+@keyframes chat-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.16); }
+  70% { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+
+.animate-chat-pop {
+  animation: chat-pop 480ms cubic-bezier(.2,.7,.2,1);
+}
+
+@keyframes chat-preview-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-chat-preview {
+  animation: chat-preview-in 220ms cubic-bezier(.2,.7,.2,1) both;
+}
+
+@keyframes dock-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-dock-in {
+  animation: dock-in 220ms cubic-bezier(.2,.7,.2,1);
+}
+
 .media-shield,
 .media-shield img,
 .media-shield video,

@@ -346,33 +346,70 @@ export async function readFanThread(fanId: string, creatorKey: string) {
   if (!conversation) return { messages: [] as ThreadMessage[], creator: identity };
   const postIds = conversation.messages.map((message) => message.offerPostId).filter((id): id is string => Boolean(id));
   const bought = await purchasedPostIds(database, fanId, postIds);
-  const messages: ThreadMessage[] = conversation.messages
-    .filter((message) => message.senderId === creator.userId)
-    .map((message) => {
-      const post = message.offerPost;
-      const offer =
-        post && !post.deletedAt && post.priceCents
-          ? {
-              postId: post.id,
-              title: post.caption,
-              priceCents: post.priceCents,
-              purchased: bought.has(post.id),
-            }
-          : null;
-      return {
-        id: message.id,
-        body: message.body,
-        createdAt: message.createdAt.toISOString(),
-        offer,
-      };
-    });
+  const messages: ThreadMessage[] = conversation.messages.map((message) => {
+    const mine = message.senderId === fanId;
+    const post = mine ? null : message.offerPost;
+    const offer =
+      post && !post.deletedAt && post.priceCents
+        ? {
+            postId: post.id,
+            title: post.caption,
+            priceCents: post.priceCents,
+            purchased: bought.has(post.id),
+          }
+        : null;
+    return {
+      id: message.id,
+      body: message.body,
+      createdAt: message.createdAt.toISOString(),
+      mine,
+      offer,
+    };
+  });
   return { messages, creator: identity };
+}
+
+export async function sendFanMessage(fanId: string, creatorKey: string, body: string) {
+  const text = body.trim();
+  if (!text) return null;
+  const creator = await findCreatorByKey(creatorKey);
+  if (!creator) return null;
+  let conversation = await database.conversation.findUnique({
+    where: { fanId_creatorId: { fanId, creatorId: creator.id } },
+  });
+  if (!conversation) {
+    try {
+      conversation = await database.conversation.create({
+        data: {
+          fanId,
+          creatorId: creator.id,
+          participantIds: [fanId, creator.userId],
+        },
+      });
+    } catch (error) {
+      if (!isUnique(error)) throw error;
+      conversation = await database.conversation.findUnique({
+        where: { fanId_creatorId: { fanId, creatorId: creator.id } },
+      });
+      if (!conversation) throw error;
+    }
+  }
+  const message = await database.message.create({
+    data: { conversationId: conversation.id, senderId: fanId, body: text },
+  });
+  return {
+    id: message.id,
+    body: message.body,
+    createdAt: message.createdAt.toISOString(),
+    mine: true as const,
+  };
 }
 
 export type ThreadMessage = {
   id: string;
   body: string;
   createdAt: string;
+  mine: boolean;
   offer: { postId: string; title: string; priceCents: number; purchased: boolean } | null;
 };
 
