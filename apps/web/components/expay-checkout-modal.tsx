@@ -5,6 +5,7 @@ import { Check, Copy, LoaderCircle, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@mimelux/ui";
 import { Input } from "@/components/ui/input";
+import { brl } from "@/lib/fixtures";
 
 type ChargeView = {
   chargeId: string;
@@ -19,27 +20,23 @@ type ChargeView = {
 const terminal = new Set(["paid", "failed", "refunded", "canceled", "expired"]);
 
 export function ExpayCheckoutModal({
-  amountCents,
   title,
   purpose,
-  buyerId,
   creatorId,
   subjectId,
-  description,
   idempotencyKey,
   onClose,
   onPaid,
+  onAmount,
 }: {
-  amountCents: number;
   title: string;
   purpose: "subscription" | "post" | "message" | "pack" | "special_request";
-  buyerId: string;
   creatorId: string;
   subjectId: string;
-  description: string;
   idempotencyKey: string;
   onClose: () => void;
   onPaid: () => void;
+  onAmount?: (amountCents: number) => void;
 }) {
   const asksForDocument = purpose === "subscription";
   const [documentInput, setDocumentInput] = useState("");
@@ -47,7 +44,6 @@ export function ExpayCheckoutModal({
   const [charge, setCharge] = useState<ChargeView | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3334/v1";
 
   useEffect(() => {
     if (payerDocument === null) return;
@@ -56,31 +52,27 @@ export function ExpayCheckoutModal({
 
     async function start() {
       try {
-        const response = await fetch(`${apiBase}/payments/expay/charges`, {
+        const response = await fetch("/api/payments/expay/charges", {
           method: "POST",
           headers: { "content-type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({
-            buyerId,
             creatorId,
             purpose,
             subjectId,
-            amountCents,
-            description,
             idempotencyKey,
-            customer: {
-              name: "Apoiador",
-              email: "fan@patrocino.com",
-              ...(payerDocument ? { document: payerDocument } : {}),
-            },
+            customer: payerDocument ? { document: payerDocument } : undefined,
           }),
         });
         const payload = (await response.json().catch(() => ({}))) as Partial<ChargeView> & { message?: string };
-        if (!response.ok || !payload.chargeId) {
+        if (!response.ok || !payload.chargeId || typeof payload.amountCents !== "number") {
           if (!stop) setError(payload.message || "Não foi possível gerar o Pix.");
           return;
         }
-        if (!stop) setCharge(payload as ChargeView);
+        if (!stop) {
+          setCharge(payload as ChargeView);
+          onAmount?.(payload.amountCents);
+        }
       } catch {
         if (!stop) setError("Não foi possível gerar o Pix.");
       }
@@ -91,19 +83,20 @@ export function ExpayCheckoutModal({
       stop = true;
       controller.abort();
     };
-  }, [amountCents, apiBase, buyerId, creatorId, purpose, subjectId, description, idempotencyKey, payerDocument]);
+  }, [creatorId, purpose, subjectId, idempotencyKey, onAmount, payerDocument]);
 
   useEffect(() => {
     if (!charge?.chargeId || terminal.has(charge.status)) return;
     let stop = false;
     const timer = window.setInterval(async () => {
       try {
-        const response = await fetch(`${apiBase}/payments/expay/charges/${charge.chargeId}`);
+        const response = await fetch(`/api/payments/expay/charges/${charge.chargeId}`);
         if (!response.ok) return;
         const next = (await response.json()) as ChargeView;
         if (stop) return;
         setCharge(next);
-        if (next.status === "paid" || next.accessActive) onPaid();
+        if (typeof next.amountCents === "number") onAmount?.(next.amountCents);
+        if (next.accessActive) onPaid();
       } catch {
         // The next poll retries. The webhook remains the server confirmation.
       }
@@ -112,7 +105,7 @@ export function ExpayCheckoutModal({
       stop = true;
       window.clearInterval(timer);
     };
-  }, [charge?.chargeId, charge?.status, apiBase, onPaid]);
+  }, [charge?.chargeId, charge?.status, onAmount, onPaid]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -123,7 +116,8 @@ export function ExpayCheckoutModal({
   }, [onClose]);
 
   const copia = charge?.copiaECola;
-  const paid = charge?.status === "paid" || charge?.accessActive;
+  const paid = Boolean(charge?.accessActive);
+  const amountMismatch = charge?.status === "paid" && !charge.accessActive;
 
   function generatePix() {
     const cleaned = documentInput.replace(/\D/g, "");
@@ -152,8 +146,10 @@ export function ExpayCheckoutModal({
         </div>
         <h2 id="expay-title" className="text-2xl font-extrabold tracking-[-.04em]">{paid ? "Pagamento confirmado" : "Pague com Pix"}</h2>
         <p className="mt-2 text-sm leading-6 text-muted">{title}</p>
+        {charge && <p data-testid="expay-amount" className="mt-3 text-lg font-black">{brl(charge.amountCents)}</p>}
 
         {error && <p className="mt-5 rounded-2xl bg-accent/15 px-4 py-3 text-sm text-accent-strong">{error}</p>}
+        {amountMismatch && <p className="mt-5 rounded-2xl bg-accent/15 px-4 py-3 text-sm text-accent-strong">O valor pago não confere com o preço deste item.</p>}
 
         {asksForDocument && payerDocument !== null && error && !charge && (
           <Button type="button" variant="outline" className="mt-3 w-full" onClick={() => { setError(""); setPayerDocument(null); }}>

@@ -116,6 +116,7 @@ export type ExpayClient = {
 export type ParsedCharge = {
   id: string;
   status: ChargeStatus;
+  amountCents: number | null;
   copiaECola: string | null;
   qrCode: string | null;
 };
@@ -239,11 +240,28 @@ function digits(value: string | undefined) {
   return cleaned.length > 0 ? cleaned : null;
 }
 
+function assertSameDraft(existing: ChargeRecord, draft: ChargeDraft) {
+  if (
+    existing.buyerId !== draft.buyerId ||
+    existing.creatorId !== draft.creatorId ||
+    existing.purpose !== draft.purpose ||
+    existing.subjectId !== draft.subjectId ||
+    existing.amountCents !== draft.amountCents
+  ) {
+    throw new ExpayError("idempotency_conflict", 409);
+  }
+}
+
 export async function createOneOffPixCharge(client: ExpayClient, store: PaymentStore, draft: ChargeDraft) {
   const existing = await store.findByIdempotency(draft.idempotencyKey);
-  if (existing) return existing;
+  if (existing) {
+    assertSameDraft(existing, draft);
+    return existing;
+  }
   const created = await client.createCharge(draft);
-  return store.insertCharge(toRecord(draft, created, "pix_one_off", null));
+  const saved = await store.insertCharge(toRecord(draft, created, "pix_one_off", null));
+  assertSameDraft(saved, draft);
+  return saved;
 }
 
 function isAuthorizedMandate(status: string) {
@@ -252,7 +270,10 @@ function isAuthorizedMandate(status: string) {
 
 export async function createSubscriptionPix(client: ExpayClient, store: PaymentStore, draft: ChargeDraft) {
   const existing = await store.findByIdempotency(draft.idempotencyKey);
-  if (existing) return existing;
+  if (existing) {
+    assertSameDraft(existing, draft);
+    return existing;
+  }
   try {
     if (!digits(draft.customer.document)) throw new ExpayError("Pix Automático requires the payer document.", 422);
     const mandate = await client.createMandate(draft);
@@ -268,10 +289,15 @@ export async function createSubscriptionPix(client: ExpayClient, store: PaymentS
     if (!isAuthorizedMandate(current.status)) throw new ExpayError("Pix Automático mandate is not authorized yet.", 409);
     const billed = await client.createMandateCharge(mandate.id, draft);
     const created = billed.copiaECola ? billed : await client.getCharge(billed.id);
-    return store.insertCharge(toRecord(draft, created, "pix_automatico", mandate.id));
-  } catch {
+    const saved = await store.insertCharge(toRecord(draft, created, "pix_automatico", mandate.id));
+    assertSameDraft(saved, draft);
+    return saved;
+  } catch (error) {
+    if (error instanceof ExpayError && error.message === "idempotency_conflict") throw error;
     const created = await client.createCharge(draft);
-    return store.insertCharge(toRecord(draft, created, "pix_monthly_fallback", null));
+    const saved = await store.insertCharge(toRecord(draft, created, "pix_monthly_fallback", null));
+    assertSameDraft(saved, draft);
+    return saved;
   }
 }
 
@@ -279,7 +305,7 @@ export async function syncChargeFromExpay(client: ExpayClient, store: PaymentSto
   const remote = await client.getCharge(providerChargeId);
   const local = await store.findByProviderChargeId(providerChargeId);
   if (!local) return null;
-  return applyTrustedStatus(store, local, remote.status);
+  return applyTrustedStatus(store, local, remote.status, remote.amountCents);
 }
 
 export async function refundAndSync(client: ExpayClient, store: PaymentStore, providerChargeId: string) {
@@ -309,7 +335,8 @@ export type ExpayWebhookSecrets = {
  * both match, so a shared secret is not recorded as test.
  * Access changes only for prod, unless acceptTestEvents is set.
  * A duplicate for that same environment is ignored before the re-fetch.
- * Every newly accepted event re-fetches GET /charges/{id} and trusts only that status.
+ * Every newly accepted event re-fetches GET /charges/{id}. Access is granted only
+ * when that charge is paid for the stored amount.
  */
 export async function processExpayWebhook(input: {
   rawBody: string;
@@ -332,7 +359,9 @@ export async function processExpayWebhook(input: {
     return { accepted: true, processed: false, reason: "unknown_charge", environment, accessApplied: false };
   }
   const accessApplied = environment === "prod" || input.acceptTestEvents;
-  const updated = accessApplied ? await applyTrustedStatus(input.store, local, remote.status) : local;
+  const updated = accessApplied
+    ? await applyTrustedStatus(input.store, local, remote.status, remote.amountCents)
+    : local;
   await input.store.insertReceipt({
     providerEventId: event.id,
     providerChargeId: event.chargeId,
@@ -378,8 +407,24 @@ export function matchExpayWebhookEnvironment(
   return null;
 }
 
-export async function applyTrustedStatus(store: PaymentStore, charge: ChargeRecord, status: ChargeStatus) {
-  const accessActive = status === "paid" ? true : status === "refunded" || status === "canceled" ? false : charge.accessActive;
+export function accessForConfirmedCharge(
+  charge: { amountCents: number; accessActive: boolean },
+  status: ChargeStatus,
+  paidCents: number | null,
+) {
+  if (status === "refunded" || status === "canceled") return false;
+  if (status !== "paid") return charge.accessActive;
+  if (charge.accessActive) return true;
+  return paidCents !== null && paidCents === charge.amountCents;
+}
+
+export async function applyTrustedStatus(
+  store: PaymentStore,
+  charge: ChargeRecord,
+  status: ChargeStatus,
+  paidCents: number | null,
+) {
+  const accessActive = accessForConfirmedCharge(charge, status, paidCents);
   if (charge.status === status && charge.accessActive === accessActive) return charge;
   return store.saveStatus(charge.providerChargeId, status, accessActive);
 }
@@ -414,9 +459,23 @@ export function parseCharge(payload: unknown): ParsedCharge | null {
   return {
     id,
     status,
+    amountCents: parseAmountCents(body),
     copiaECola: copyPaste ?? (emv && !emv.startsWith("data:") ? emv : null),
     qrCode: image ? (image.startsWith("data:") ? image : `data:image/png;base64,${image}`) : null,
   };
+}
+
+function parseAmountCents(body: Record<string, unknown>) {
+  const rawCents = body.amount_cents ?? body.amountCents;
+  if (typeof rawCents === "number" && Number.isInteger(rawCents) && rawCents >= 0) return rawCents;
+  if (typeof rawCents === "string" && /^\d+$/.test(rawCents.trim())) return Number(rawCents.trim());
+  const reais = body.amount;
+  if (typeof reais === "number" && Number.isFinite(reais) && reais >= 0) return Math.round(reais * 100);
+  if (typeof reais === "string" && /^\d+(\.\d+)?$/.test(reais.trim())) {
+    const [whole, frac = ""] = reais.trim().split(".");
+    return Number(whole) * 100 + Number((frac + "00").slice(0, 2));
+  }
+  return null;
 }
 
 export function parseMandate(payload: unknown): ParsedMandate | null {
@@ -535,7 +594,11 @@ function toRecord(draft: ChargeDraft, created: ParsedCharge, billingMode: Billin
     copiaECola: created.copiaECola,
     qrCode: created.qrCode,
     idempotencyKey: draft.idempotencyKey,
-    accessActive: created.status === "paid",
+    accessActive: accessForConfirmedCharge(
+      { amountCents: draft.amountCents, accessActive: false },
+      created.status,
+      created.amountCents,
+    ),
   };
 }
 

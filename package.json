@@ -13,7 +13,7 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
-    "test:unit": "vitest run packages/core/src/*.test.ts apps/web/lib/client-ip.test.ts",
+    "test:unit": "vitest run packages/core/src/*.test.ts apps/web/lib/client-ip.test.ts tests/unit/charge-quote.test.ts",
     "test:e2e": "playwright test",
     "db:generate": "pnpm --filter @mimelux/db generate",
     "db:migrate": "pnpm --filter @mimelux/db migrate",

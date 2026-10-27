@@ -234,15 +234,32 @@ describe("ExPay charges", () => {
     expect(charge.billingMode).toBe("pix_monthly_fallback");
     expect(fake.calls.map((call) => call.url)).toEqual(["https://api.expaybrasil.com/api/v1/charges"]);
   });
+
+  it("does not reuse an idempotency key for a different buyer or amount", async () => {
+    const fake = fakeExpay(() => ({
+      status: 201,
+      body: { id: "ch_once", status: "pending", amount: 19.9, pix_data: { copy_paste: "00020126" } },
+    }));
+    const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
+    const store = createMemoryPaymentStore();
+    await createOneOffPixCharge(client, store, draft);
+    await expect(
+      createOneOffPixCharge(client, store, { ...draft, buyerId: "someone-else", amountCents: 1 }),
+    ).rejects.toMatchObject({ status: 409, message: "idempotency_conflict" });
+    expect(store.charges()).toHaveLength(1);
+    expect(store.charges()[0]).toMatchObject({ buyerId: "fan-1", amountCents: 1990 });
+  });
 });
 
 describe("ExPay webhooks", () => {
-  function paidClient(status: string) {
+  function paidClient(status: string, amount: number | null = 19.9) {
     return fakeExpay((url, init) => {
+      const charge: Record<string, unknown> = { id: "ch_100", status, pix_data: { copy_paste: "00020126" } };
+      if (amount !== null) charge.amount = amount;
       if (init.method === "POST" && url.endsWith("/refund")) {
-        return { body: { message: "Charge refunded successfully", charge: { id: "ch_100", status } } };
+        return { body: { message: "Charge refunded successfully", charge } };
       }
-      return { body: { id: "ch_100", status, pix_data: { copy_paste: "00020126" } } };
+      return { body: charge };
     });
   }
 
@@ -283,6 +300,25 @@ describe("ExPay webhooks", () => {
     expect(store.charges()[0]).toMatchObject({ status: "paid", accessActive: true });
     expect(store.receipts()[0]).toMatchObject({ environment: "prod", providerEventId: "evt_paid" });
     expect(fake.calls.filter((call) => call.url.endsWith("/charges/ch_100"))).toHaveLength(1);
+  });
+
+  it("does not unlock when ExPay reports a paid amount different from the stored charge", async () => {
+    const store = await seedPending();
+    const fake = paidClient("paid", 0.01);
+    const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
+    const raw = JSON.stringify({ id: "evt_short", type: "charge.paid", data: { id: "ch_100", status: "paid" } });
+    const result = await processExpayWebhook({ rawBody: raw, signature: sign(raw), secrets, acceptTestEvents: false, client, store });
+    expect(result).toMatchObject({ accepted: true, processed: true, status: "paid", accessApplied: true });
+    expect(store.charges()[0]).toMatchObject({ status: "paid", accessActive: false, amountCents: 1990 });
+  });
+
+  it("does not unlock when ExPay marks the charge paid without an amount", async () => {
+    const store = await seedPending();
+    const fake = paidClient("paid", null);
+    const client = createExpayClient({ apiKey: "test_key", fetchImpl: fake.fetchImpl });
+    const raw = JSON.stringify({ id: "evt_no_amount", type: "charge.paid", data: { id: "ch_100" } });
+    await processExpayWebhook({ rawBody: raw, signature: sign(raw), secrets, acceptTestEvents: false, client, store });
+    expect(store.charges()[0]).toMatchObject({ status: "paid", accessActive: false });
   });
 
   it("does not unlock when the event says paid but ExPay still says pending", async () => {

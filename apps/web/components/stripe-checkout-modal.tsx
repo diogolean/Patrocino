@@ -18,25 +18,29 @@ function stripePromise(publishableKey: string) {
 }
 
 export function StripeCheckoutModal({
-  amountCents,
   title,
-  description,
+  purpose,
+  creatorId,
+  subjectId,
   idempotencyKey,
   publishableKey,
   onClose,
   onPaid,
+  onAmount,
 }: {
-  amountCents: number;
   title: string;
-  description: string;
+  purpose: "subscription" | "post" | "message" | "pack" | "special_request";
+  creatorId: string;
+  subjectId: string;
   idempotencyKey: string;
   publishableKey: string;
   onClose: () => void;
   onPaid: () => void;
+  onAmount?: (amountCents: number) => void;
 }) {
   const [clientSecret, setClientSecret] = useState("");
+  const [chargedCents, setChargedCents] = useState<number | null>(null);
   const [error, setError] = useState("");
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3334/v1";
   const stripe = useMemo(() => (publishableKey ? stripePromise(publishableKey) : null), [publishableKey]);
 
   useEffect(() => {
@@ -46,23 +50,28 @@ export function StripeCheckoutModal({
 
     async function start() {
       try {
-        const response = await fetch(`${apiBase}/payments/checkout`, {
+        const response = await fetch("/api/payments/checkout", {
           method: "POST",
           headers: { "content-type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({
             provider: "stripe",
-            purchaseId: idempotencyKey,
-            amountCents,
-            description,
+            purpose,
+            creatorId,
+            subjectId,
+            idempotencyKey,
           }),
         });
-        const payload = (await response.json().catch(() => ({}))) as { clientSecret?: string | null; message?: string };
-        if (!response.ok || !payload.clientSecret) {
+        const payload = (await response.json().catch(() => ({}))) as { clientSecret?: string | null; amountCents?: number; message?: string };
+        if (!response.ok || !payload.clientSecret || typeof payload.amountCents !== "number") {
           if (!stop) setError(payload.message || "Não foi possível iniciar o pagamento com cartão.");
           return;
         }
-        if (!stop) setClientSecret(payload.clientSecret);
+        if (!stop) {
+          setChargedCents(payload.amountCents);
+          onAmount?.(payload.amountCents);
+          setClientSecret(payload.clientSecret);
+        }
       } catch {
         if (!stop) setError("Não foi possível iniciar o pagamento com cartão.");
       }
@@ -73,7 +82,7 @@ export function StripeCheckoutModal({
       stop = true;
       controller.abort();
     };
-  }, [amountCents, apiBase, description, idempotencyKey, publishableKey]);
+  }, [creatorId, idempotencyKey, onAmount, publishableKey, purpose, subjectId]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -100,7 +109,7 @@ export function StripeCheckoutModal({
         </div>
         <h2 id="stripe-title" className="text-2xl font-extrabold tracking-[-.04em]">Pague com cartão</h2>
         <p className="mt-2 text-sm leading-6 text-muted">{title}</p>
-        <p className="mt-3 text-lg font-black">{brl(amountCents)}</p>
+        {chargedCents != null && <p data-testid="stripe-amount" className="mt-3 text-lg font-black">{brl(chargedCents)}</p>}
 
         {!publishableKey && (
           <p className="mt-5 rounded-2xl bg-accent/15 px-4 py-3 text-sm text-accent-strong">

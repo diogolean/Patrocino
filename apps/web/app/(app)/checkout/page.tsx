@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Check,
@@ -102,6 +102,49 @@ function CheckoutContent() {
   }, []);
 
   const realCheckout = methods.expay || methods.stripe;
+  const subjectId = kind === "subscription" ? plan.id : id;
+  const quoteKey = realCheckout ? `${creator.username}:${purpose}:${subjectId}` : "";
+  const [quote, setQuote] = useState<{ key: string; cents: number | null; error: string }>({ key: "", cents: null, error: "" });
+  if (quote.key !== quoteKey) {
+    setQuote({ key: quoteKey, cents: null, error: "" });
+  }
+  const quotedCents = quote.cents;
+  const quoteError = quote.error;
+  const pixKey = useMemo(() => `pix-${purpose}-${creator.id}-${id}-${crypto.randomUUID()}`, [purpose, creator.id, id]);
+  const cardKey = useMemo(() => `card-${purpose}-${creator.id}-${id}-${crypto.randomUUID()}`, [purpose, creator.id, id]);
+  const rememberAmount = useCallback((cents: number) => {
+    setQuote((current) => ({ ...current, cents, error: "" }));
+  }, []);
+
+  useEffect(() => {
+    if (!quoteKey) return;
+    let cancel = false;
+    const key = quoteKey;
+    fetch("/api/payments/quote", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ creatorId: creator.username, purpose, subjectId }),
+    })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => ({}))) as { amountCents?: number; message?: string };
+        if (cancel) return;
+        if (!response.ok || typeof payload.amountCents !== "number") {
+          setQuote({
+            key,
+            cents: null,
+            error: response.status === 401 ? "Entre na sua conta para pagar." : payload.message || "Este item não está disponível para compra.",
+          });
+          return;
+        }
+        setQuote({ key, cents: payload.amountCents, error: "" });
+      })
+      .catch(() => {
+        if (!cancel) setQuote({ key, cents: null, error: "Não foi possível confirmar o valor." });
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [quoteKey, creator.username, purpose, subjectId]);
 
   function grantLocalAccess(via: "demo" | "pix" | "card" = "demo") {
     const state = readDemo();
@@ -116,7 +159,7 @@ function CheckoutContent() {
     const commissionPatch = commissionForSale(state, {
       creatorId: creator.id,
       creatorName: creator.name,
-      amountCents: amount,
+      amountCents: quotedCents ?? amount,
       transactionKind,
       reference: id,
     });
@@ -185,7 +228,7 @@ function CheckoutContent() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={creator.avatar} alt={creator.name} className="size-16 rounded-[20px] object-cover" />
           <div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{kind === "subscription" ? `Assinatura de ${creator.name}` : specialRequest ? `Pedido para ${creator.name}` : `Conteúdo de ${creator.name}`}</p><p className="mt-1 text-[9px] text-muted">{kind === "subscription" ? `${plan.name} · renovação simulada` : message ? "Mensagem exclusiva · acesso permanente" : pack ? "Pacote com 8 itens fictícios" : specialRequest ? "Valor combinado · ambiente demo" : "Post exclusivo · acesso permanente"}</p></div>
-          <p className="text-sm font-black">{brl(amount)}</p>
+          <p data-testid="checkout-amount" className="text-sm font-black">{realCheckout ? (quotedCents == null ? "…" : brl(quotedCents)) : brl(amount)}</p>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           {realCheckout ? (
@@ -218,17 +261,18 @@ function CheckoutContent() {
             </>
           )}
           {realCheckout && (
-            <p className="mb-2 text-3xl font-black tracking-[-.04em]">{brl(amount)}</p>
+            <p className="mb-2 text-3xl font-black tracking-[-.04em]">{quotedCents == null ? "…" : brl(quotedCents)}</p>
           )}
+          {quoteError && <p className="mb-4 max-w-sm text-center text-sm text-accent-strong">{quoteError}</p>}
           {realCheckout ? (
             <div className="mt-5 grid w-full max-w-sm grid-cols-2 gap-3">
               {methods.expay && (
-                <Button size="lg" className={methods.stripe ? "w-full" : "col-span-2 w-full"} onClick={() => setPixOpen(true)}>
+                <Button size="lg" className={methods.stripe ? "w-full" : "col-span-2 w-full"} onClick={() => setPixOpen(true)} disabled={quotedCents == null}>
                   Pagar com Pix
                 </Button>
               )}
               {methods.stripe && (
-                <Button size="lg" variant="outline" className={methods.expay ? "w-full" : "col-span-2 w-full"} onClick={() => setCardOpen(true)}>
+                <Button size="lg" variant="outline" className={methods.expay ? "w-full" : "col-span-2 w-full"} onClick={() => setCardOpen(true)} disabled={quotedCents == null}>
                   <CreditCard className="size-4" /> Cartão
                 </Button>
               )}
@@ -243,14 +287,12 @@ function CheckoutContent() {
         </div>
       </section>
       {pixOpen && <ExpayCheckoutModal
-        amountCents={amount}
         title={kind === "subscription" ? `Assinatura de ${creator.name}` : `Conteúdo de ${creator.name}`}
         purpose={purpose}
-        buyerId="demo-fan"
-        creatorId={creator.id}
-        subjectId={kind === "subscription" ? plan.id : id}
-        description={kind === "subscription" ? `Assinatura de ${creator.name}` : `Conteúdo de ${creator.name}`}
-        idempotencyKey={`${purpose}-${creator.id}-${id}`}
+        creatorId={creator.username}
+        subjectId={subjectId}
+        idempotencyKey={pixKey}
+        onAmount={rememberAmount}
         onClose={() => setPixOpen(false)}
         onPaid={() => {
           setPixOpen(false);
@@ -258,11 +300,13 @@ function CheckoutContent() {
         }}
       />}
       {cardOpen && <StripeCheckoutModal
-        amountCents={amount}
         title={kind === "subscription" ? `Assinatura de ${creator.name}` : `Conteúdo de ${creator.name}`}
-        description={kind === "subscription" ? `Assinatura de ${creator.name}` : `Conteúdo de ${creator.name}`}
-        idempotencyKey={`${purpose}-${creator.id}-${id}`}
+        purpose={purpose}
+        creatorId={creator.username}
+        subjectId={subjectId}
+        idempotencyKey={cardKey}
         publishableKey={methods.stripePublishableKey}
+        onAmount={rememberAmount}
         onClose={() => setCardOpen(false)}
         onPaid={() => {
           setCardOpen(false);

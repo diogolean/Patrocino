@@ -3,23 +3,19 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import Stripe from "stripe";
 import type { Request } from "express";
+import { database } from "@mimelux/db/runtime";
 import { paymentMethodsEnabled } from "@mimelux/core/stripe";
 import { requireUser } from "../auth/require-user";
 import { paymentProvider, readStripePublishable, readStripeSecret, readStripeWebhookSecret } from "./payment-gateways";
 import { handleStripeEvent, startPlanCheckout } from "./billing";
 import { ExpayPaymentsController } from "./expay.controller";
+import { chargeDraftForUser, ensureQuotedPurchase } from "./quote-charge";
 
 const demoPurchaseSchema = z.object({ mode: z.literal("demo") });
 const checkoutSchema = z.strictObject({
   provider: z.enum(["stripe", "pix", "crypto"]).default("stripe"),
   creatorId: z.string().min(1),
   planId: z.string().min(1),
-});
-const cardIntentSchema = z.strictObject({
-  provider: z.literal("stripe"),
-  purchaseId: z.string().min(1),
-  amountCents: z.number().int().positive(),
-  description: z.string().min(1),
 });
 
 function parseCheckout(body: unknown) {
@@ -32,7 +28,7 @@ function parseCheckout(body: unknown) {
 
 @ApiTags("payments")
 @Controller()
-class PaymentsController {
+export class PaymentsController {
   @Get("payments/config")
   @ApiOperation({ summary: "Tell the client whether Stripe is configured" })
   config() {
@@ -46,16 +42,34 @@ class PaymentsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create a purchase from a database plan and start checkout" })
   async createCheckout(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
-    const intent = cardIntentSchema.safeParse(body);
-    if (intent.success) {
+    const user = await requireUser(authorization);
+    const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    if (record.provider === "stripe" && typeof record.purpose === "string") {
       if (!paymentMethodsEnabled().stripe) throw new ConflictException("Stripe is not enabled.");
+      const draft = await chargeDraftForUser(user, body);
+      const purchase = await ensureQuotedPurchase(draft);
       try {
-        return await paymentProvider("stripe").createCheckout({
-          purchaseId: intent.data.purchaseId,
-          amountCents: intent.data.amountCents,
+        const checkout = await paymentProvider("stripe").createCheckout({
+          purchaseId: purchase.id,
+          amountCents: draft.amountCents,
           currency: "brl",
-          description: intent.data.description,
+          description: draft.description,
         });
+        if (checkout.externalId) {
+          await database.purchase.update({ where: { id: purchase.id }, data: { providerRef: checkout.externalId } });
+        }
+        return {
+          purchase: {
+            id: purchase.id,
+            buyerId: user.id,
+            creatorId: draft.creatorId,
+            subjectId: draft.subjectId,
+            amountCents: draft.amountCents,
+            status: purchase.status,
+          },
+          amountCents: draft.amountCents,
+          ...checkout,
+        };
       } catch (error) {
         if (error instanceof HttpException) throw error;
         const message = error instanceof Error ? error.message : "";
@@ -65,7 +79,6 @@ class PaymentsController {
         throw new ServiceUnavailableException(message);
       }
     }
-    const user = await requireUser(authorization);
     const input = parseCheckout(body);
     return startPlanCheckout(user, input);
   }

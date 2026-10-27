@@ -18,7 +18,6 @@ import {
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { verify } from "jsonwebtoken";
 import type { Request } from "express";
-import { z } from "zod";
 import {
   EXPAY_DEFAULT_BASE_URL,
   EXPAY_SIGNATURE_HEADER_DEFAULT,
@@ -34,22 +33,9 @@ import {
   syncChargeFromExpay,
 } from "@mimelux/core/expay";
 import { paymentMethodsEnabled } from "@mimelux/core/stripe";
+import { requireUser } from "../auth/require-user";
 import { createPrismaPaymentStore } from "./expay-store";
-
-const createSchema = z.object({
-  buyerId: z.string().min(1).max(120),
-  creatorId: z.string().min(1).max(120),
-  purpose: z.enum(["subscription", "post", "message", "pack", "special_request"]),
-  subjectId: z.string().min(1).max(120),
-  amountCents: z.number().int().positive(),
-  description: z.string().min(1).max(240),
-  customer: z.object({
-    name: z.string().min(1).max(120),
-    email: z.email(),
-    document: z.string().min(11).max(18).optional(),
-  }),
-  idempotencyKey: z.string().min(8).max(200),
-});
+import { chargeDraftForUser, ensureQuotedPurchase, quoteCharge, quoteRequestSchema } from "./quote-charge";
 
 function expayEnabled() {
   return paymentMethodsEnabled().expay;
@@ -99,28 +85,48 @@ function present(charge: {
 @ApiTags("payments")
 @Controller()
 export class ExpayPaymentsController {
-  @Post("payments/expay/charges")
-  @ApiOperation({ summary: "Create an ExPay Pix charge or a Pix Automático subscription" })
-  async create(@Body() body: unknown) {
-    if (!expayEnabled()) throw new ConflictException("ExPay is not the active payments provider.");
-    const parsed = createSchema.safeParse(body);
+  @Post("payments/quote")
+  @ApiOperation({ summary: "Price a purchase from the database for the signed-in fan" })
+  async quote(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
+    const user = await requireUser(authorization);
+    const parsed = quoteRequestSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid payment request.");
+    const quoted = await quoteCharge(user, parsed.data);
+    return {
+      amountCents: quoted.amountCents,
+      description: quoted.description,
+      creatorId: quoted.creatorId,
+      subjectId: quoted.subjectId,
+      purpose: quoted.purpose,
+    };
+  }
+
+  @Post("payments/expay/charges")
+  @ApiOperation({ summary: "Create an ExPay Pix charge priced from the database for the signed-in fan" })
+  async create(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
+    const user = await requireUser(authorization);
+    if (!expayEnabled()) throw new ConflictException("ExPay is not the active payments provider.");
+    const draft = await chargeDraftForUser(user, body);
+    await ensureQuotedPurchase(draft);
     const store = createPrismaPaymentStore();
     const expay = client();
     try {
       const charge =
-        parsed.data.purpose === "subscription"
-          ? await createSubscriptionPix(expay, store, parsed.data)
-          : await createOneOffPixCharge(expay, store, parsed.data);
+        draft.purpose === "subscription"
+          ? await createSubscriptionPix(expay, store, draft)
+          : await createOneOffPixCharge(expay, store, draft);
       return present(charge);
     } catch (error) {
+      if (error instanceof ExpayError && error.message === "idempotency_conflict") {
+        throw new ConflictException("Idempotency key already used.");
+      }
       if (error instanceof ExpayError) throw new ServiceUnavailableException(error.message);
       throw error;
     }
   }
 
   @Get("payments/expay/charges/:id")
-  @ApiOperation({ summary: "Poll an ExPay charge and trust the status returned by ExPay" })
+  @ApiOperation({ summary: "Poll an ExPay charge. Access is granted only when the paid amount matches the stored amount." })
   async show(@Param("id") id: string) {
     if (!expayEnabled()) throw new ConflictException("ExPay is not the active payments provider.");
     const store = createPrismaPaymentStore();

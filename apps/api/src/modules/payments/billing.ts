@@ -1,9 +1,10 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Prisma, database } from "@mimelux/db/runtime";
 import { planChargeCents, reverseLedger, splitRevenue, subscriptionGrantsAccess } from "@mimelux/core/monetization";
 import { randomBytes } from "node:crypto";
 import Stripe from "stripe";
 import { paymentProvider, readStripeSecret } from "./payment-gateways";
+import { quoteCharge } from "./quote-charge";
 
 type Tx = Prisma.TransactionClient;
 type AccountUser = { id: string; email: string; stripeCustomerId: string | null };
@@ -375,11 +376,21 @@ async function ensurePrice(
   return price.id;
 }
 
-export async function startSubscriptionCheckout(user: AccountUser, creatorKey: string, planKey: string) {
-  const resolved = await resolvePlan(creatorKey, planKey);
+async function pricedPlan(user: AccountUser, creatorKey: string, planKey: string) {
+  let quote;
+  try {
+    quote = await quoteCharge(user, { creatorId: creatorKey, purpose: "subscription", subjectId: planKey });
+  } catch (error) {
+    if (error instanceof NotFoundException) throw new BadRequestException("Plan not found");
+    throw error;
+  }
+  const resolved = await resolvePlan(quote.creatorId, quote.subjectId);
   if (!resolved) throw new BadRequestException("Plan not found");
-  const amountCents = planChargeCents(resolved.plan);
-  if (amountCents <= 0) throw new BadRequestException("Plan is not billable");
+  return { resolved, amountCents: quote.amountCents };
+}
+
+export async function startSubscriptionCheckout(user: AccountUser, creatorKey: string, planKey: string) {
+  const { resolved, amountCents } = await pricedPlan(user, creatorKey, planKey);
   const secret = readStripeSecret();
   if (!secret.ok) {
     if (secret.reason === "live_disabled") throw new BadRequestException("Live Stripe keys are disabled");
@@ -439,10 +450,7 @@ export async function startPlanCheckout(
   user: AccountUser,
   input: { provider: "stripe" | "pix" | "crypto"; creatorId: string; planId: string },
 ) {
-  const resolved = await resolvePlan(input.creatorId, input.planId);
-  if (!resolved) throw new BadRequestException("Plan not found");
-  const amountCents = planChargeCents(resolved.plan);
-  if (amountCents <= 0) throw new BadRequestException("Plan is not billable");
+  const { resolved, amountCents } = await pricedPlan(user, input.creatorId, input.planId);
   const secret = readStripeSecret();
   if (input.provider === "stripe" && !secret.ok) {
     throw new BadRequestException(
@@ -566,6 +574,16 @@ async function activateSubscription(tx: Tx, purchaseId: string, stripeSubscripti
   });
 }
 
+function coversPurchase(expectedCents: number, paid: unknown) {
+  return typeof paid === "number" && Number.isInteger(paid) && paid === expectedCents;
+}
+
+function paymentIntentCovers(expectedCents: number, object: Record<string, unknown>) {
+  if (!coversPurchase(expectedCents, object.amount)) return false;
+  if (typeof object.amount_received === "number" && object.amount_received !== expectedCents) return false;
+  return true;
+}
+
 export async function handleStripeEvent(event: { id: string; type: string; data: { object: unknown } }) {
   const object = record(event.data.object);
   const meta = metadataOf(object);
@@ -575,6 +593,7 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
     const result = await withEvent(event.id, event.type, event, purchaseId, async (tx) => {
       const purchase = await tx.purchase.findUnique({ where: { id: purchaseId } });
       if (!purchase || (meta.userId && meta.userId !== purchase.buyerId)) return;
+      if (!coversPurchase(purchase.amountCents, object.amount_total)) return;
       await settlePurchase(tx, purchase.id, event.id);
       if (text(object.mode) === "subscription" || purchase.subscriptionId) {
         await activateSubscription(tx, purchase.id, nestedId(object.subscription), null);
@@ -599,6 +618,7 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
       if (purchaseId && reason !== "subscription_cycle") {
         const purchase = await tx.purchase.findUnique({ where: { id: purchaseId } });
         if (purchase && (!meta.userId || meta.userId === purchase.buyerId)) {
+          if (!coversPurchase(purchase.amountCents, object.amount_paid)) return;
           if (paymentIntent) await tx.purchase.update({ where: { id: purchase.id }, data: { providerRef: paymentIntent } });
           await settlePurchase(tx, purchase.id, event.id);
           await activateSubscription(tx, purchase.id, subscriptionId, periodEnd);
@@ -610,6 +630,8 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
           include: { plan: true },
         });
         if (subscription) {
+          const expectedCents = planChargeCents(subscription.plan);
+          if (!coversPurchase(expectedCents, object.amount_paid)) return;
           const idempotencyKey = `invoice:${text(object.id) ?? event.id}`;
           const existing = await tx.purchase.findUnique({ where: { idempotencyKey } });
           if (!existing) {
@@ -618,7 +640,7 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
                 buyerId: subscription.fanId,
                 creatorId: subscription.creatorId,
                 kind: "SUBSCRIPTION",
-                amountCents: planChargeCents(subscription.plan),
+                amountCents: expectedCents,
                 currency: "BRL",
                 status: "PENDING",
                 subscriptionId: subscription.id,
@@ -706,8 +728,10 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
     const result = await withEvent(event.id, event.type, event, purchaseId, async (tx) => {
       const current = await tx.purchase.findUnique({ where: { id: purchaseId } });
       if (!current || (meta.userId && meta.userId !== current.buyerId)) return;
+      if (!paymentIntentCovers(current.amountCents, object)) return;
       await tx.purchase.update({ where: { id: current.id }, data: { providerRef: text(object.id) ?? current.providerRef } });
       await settlePurchase(tx, current.id, event.id);
+      if (current.subscriptionId) await activateSubscription(tx, current.id, undefined, null);
     });
     return { processed: true, ...result };
   }
