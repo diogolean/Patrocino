@@ -383,12 +383,14 @@ model Message {
   offerPostId    String?
   offerPost      Post?        @relation("MessageOffers", fields: [offerPostId], references: [id], onDelete: SetNull)
   isDemo         Boolean      @default(false)
+  readAt         DateTime?
   createdAt      DateTime     @default(now())
   media          Media[]
   purchases      Purchase[]
   reports        Report[]
 
   @@index([conversationId, createdAt])
+  @@index([conversationId, readAt])
   @@index([offerPostId])
   @@map("messages")
 }

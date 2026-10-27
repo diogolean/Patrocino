@@ -291,5 +291,16 @@
     "confirmButton": "Confirmer la suppression",
     "wrongPassword": "Mot de passe incorrect.",
     "confirmHint": "Saisissez EXCLUIR pour confirmer."
+  },
+  "notifications": {
+    "title": "Alertes de messages",
+    "body": "Recevez une alerte quand un créateur envoie un message, même si Patrocino est fermé.",
+    "enable": "Activer les alertes",
+    "later": "Pas maintenant",
+    "iosHint": "Ajoutez Patrocino à l'écran d'accueil pour recevoir les alertes",
+    "unavailable": "Les alertes ne sont pas disponibles pour le moment.",
+    "denied": "Les alertes sont bloquées dans ce navigateur.",
+    "unread": "{count, plural, one {# message non lu} other {# messages non lus}}",
+    "previewFallback": "Nouveau message"
   }
 }

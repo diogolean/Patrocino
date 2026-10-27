@@ -15,6 +15,7 @@ import {
 import { Button } from "@mimelux/ui";
 import { brl, creators, posts } from "@/lib/gateway";
 import { readDemo, writeDemo } from "@/lib/demo-store";
+import { requestUnreadRefresh, THREAD_REFRESH_EVENT } from "@/lib/message-notifications";
 
 export default function ConversationPage() {
   const params = useParams<{ id: string }>();
@@ -32,14 +33,26 @@ export default function ConversationPage() {
 
   useEffect(() => {
     let cancel = false;
-    fetch(`/api/conversations/with/${encodeURIComponent(params.id)}`, { cache: "no-store" })
-      .then(async (response) => (response.ok ? response.json() : { messages: [] }))
-      .then((payload: { messages?: ThreadMessage[] }) => {
-        if (!cancel) setThread(payload.messages ?? []);
-      })
-      .catch(() => undefined);
+    const load = () => {
+      fetch(`/api/conversations/with/${encodeURIComponent(params.id)}`, { cache: "no-store" })
+        .then(async (response) => (response.ok ? response.json() : { messages: [] }))
+        .then((payload: { messages?: ThreadMessage[] }) => {
+          if (!cancel) setThread(payload.messages ?? []);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancel) requestUnreadRefresh();
+        });
+    };
+    load();
+    const onThread = (event: Event) => {
+      const key = (event as CustomEvent<string>).detail;
+      if (key === params.id) load();
+    };
+    window.addEventListener(THREAD_REFRESH_EVENT, onThread);
     return () => {
       cancel = true;
+      window.removeEventListener(THREAD_REFRESH_EVENT, onThread);
     };
   }, [params.id]);
 

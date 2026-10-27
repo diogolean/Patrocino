@@ -22,8 +22,10 @@ import {
 import { Button, Logo, Mark } from "@mimelux/ui";
 import type { SessionRole } from "@mimelux/core";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { MessageAlerts } from "@/components/message-alerts";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { readDemo, writeDemo } from "@/lib/demo-store";
+import { getServerUnreadSnapshot, getUnreadSnapshot, subscribeUnread, unreadBadge } from "@/lib/unread-store";
 import { getServerSessionSnapshot, getSessionSnapshot, logoutAccount, refreshSession, subscribeSession } from "@/lib/session";
 import { creators } from "@/lib/gateway";
 
@@ -39,6 +41,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const t = useTranslations("nav");
+  const tNotifications = useTranslations("notifications");
+  const unread = useSyncExternalStore(subscribeUnread, getUnreadSnapshot, getServerUnreadSnapshot).count;
   const currentCreator = creators[0]!;
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
   const role: SessionRole = session.user?.role ?? "fan";
@@ -71,6 +75,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh" data-testid="session-user" data-email={session.user?.email ?? ""} data-role={role}>
+      <MessageAlerts />
       <aside
         data-collapsed={collapsed}
         className={`fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-border bg-background/92 backdrop-blur-xl transition-[width,padding] duration-300 lg:flex ${
@@ -104,7 +109,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 onClick={() => setSidebar(true)}
                 title={collapsed ? t(item.label) : undefined}
-                className={`flex h-12 items-center rounded-2xl text-sm font-semibold transition ${
+                aria-label={item.label === "chat" && unread > 0 ? `${t("chat")}, ${tNotifications("unread", { count: unread })}` : undefined}
+                className={`relative flex h-12 items-center rounded-2xl text-sm font-semibold transition ${
                   collapsed ? "justify-center px-0" : "gap-3 px-4"
                 } ${
                   active
@@ -114,8 +120,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <Icon className="size-[18px]" strokeWidth={active ? 2.5 : 1.8} />
                 {!collapsed && t(item.label)}
-                {!collapsed && item.label === "chat" && (
-                  <span className="ml-auto grid size-5 place-items-center rounded-full bg-primary text-[9px] font-black text-ink">3</span>
+                {item.label === "chat" && unread > 0 && (
+                  <span
+                    data-testid="unread-badge"
+                    className={
+                      collapsed
+                        ? "absolute right-1.5 top-1 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[8px] font-black leading-4 text-ink"
+                        : "ml-auto grid min-w-5 place-items-center rounded-full bg-primary px-1 text-[9px] font-black leading-5 text-ink"
+                    }
+                  >
+                    {unreadBadge(unread)}
+                  </span>
                 )}
               </Link>
             );
@@ -240,6 +255,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               key={item.href}
               href={item.href}
+              aria-label={item.label === "chat" && unread > 0 ? `${t("chat")}, ${tNotifications("unread", { count: unread })}` : undefined}
               className={`relative flex flex-col items-center justify-center gap-1 text-[9px] font-bold transition ${
                 active ? "text-primary-strong" : "text-muted"
               }`}
@@ -247,7 +263,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {active && <i className="absolute top-0 h-0.5 w-7 rounded-full bg-primary" />}
               <Icon className="size-5" strokeWidth={active ? 2.5 : 1.8} />
               {t(item.label)}
-              {item.label === "chat" && <i className="absolute right-[28%] top-3.5 size-2 rounded-full bg-primary" />}
+              {item.label === "chat" && unread > 0 && (
+                <span className="absolute right-[18%] top-2 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[8px] font-black leading-4 text-ink">
+                  {unreadBadge(unread)}
+                </span>
+              )}
             </Link>
           );
         })}

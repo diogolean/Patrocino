@@ -5,6 +5,7 @@ import { database } from "@mimelux/db/runtime";
 import { z } from "zod";
 import { assertOwnsCreator } from "../access/creator-scope";
 import { optionalUser, requireUser } from "../auth/require-user";
+import { markFanThreadRead } from "../notifications/unread";
 import { ensureChatSequence, readFanThread, replaceChatSequence, type SequenceStepInput } from "./sequence";
 
 const messageSchema = z.object({
@@ -40,7 +41,18 @@ class ChatController {
   async withCreator(@Headers("authorization") authorization: string | undefined, @Param("creatorKey") creatorKey: string) {
     const user = await optionalUser(authorization);
     if (!user) return { messages: [] };
-    return readFanThread(user.id, creatorKey);
+    const thread = await readFanThread(user.id, creatorKey);
+    await markFanThreadRead(user.id, creatorKey);
+    return thread;
+  }
+
+  @Post("with/:creatorKey/read")
+  @HttpCode(200)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Mark the fan thread with a creator as read" })
+  async markRead(@Headers("authorization") authorization: string | undefined, @Param("creatorKey") creatorKey: string) {
+    const user = await requireUser(authorization);
+    return markFanThreadRead(user.id, creatorKey);
   }
 
   @Get(":id/messages")

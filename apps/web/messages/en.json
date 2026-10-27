@@ -291,5 +291,16 @@
     "confirmButton": "Confirm deletion",
     "wrongPassword": "Wrong password.",
     "confirmHint": "Type EXCLUIR to confirm."
+  },
+  "notifications": {
+    "title": "Message alerts",
+    "body": "Get an alert when a creator sends a message, even if Patrocino is closed.",
+    "enable": "Turn on notifications",
+    "later": "Not now",
+    "iosHint": "Add Patrocino to your Home Screen to receive notifications",
+    "unavailable": "Notifications are not available right now.",
+    "denied": "Notifications are blocked in this browser.",
+    "unread": "{count, plural, one {# unread message} other {# unread messages}}",
+    "previewFallback": "New message"
   }
 }
