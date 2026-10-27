@@ -24,6 +24,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <ConsentScripts />
       <Toaster
         position="top-center"
+        visibleToasts={8}
         toastOptions={{
           className: "!rounded-2xl !border-black/5 !bg-ink !text-white",
         }}

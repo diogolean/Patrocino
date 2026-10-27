@@ -302,5 +302,28 @@
     "denied": "As notificações estão bloqueadas neste navegador.",
     "unread": "{count, plural, one {# mensagem não lida} other {# mensagens não lidas}}",
     "previewFallback": "Nova mensagem"
+  },
+  "dock": {
+    "title": "Mensagens",
+    "back": "Voltar",
+    "minimize": "Minimizar",
+    "close": "Fechar",
+    "openInbox": "Abrir caixa de mensagens",
+    "loading": "Carregando…",
+    "threadError": "Não foi possível abrir a conversa.",
+    "emptyThread": "Nenhuma mensagem ainda.",
+    "unlock": "Desbloquear por {price}",
+    "placeholder": "Escreva uma mensagem...",
+    "send": "Enviar",
+    "sendError": "Não foi possível enviar.",
+    "listError": "Não foi possível carregar as conversas.",
+    "retry": "Tentar de novo",
+    "emptyTitle": "Nenhuma conversa ainda",
+    "emptyBody": "Quando um criador escrever, a conversa aparece aqui.",
+    "newConversation": "Nova conversa",
+    "unreadDot": "Não lida",
+    "seeAll": "Ver todas",
+    "bubbleUnread": "{count, plural, one {Mensagens, # não lida} other {Mensagens, # não lidas}}",
+    "notifyHint": "Receba um aviso quando chegar mensagem."
   }
 }

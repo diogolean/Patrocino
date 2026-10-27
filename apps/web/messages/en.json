@@ -302,5 +302,28 @@
     "denied": "Notifications are blocked in this browser.",
     "unread": "{count, plural, one {# unread message} other {# unread messages}}",
     "previewFallback": "New message"
+  },
+  "dock": {
+    "title": "Messages",
+    "back": "Back",
+    "minimize": "Minimize",
+    "close": "Close",
+    "openInbox": "Open message inbox",
+    "loading": "Loading…",
+    "threadError": "Couldn't open the conversation.",
+    "emptyThread": "No messages yet.",
+    "unlock": "Unlock for {price}",
+    "placeholder": "Write a message...",
+    "send": "Send",
+    "sendError": "Couldn't send.",
+    "listError": "Couldn't load conversations.",
+    "retry": "Try again",
+    "emptyTitle": "No conversations yet",
+    "emptyBody": "When a creator writes, the conversation shows up here.",
+    "newConversation": "New conversation",
+    "unreadDot": "Unread",
+    "seeAll": "See all",
+    "bubbleUnread": "{count, plural, one {Messages, # unread} other {Messages, # unread}}",
+    "notifyHint": "Get an alert when a message arrives."
   }
 }

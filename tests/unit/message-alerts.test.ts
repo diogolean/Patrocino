@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { messagePreview } from "../../apps/api/src/modules/notifications/preview";
 import {
+  MESSAGE_TOAST_DURATION,
   activeCreatorKey,
+  decodeStickyPreviews,
+  dismissMessagePreview,
   freshMessages,
   matchesOpenCreator,
   needsHomeScreenInstall,
   openCreatorKey,
+  retainUnreadPreviews,
+  stackMessagePreviews,
   UNREAD_POLL_MS,
 } from "../../apps/web/lib/message-notifications";
 import { unreadBadge } from "../../apps/web/lib/unread-store";
@@ -38,7 +43,7 @@ describe("message alerts", () => {
     const open = freshMessages(items, seen, "maya");
     expect(open.opened.map((item) => item.id)).toEqual(["2", "3"]);
     expect(open.visible.map((item) => item.id)).toEqual(["4", "5"]);
-    expect(freshMessages(items, seen, null).visible).toHaveLength(3);
+    expect(freshMessages(items, seen, null).visible).toHaveLength(4);
     expect(matchesOpenCreator({ creatorId: "c1", creatorUsername: "luna" }, "luna")).toBe(true);
     expect(openCreatorKey("/chat/luna")).toBe("luna");
     expect(openCreatorKey("/chat")).toBeNull();
@@ -46,6 +51,39 @@ describe("message alerts", () => {
     expect(activeCreatorKey("/feed", "sarah-mitchell")).toBe("sarah-mitchell");
     expect(activeCreatorKey("/chat/luna", "sarah-mitchell")).toBe("luna");
     expect(activeCreatorKey("/chat", null)).toBeNull();
+  });
+
+  it("keeps the latest preview per conversation until it is dismissed or read", () => {
+    const sarah = {
+      id: "sarah-1",
+      conversationId: "conv-sarah",
+      creatorId: "sarah",
+      creatorUsername: "sarah-mitchell",
+      creatorName: "Sarah",
+      creatorAvatar: null,
+      createdAt: "2026-10-27T15:00:00.000Z",
+      preview: "Oi",
+      url: "/chat/sarah-mitchell",
+    };
+    const sarahLater = { ...sarah, createdAt: "2026-10-27T16:00:00.000Z", preview: "Vídeos novos" };
+    const albina = {
+      id: "albina-1",
+      conversationId: "conv-albina",
+      creatorId: "albina",
+      creatorUsername: "albina-schneider",
+      creatorName: "Albina",
+      creatorAvatar: null,
+      createdAt: "2026-10-27T15:30:00.000Z",
+      preview: "Oi, eu sou a Albina",
+      url: "/chat/albina-schneider",
+    };
+    const stacked = stackMessagePreviews([sarah], [albina, sarahLater]);
+    expect(stacked.map((item) => item.preview)).toEqual(["Vídeos novos", "Oi, eu sou a Albina"]);
+    expect(dismissMessagePreview(stacked, "sarah-mitchell").map((item) => item.creatorId)).toEqual(["albina"]);
+    expect(retainUnreadPreviews(stacked, [albina]).map((item) => item.creatorId)).toEqual(["albina"]);
+    expect(decodeStickyPreviews(JSON.stringify(stacked))).toEqual(stacked);
+    expect(decodeStickyPreviews("not-json")).toEqual([]);
+    expect(MESSAGE_TOAST_DURATION).toBe(Number.POSITIVE_INFINITY);
   });
 
   it("asks for the home screen only on iOS outside the installed app", () => {

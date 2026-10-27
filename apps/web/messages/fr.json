@@ -302,5 +302,28 @@
     "denied": "Les alertes sont bloquées dans ce navigateur.",
     "unread": "{count, plural, one {# message non lu} other {# messages non lus}}",
     "previewFallback": "Nouveau message"
+  },
+  "dock": {
+    "title": "Messages",
+    "back": "Retour",
+    "minimize": "Réduire",
+    "close": "Fermer",
+    "openInbox": "Ouvrir la boîte de messages",
+    "loading": "Chargement…",
+    "threadError": "Impossible d'ouvrir la conversation.",
+    "emptyThread": "Aucun message pour l'instant.",
+    "unlock": "Débloquer pour {price}",
+    "placeholder": "Écrire un message...",
+    "send": "Envoyer",
+    "sendError": "Envoi impossible.",
+    "listError": "Impossible de charger les conversations.",
+    "retry": "Réessayer",
+    "emptyTitle": "Aucune conversation pour l'instant",
+    "emptyBody": "Quand un créateur écrit, la conversation apparaît ici.",
+    "newConversation": "Nouvelle conversation",
+    "unreadDot": "Non lu",
+    "seeAll": "Tout voir",
+    "bubbleUnread": "{count, plural, one {Messages, # non lu} other {Messages, # non lus}}",
+    "notifyHint": "Recevez une alerte à l'arrivée d'un message."
   }
 }

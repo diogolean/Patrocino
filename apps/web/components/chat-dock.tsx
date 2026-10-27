@@ -4,18 +4,24 @@ import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, MessageCircle, Minus, Send, X } from "lucide-react";
+import { ArrowLeft, Expand, MessageCircle, Minus, Send, X } from "lucide-react";
 import { Button } from "@mimelux/ui";
 import { messageBodyParts } from "@/lib/chat-creator";
 import { brl } from "@/lib/gateway";
 import {
   INCOMING_MESSAGE_EVENT,
+  OPEN_THREAD_EVENT,
   PUSH_CHOICE_KEY,
   THREAD_REFRESH_EVENT,
   UNREAD_REFRESH_EVENT,
+  dismissStickyPreview,
+  getServerStickyPreviews,
+  getStickyPreviews,
   needsHomeScreenInstall,
+  previewConversationKey,
   requestUnreadRefresh,
   setDockCreator,
+  subscribeStickyPreviews,
   type IncomingMessage,
 } from "@/lib/message-notifications";
 import { readPushConfig, registerPush } from "@/lib/push-browser";
@@ -68,6 +74,7 @@ function Avatar({ name, src, className }: { name: string; src: string | null; cl
 
 function DockNotifications() {
   const t = useTranslations("notifications");
+  const dock = useTranslations("dock");
   const [phase, setPhase] = useState<"hidden" | "ask" | "ios" | "denied" | "unavailable">("hidden");
 
   useEffect(() => {
@@ -125,7 +132,7 @@ function DockNotifications() {
   }
 
   if (phase === "hidden") return null;
-  const note = phase === "ios" ? t("iosHint") : phase === "denied" ? t("denied") : phase === "unavailable" ? t("unavailable") : "Receba um aviso quando chegar mensagem.";
+  const note = phase === "ios" ? t("iosHint") : phase === "denied" ? t("denied") : phase === "unavailable" ? t("unavailable") : dock("notifyHint");
   return (
     <div className="mx-3 mt-3 flex items-center gap-3 rounded-2xl bg-surface/80 px-3 py-2">
       <p className="min-w-0 flex-1 text-[11px] leading-4 text-muted">{note}</p>
@@ -140,6 +147,8 @@ function DockNotifications() {
 
 export function ChatDock() {
   const pathname = usePathname();
+  const t = useTranslations("dock");
+  const previewFallback = useTranslations("notifications")("previewFallback");
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
   const unread = useSyncExternalStore(subscribeUnread, getUnreadSnapshot, getServerUnreadSnapshot).count;
   const [open, setOpen] = useState(false);
@@ -151,10 +160,8 @@ export function ChatDock() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
-  const [preview, setPreview] = useState<IncomingMessage | null>(null);
-  const [pulse, setPulse] = useState(0);
   const [listAttempt, setListAttempt] = useState(0);
-  const openRef = useRef(false);
+  const previews = useSyncExternalStore(subscribeStickyPreviews, getStickyPreviews, getServerStickyPreviews);
   const scroller = useRef<HTMLDivElement>(null);
   const fan = session.status === "ready" && session.user?.role === "fan";
   const onChat = pathname === "/chat" || pathname.startsWith("/chat/");
@@ -167,10 +174,6 @@ export function ChatDock() {
       setThread(null);
     }
   }
-
-  useEffect(() => {
-    openRef.current = open;
-  }, [open]);
 
   useEffect(() => {
     setDockCreator(!onChat && open && threadKey ? threadKey : null);
@@ -190,20 +193,20 @@ export function ChatDock() {
   }, [open]);
 
   useEffect(() => {
-    if (!preview) return;
-    const timer = window.setTimeout(() => setPreview(null), 8000);
-    return () => window.clearTimeout(timer);
-  }, [preview]);
-
-  useEffect(() => {
-    const onIncoming = (event: Event) => {
-      const next = (event as CustomEvent<IncomingMessage[]>).detail?.[0];
-      if (!next || openRef.current) return;
-      setPreview(next);
-      setPulse((value) => value + 1);
+    const onOpen = (event: Event) => {
+      const item = (event as CustomEvent<IncomingMessage>).detail;
+      if (!item) return;
+      setMessages([]);
+      setThreadState("loading");
+      setThread({ key: creatorKey(item), name: item.creatorName, avatar: item.creatorAvatar });
+      setDockCreator(creatorKey(item));
+      setOpen(true);
+      setSendError("");
+      setDraft("");
+      dismissStickyPreview(previewConversationKey(item));
     };
-    window.addEventListener(INCOMING_MESSAGE_EVENT, onIncoming);
-    return () => window.removeEventListener(INCOMING_MESSAGE_EVENT, onIncoming);
+    window.addEventListener(OPEN_THREAD_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_THREAD_EVENT, onOpen);
   }, []);
 
   useEffect(() => {
@@ -281,7 +284,7 @@ export function ChatDock() {
     node.scrollTop = node.scrollHeight;
   }, [messages, threadState]);
 
-  if (!fan || onChat) return null;
+  if (!fan || (onChat && !open)) return null;
 
   function closeDock() {
     setOpen(false);
@@ -294,7 +297,6 @@ export function ChatDock() {
     setDockCreator(null);
     setListState("loading");
     setOpen(true);
-    setPreview(null);
   }
 
   function openChat(next: OpenThread) {
@@ -303,9 +305,9 @@ export function ChatDock() {
     setThread(next);
     setDockCreator(next.key);
     setOpen(true);
-    setPreview(null);
     setSendError("");
     setDraft("");
+    dismissStickyPreview(next.key);
   }
 
   async function send(event: FormEvent<HTMLFormElement>) {
@@ -326,7 +328,7 @@ export function ChatDock() {
       setMessages((current) => [...current, { ...saved, mine: true }]);
       setDraft("");
     } catch {
-      setSendError("Não foi possível enviar.");
+      setSendError(t("sendError"));
     } finally {
       setSending(false);
     }
@@ -339,11 +341,11 @@ export function ChatDock() {
           data-testid="chat-dock"
           className="animate-dock-in fixed right-0 top-0 z-[60] flex w-full flex-col border-l border-border bg-elevated pt-[env(safe-area-inset-top)] shadow-2xl bottom-[calc(72px+env(safe-area-inset-bottom))] lg:bottom-0 lg:w-[360px]"
         >
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
+          <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border px-4">
             {thread ? (
               <button
                 type="button"
-                aria-label="Voltar"
+                aria-label={t("back")}
                 className="grid size-9 cursor-pointer place-items-center rounded-full hover:bg-surface"
                 onClick={() => {
                   setListState("loading");
@@ -353,12 +355,12 @@ export function ChatDock() {
                 <ArrowLeft className="size-4" />
               </button>
             ) : null}
-            {thread ? <Avatar name={thread.name} src={thread.avatar} className="size-8 shrink-0" /> : null}
-            <h2 className="min-w-0 flex-1 truncate text-sm font-extrabold">{thread ? thread.name : "Mensagens"}</h2>
-            <button type="button" aria-label="Minimizar" className="grid size-9 cursor-pointer place-items-center rounded-full hover:bg-surface" onClick={closeDock}>
+            {thread ? <Avatar name={thread.name} src={thread.avatar} className="size-10 shrink-0 text-base" /> : null}
+            <h2 className="min-w-0 flex-1 truncate text-base font-extrabold">{thread ? thread.name : t("title")}</h2>
+            <button type="button" aria-label={t("minimize")} className="grid size-9 cursor-pointer place-items-center rounded-full hover:bg-surface" onClick={closeDock}>
               <Minus className="size-4" />
             </button>
-            <button type="button" aria-label="Fechar" className="grid size-9 cursor-pointer place-items-center rounded-full hover:bg-surface" onClick={closeDock}>
+            <button type="button" aria-label={t("close")} className="grid size-9 cursor-pointer place-items-center rounded-full hover:bg-surface" onClick={closeDock}>
               <X className="size-4" />
             </button>
           </header>
@@ -366,16 +368,16 @@ export function ChatDock() {
           {thread ? (
             <>
               <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-                {threadState === "loading" && <p className="text-center text-xs text-muted">Carregando…</p>}
+                {threadState === "loading" && <p className="text-center text-[15px] text-muted">{t("loading")}</p>}
                 {threadState === "error" && (
-                  <p className="text-center text-xs text-muted">Não foi possível abrir a conversa.</p>
+                  <p className="text-center text-[15px] text-muted">{t("threadError")}</p>
                 )}
                 {threadState === "ready" && messages.length === 0 && (
-                  <p className="text-center text-xs text-muted">Nenhuma mensagem ainda.</p>
+                  <p className="text-center text-[15px] text-muted">{t("emptyThread")}</p>
                 )}
                 {messages.map((message) => (
                   <div key={message.id} className={`mt-3 max-w-[85%] ${message.mine ? "ml-auto" : ""}`}>
-                    <div className={`rounded-[18px] px-3 py-2 text-[13px] leading-5 ${message.mine ? "bg-primary text-ink" : "bg-surface text-foreground"}`}>
+                    <div className={`rounded-[18px] px-4 py-3 text-[15px] leading-6 ${message.mine ? "bg-primary text-ink" : "bg-surface text-foreground"}`}>
                       {messageBodyParts(message.body).map((part, index) =>
                         part.kind === "link" ? (
                           <Link key={`${message.id}-${index}`} href={part.value} className="font-semibold underline">
@@ -388,11 +390,11 @@ export function ChatDock() {
                     </div>
                     {message.offer && (
                       <div className="mt-2 rounded-[18px] bg-ink p-3 text-white">
-                        <p className="text-xs font-extrabold">{message.offer.title}</p>
-                        <p className="mt-1 text-[11px] text-white/70">{brl(message.offer.priceCents)}</p>
+                        <p className="text-base font-extrabold">{message.offer.title}</p>
+                        <p className="mt-1 text-[15px] text-white/70">{brl(message.offer.priceCents)}</p>
                         {!message.offer.purchased && (
-                          <Link href={`/checkout?kind=post&id=${message.offer.postId}&creator=${thread.key}&return=${encodeURIComponent(pathname)}`} className="mt-2 block text-[11px] font-bold underline">
-                            Desbloquear por {brl(message.offer.priceCents)}
+                          <Link href={`/checkout?kind=post&id=${message.offer.postId}&creator=${thread.key}&return=${encodeURIComponent(pathname)}`} className="mt-2 block cursor-pointer text-[15px] font-bold underline">
+                            {t("unlock", { price: brl(message.offer.priceCents) })}
                           </Link>
                         )}
                       </div>
@@ -400,44 +402,44 @@ export function ChatDock() {
                   </div>
                 ))}
               </div>
-              <form onSubmit={send} className="flex shrink-0 items-center gap-2 border-t border-border p-3">
+              <form onSubmit={send} className="flex shrink-0 items-center gap-2 border-t border-border p-4">
                 <input
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Escreva uma mensagem..."
+                  placeholder={t("placeholder")}
                   autoComplete="off"
-                  className="h-11 min-w-0 flex-1 rounded-full bg-surface/80 px-4 text-xs outline-none focus:ring-2 focus:ring-primary/30"
+                  className="h-12 min-w-0 flex-1 rounded-full bg-surface/80 px-4 text-[15px] outline-none focus:ring-2 focus:ring-primary/30"
                 />
-                <Button type="submit" size="icon" aria-label="Enviar" disabled={sending || draft.trim().length === 0}>
+                <Button type="submit" size="icon" aria-label={t("send")} disabled={sending || draft.trim().length === 0}>
                   <Send className="size-4" />
                 </Button>
               </form>
-              {sendError && <p className="px-4 pb-3 text-[11px] text-muted">{sendError}</p>}
+              {sendError && <p className="px-4 pb-3 text-[15px] text-muted">{t("sendError")}</p>}
             </>
           ) : (
             <div className="min-h-0 flex-1 overflow-y-auto pb-3">
               <DockNotifications />
-              {listState === "loading" && <p className="px-4 py-8 text-center text-xs text-muted">Carregando…</p>}
+              {listState === "loading" && <p className="px-4 py-8 text-center text-[15px] text-muted">{t("loading")}</p>}
               {listState === "error" && (
                 <div className="px-4 py-8 text-center">
-                  <p className="text-xs text-muted">Não foi possível carregar as conversas.</p>
+                  <p className="text-[15px] text-muted">{t("listError")}</p>
                   <button
                     type="button"
-                    className="mt-3 cursor-pointer text-xs font-extrabold text-primary-strong"
+                    className="mt-3 cursor-pointer text-xs font-medium text-muted hover:text-foreground"
                     onClick={() => {
                       setListState("loading");
                       setListAttempt((value) => value + 1);
                     }}
                   >
-                    Tentar de novo
+                    {t("retry")}
                   </button>
                 </div>
               )}
               {listState === "ready" && items.length === 0 && (
                 <div className="px-6 py-12 text-center">
                   <MessageCircle className="mx-auto size-6 text-muted" />
-                  <p className="mt-3 text-sm font-extrabold">Nenhuma conversa ainda</p>
-                  <p className="mt-1 text-xs leading-5 text-muted">Quando um criador escrever, a conversa aparece aqui.</p>
+                  <p className="mt-3 text-base font-extrabold">{t("emptyTitle")}</p>
+                  <p className="mt-1 text-[15px] leading-6 text-muted">{t("emptyBody")}</p>
                 </div>
               )}
               {listState === "ready" &&
@@ -445,51 +447,78 @@ export function ChatDock() {
                   <button
                     key={item.id}
                     type="button"
-                    className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left hover:bg-surface/70"
+                    className="flex w-full cursor-pointer items-center gap-3 px-4 py-4 text-left hover:bg-surface/70"
                     onClick={() => openChat({ key: creatorKey(item), name: item.creatorName, avatar: item.creatorAvatar })}
                   >
-                    <Avatar name={item.creatorName} src={item.creatorAvatar} className="size-11 shrink-0" />
+                    <Avatar name={item.creatorName} src={item.creatorAvatar} className="size-12 shrink-0 text-base" />
                     <span className="min-w-0 flex-1">
-                      <span className={`block truncate text-sm ${item.unread > 0 ? "font-extrabold" : "font-semibold"}`}>{item.creatorName}</span>
-                      <span className={`mt-0.5 block truncate text-xs ${item.unread > 0 ? "font-semibold text-foreground" : "text-muted"}`}>
-                        {item.preview || "Nova conversa"}
+                      <span className={`block truncate text-base ${item.unread > 0 ? "font-extrabold" : "font-semibold"}`}>{item.creatorName}</span>
+                      <span className={`mt-1 block truncate text-[15px] leading-5 ${item.unread > 0 ? "font-semibold text-foreground" : "text-muted"}`}>
+                        {item.preview || t("newConversation")}
                       </span>
                     </span>
-                    {item.unread > 0 && <i className="size-2.5 shrink-0 rounded-full bg-primary" aria-label="Não lida" />}
+                    {item.unread > 0 && <i className="size-2.5 shrink-0 rounded-full bg-primary" aria-label={t("unreadDot")} />}
                   </button>
                 ))}
             </div>
           )}
+          <footer className="shrink-0 border-t border-border px-4 py-2">
+            <Link
+              href={thread ? `/chat/${encodeURIComponent(thread.key)}` : "/chat"}
+              aria-label={t("openInbox")}
+              title={t("openInbox")}
+              className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted hover:text-foreground"
+            >
+              <Expand className="size-3" />
+              {t("openInbox")}
+            </Link>
+          </footer>
         </aside>
       )}
 
-      {!open && (
+      {!open && !onChat && (
         <div className={`fixed right-4 z-50 flex items-end gap-3 lg:right-6 ${lift}`}>
-          {preview && (
-            <button
-              type="button"
-              data-testid="chat-bubble-preview"
-              className="animate-chat-preview flex w-[min(18rem,calc(100vw-6.5rem))] cursor-pointer items-center gap-3 rounded-2xl border border-border bg-elevated p-3 text-left shadow-xl"
-              onClick={() => openChat({ key: creatorKey(preview), name: preview.creatorName, avatar: preview.creatorAvatar })}
-            >
-              <Avatar name={preview.creatorName} src={preview.creatorAvatar} className="size-10 shrink-0" />
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-extrabold">{preview.creatorName}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-muted">{preview.preview || "Nova mensagem"}</span>
-              </span>
-            </button>
+          {previews.length > 0 && (
+            <div className="flex max-h-[50vh] flex-col-reverse gap-2 overflow-y-auto">
+              {previews.map((item) => {
+                const key = previewConversationKey(item);
+                return (
+                  <div key={key} data-testid="chat-bubble-preview" className="animate-chat-preview w-[min(340px,calc(100vw-7.5rem))] rounded-2xl border border-border bg-elevated p-4 shadow-xl lg:w-[340px]">
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                        onClick={() => openChat({ key: creatorKey(item), name: item.creatorName, avatar: item.creatorAvatar })}
+                      >
+                        <Avatar name={item.creatorName} src={item.creatorAvatar} className="size-12 shrink-0 text-base" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-base font-extrabold">{item.creatorName}</span>
+                          <span className="mt-1 line-clamp-3 text-[15px] leading-5 text-muted">{item.preview || previewFallback}</span>
+                        </span>
+                      </button>
+                      <button type="button" aria-label={t("close")} className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-muted hover:bg-surface" onClick={() => dismissStickyPreview(key)}>
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                    <Link href="/chat" className="mt-2 inline-block cursor-pointer text-xs font-medium text-muted hover:text-foreground">
+                      {t("seeAll")}
+                    </Link>
+                  </div>
+                );
+              })}
+            </div>
           )}
           <button
-            key={pulse}
+            key={previews[0]?.id ?? "bubble"}
             type="button"
             data-testid="chat-bubble"
-            aria-label={unread > 0 ? `Mensagens, ${unreadBadge(unread)} não lidas` : "Mensagens"}
-            className={`relative grid size-14 cursor-pointer place-items-center rounded-full bg-primary text-ink shadow-xl ${pulse > 0 ? "animate-chat-pop" : ""}`}
+            aria-label={unread > 0 ? t("bubbleUnread", { count: unread }) : t("title")}
+            className={`relative grid size-[58px] shrink-0 cursor-pointer place-items-center rounded-full bg-primary text-ink shadow-xl lg:size-16 ${previews.length > 0 ? "animate-chat-pop" : ""}`}
             onClick={openList}
           >
-            <MessageCircle className="size-6" />
+            <MessageCircle className="size-[26px] lg:size-7" />
             {unread > 0 && (
-              <span data-testid="chat-bubble-badge" className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-ink px-1 text-[10px] font-black leading-5 text-white">
+              <span data-testid="chat-bubble-badge" className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-ink px-1 text-[11px] font-black leading-5 text-white lg:min-w-6 lg:text-xs lg:leading-6">
                 {unreadBadge(unread)}
               </span>
             )}

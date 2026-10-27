@@ -1,15 +1,24 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { X } from "lucide-react";
 import { toast } from "sonner";
 import { playMessageSound, unlockMessageSound } from "@/lib/message-sound";
 import {
+  MESSAGE_TOAST_DURATION,
   activeCreatorKey,
+  dismissStickyPreview,
   freshMessages,
   getDockCreator,
+  getStickyPreviews,
+  previewConversationKey,
   publishIncoming,
+  requestOpenThread,
+  subscribeStickyPreviews,
+  syncStickyWithUnread,
+  upsertStickyPreviews,
   THREAD_REFRESH_EVENT,
   UNREAD_POLL_MS,
   UNREAD_REFRESH_EVENT,
@@ -31,23 +40,23 @@ async function markRead(creatorKey: string) {
   if (!response.ok) throw new Error("read failed");
 }
 
+function toastId(item: IncomingMessage) {
+  return `message-preview:${previewConversationKey(item)}`;
+}
+
 export function MessageAlerts() {
   const pathname = usePathname();
-  const router = useRouter();
   const t = useTranslations("notifications");
+  const dock = useTranslations("dock");
   const pathnameRef = useRef(pathname);
   const seen = useRef(new Set<string>());
   const primed = useRef(false);
-  const routerRef = useRef(router);
   const previewFallback = t("previewFallback");
+  const closeLabel = dock("close");
 
   useEffect(() => {
     pathnameRef.current = pathname;
   }, [pathname]);
-
-  useEffect(() => {
-    routerRef.current = router;
-  }, [router]);
 
   useEffect(() => {
     const unlock = () => unlockMessageSound();
@@ -63,6 +72,7 @@ export function MessageAlerts() {
       const data = await fetchUnread().catch(() => null);
       if (stop || !data) return;
       const openKey = activeCreatorKey(pathnameRef.current, getDockCreator());
+      syncStickyWithUnread(data.items);
       const { visible, opened } = freshMessages(data.items, seen.current, openKey);
       if (!primed.current) {
         for (const item of data.items) seen.current.add(item.id);
@@ -73,38 +83,11 @@ export function MessageAlerts() {
       if (visible.length > 0) {
         void playMessageSound();
         publishIncoming(visible);
-        for (const item of visible) {
-          seen.current.add(item.id);
-          toast.custom(
-            (id) => (
-              <button
-                type="button"
-                data-testid="message-toast"
-                onClick={() => {
-                  toast.dismiss(id);
-                  routerRef.current.push(item.url);
-                }}
-                className="flex w-[min(100vw-2rem,22rem)] items-center gap-3 rounded-2xl border border-border bg-elevated p-3 text-left shadow-xl"
-              >
-                {item.creatorAvatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.creatorAvatar} alt="" className="size-11 shrink-0 rounded-full object-cover" />
-                ) : (
-                  <span className="grid size-11 shrink-0 place-items-center rounded-full bg-primary text-sm font-black text-ink">
-                    {item.creatorName.slice(0, 1).toUpperCase()}
-                  </span>
-                )}
-                <span className="min-w-0">
-                  <span className="block truncate text-xs font-extrabold text-foreground">{item.creatorName}</span>
-                  <span className="mt-0.5 block truncate text-[11px] text-muted">{item.preview || previewFallback}</span>
-                </span>
-              </button>
-            ),
-            { duration: 7000 },
-          );
-        }
+        upsertStickyPreviews(visible);
+        for (const item of visible) seen.current.add(item.id);
       }
       if (opened.length > 0 && openKey) {
+        dismissStickyPreview(openKey);
         try {
           await markRead(openKey);
           for (const item of opened) seen.current.add(item.id);
@@ -134,6 +117,57 @@ export function MessageAlerts() {
       window.removeEventListener(UNREAD_REFRESH_EVENT, onWake);
     };
   }, [previewFallback]);
+
+  useEffect(() => {
+    const shown = new Set<string>();
+    const sync = () => {
+      const live = new Set<string>();
+      for (const item of getStickyPreviews()) {
+        const id = toastId(item);
+        live.add(id);
+        const key = previewConversationKey(item);
+        toast.custom(
+          () => (
+            <div className="flex w-[min(100vw-2rem,340px)] items-start gap-3 rounded-2xl border border-border bg-elevated p-4 text-left shadow-xl">
+              <button
+                type="button"
+                data-testid="message-toast"
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                onClick={() => {
+                  dismissStickyPreview(key);
+                  requestOpenThread(item);
+                }}
+              >
+                {item.creatorAvatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={item.creatorAvatar} alt="" className="size-12 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <span className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-base font-black text-ink">
+                    {item.creatorName.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <span className="min-w-0">
+                  <span className="block truncate text-base font-extrabold text-foreground">{item.creatorName}</span>
+                  <span className="mt-1 block text-[15px] leading-5 text-muted">{item.preview || previewFallback}</span>
+                </span>
+              </button>
+              <button type="button" aria-label={closeLabel} className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-muted hover:bg-surface" onClick={() => dismissStickyPreview(key)}>
+                <X className="size-4" />
+              </button>
+            </div>
+          ),
+          { id, duration: MESSAGE_TOAST_DURATION },
+        );
+      }
+      for (const id of shown) {
+        if (!live.has(id)) toast.dismiss(id);
+      }
+      shown.clear();
+      for (const id of live) shown.add(id);
+    };
+    sync();
+    return subscribeStickyPreviews(sync);
+  }, [closeLabel, previewFallback]);
 
   return null;
 }

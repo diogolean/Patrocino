@@ -302,5 +302,28 @@
     "denied": "Hinweise sind in diesem Browser blockiert.",
     "unread": "{count, plural, one {# ungelesene Nachricht} other {# ungelesene Nachrichten}}",
     "previewFallback": "Neue Nachricht"
+  },
+  "dock": {
+    "title": "Nachrichten",
+    "back": "Zurück",
+    "minimize": "Minimieren",
+    "close": "Schließen",
+    "openInbox": "Posteingang öffnen",
+    "loading": "Laden…",
+    "threadError": "Unterhaltung konnte nicht geöffnet werden.",
+    "emptyThread": "Noch keine Nachrichten.",
+    "unlock": "Freischalten für {price}",
+    "placeholder": "Nachricht schreiben...",
+    "send": "Senden",
+    "sendError": "Senden fehlgeschlagen.",
+    "listError": "Unterhaltungen konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "emptyTitle": "Noch keine Unterhaltungen",
+    "emptyBody": "Wenn ein Creator schreibt, erscheint die Unterhaltung hier.",
+    "newConversation": "Neue Unterhaltung",
+    "unreadDot": "Ungelesen",
+    "seeAll": "Alle ansehen",
+    "bubbleUnread": "{count, plural, one {Nachrichten, # ungelesen} other {Nachrichten, # ungelesen}}",
+    "notifyHint": "Erhalte einen Hinweis, wenn eine Nachricht ankommt."
   }
 }
