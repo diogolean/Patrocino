@@ -107,6 +107,7 @@ export async function registerAccount(input: {
   acceptTerms: true;
   acceptCreatorTerms?: boolean;
   locale?: string;
+  next?: string;
 }) {
   const response = await fetch("/api/session/register", {
     method: "POST",
@@ -121,7 +122,7 @@ export async function registerAccount(input: {
 export async function socialAccount(
   provider: string,
   role: AccountRole,
-  acceptance: { acceptTerms: true; acceptCreatorTerms?: boolean },
+  acceptance: { acceptTerms: true; acceptCreatorTerms?: boolean; next?: string },
 ) {
   const response = await fetch("/api/session/social", {
     method: "POST",

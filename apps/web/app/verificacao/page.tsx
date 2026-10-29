@@ -6,6 +6,7 @@ import { ArrowLeft, CheckCircle2, Mail, ShieldCheck } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button, Logo } from "@mimelux/ui";
 import { contentMode } from "@mimelux/core";
+import { safeReturnPath } from "@/lib/auth-return";
 import { mockDelay, writeDemo } from "@/lib/demo-store";
 import { getSessionSnapshot } from "@/lib/session";
 
@@ -42,7 +43,8 @@ export default function VerificationPage() {
     await mockDelay();
     writeDemo({ verified: true });
     const role = getSessionSnapshot().user?.role ?? "fan";
-    router.push(`/onboarding?role=${role}`);
+    const next = safeReturnPath(new URLSearchParams(window.location.search).get("next"));
+    router.push(next ?? `/onboarding?role=${role}`);
   }
 
   return (

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { AccountRole } from "@mimelux/core";
+import { safeReturnPath } from "@/lib/auth-return";
 import { apiAuth, authErrorMessage, toApiRole, toSessionUser } from "@/lib/api-auth";
 import { applyAuthCookies } from "@/lib/session-cookies";
 
@@ -12,7 +13,9 @@ export async function POST(request: Request) {
     acceptTerms?: boolean;
     acceptCreatorTerms?: boolean;
     locale?: string;
+    next?: string;
   } | null;
+  const returnPath = safeReturnPath(body?.next);
   const { response, data } = await apiAuth("/auth/register", {
     name: body?.name ?? "",
     email: body?.email ?? "",
@@ -21,6 +24,7 @@ export async function POST(request: Request) {
     acceptTerms: body?.acceptTerms === true,
     acceptCreatorTerms: body?.acceptCreatorTerms === true,
     locale: body?.locale,
+    ...(returnPath ? { next: returnPath } : {}),
   }, request);
   if (!response.ok || !data.user || !data.accessToken || !data.refreshToken) {
     return NextResponse.json(

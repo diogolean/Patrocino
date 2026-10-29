@@ -31,6 +31,7 @@ import { MonetizeSection } from "@/components/monetize-section";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { toast } from "sonner";
 import { roleHome } from "@/lib/use-role-guard";
+import { authHref, postSignUpPath, safeReturnPath } from "@/lib/auth-return";
 
 const demoPassword = DEMO_ACCOUNTS.fan.password;
 
@@ -55,6 +56,7 @@ function AuthContent() {
   const errors = useTranslations("errors");
   const locale = useLocale();
   const signUp = params.get("route") === "sign-up";
+  const nextPath = safeReturnPath(params.get("next"));
   const requestedRole = params.get("role");
   const preset = requestedRole === "creator" || requestedRole === "affiliate" ? requestedRole : "fan";
   const [role, setRole] = useState<AccountRole>(preset);
@@ -128,13 +130,14 @@ function AuthContent() {
           acceptTerms: true,
           acceptCreatorTerms: chosen === "creator",
           locale,
+          next: nextPath ?? undefined,
         });
-        router.push("/verificacao");
+        router.push(postSignUpPath(nextPath));
         return;
       }
       const user = await loginAccount(email, password);
       writeDemo({ onboarding: true, coachSeen: true });
-      router.push(roleHome(user.role));
+      router.push(nextPath ?? roleHome(user.role));
     } catch (caught) {
       setError(sessionErrorText(caught, errors, signUp ? page("registerFailed") : page("enterFailed")));
     } finally {
@@ -157,8 +160,9 @@ function AuthContent() {
       const user = await socialAccount(name, nextRole, {
         acceptTerms: true,
         acceptCreatorTerms: nextRole === "creator",
+        next: nextPath ?? undefined,
       });
-      router.push(signUp ? "/onboarding" : roleHome(user.role));
+      router.push(nextPath ? (signUp ? postSignUpPath(nextPath) : nextPath) : signUp ? "/onboarding" : roleHome(user.role));
     } catch (caught) {
       setSocial("");
       setError(sessionErrorText(caught, errors, page("enterFailed")));
@@ -332,7 +336,7 @@ function AuthContent() {
           <p className="mt-7 text-center text-xs text-muted">
             {signUp ? t("hasAccount") : t("noAccount")}{" "}
             <Link
-              href={signUp ? "/auth?route=sign-in" : "/auth?route=sign-up"}
+              href={authHref(signUp ? "sign-in" : "sign-up", nextPath)}
               className="font-bold text-primary-strong hover:underline"
             >
               {signUp ? t("signIn") : t("signUp")}

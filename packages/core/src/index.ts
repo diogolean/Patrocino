@@ -7,6 +7,7 @@ export * from "./demo-extra-posts";
 export * from "./initial-creators";
 export * from "./legal";
 export * from "./monetization";
+export * from "./return-path";
 
 export const contentModes = ["general", "adult", "hybrid"] as const;
 export type ContentMode = (typeof contentModes)[number];

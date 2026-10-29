@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
@@ -24,6 +25,7 @@ import { ExpayCheckoutModal } from "@/components/expay-checkout-modal";
 import { PushOptIn } from "@/components/push-opt-in";
 import { StripeCheckoutModal } from "@/components/stripe-checkout-modal";
 import { parseProfileOffers, type ProfileOffers } from "@/lib/creator-offers";
+import { authHref } from "@/lib/auth-return";
 
 function DemoPaymentGraphic({ seed, label }: { seed: string; label: string }) {
   const cells = useMemo(() => {
@@ -55,6 +57,7 @@ function CheckoutContent() {
   const t = useTranslations("checkout");
   const errors = useTranslations("errors");
   const router = useRouter();
+  const pathname = usePathname();
   const search = useSearchParams();
   const kind = search.get("kind") || "subscription";
   const id = search.get("id") || "luna-ferraz";
@@ -128,12 +131,18 @@ function CheckoutContent() {
   const realCheckout = methods.expay || methods.stripe;
   const subjectId = kind === "subscription" ? planParam : id;
   const quoteKey = realCheckout ? `${quoteCreatorId}:${purpose}:${subjectId}` : "";
-  const [quote, setQuote] = useState<{ key: string; cents: number | null; error: string }>({ key: "", cents: null, error: "" });
+  const [quote, setQuote] = useState<{ key: string; cents: number | null; error: string; needsAuth: boolean }>({
+    key: "",
+    cents: null,
+    error: "",
+    needsAuth: false,
+  });
   if (quote.key !== quoteKey) {
-    setQuote({ key: quoteKey, cents: null, error: "" });
+    setQuote({ key: quoteKey, cents: null, error: "", needsAuth: false });
   }
   const quotedCents = quote.cents;
   const quoteError = quote.error;
+  const signInHref = authHref("sign-in", search.toString() ? `${pathname}?${search.toString()}` : pathname);
   const catalogPlan =
     catalog?.plans.find((item) => item.id === planParam) ??
     catalog?.plans.find((item) => item.months === plan.months);
@@ -163,14 +172,15 @@ function CheckoutContent() {
           setQuote({
             key,
             cents: null,
-            error: response.status === 401 ? t("signInToPay") : apiErrorText(payload, errors, t("unavailable")),
+            error: response.status === 401 ? "" : apiErrorText(payload, errors, t("unavailable")),
+            needsAuth: response.status === 401,
           });
           return;
         }
-        setQuote({ key, cents: payload.amountCents, error: "" });
+        setQuote({ key, cents: payload.amountCents, error: "", needsAuth: false });
       })
       .catch(() => {
-        if (!cancel) setQuote({ key, cents: null, error: t("quoteFailed") });
+        if (!cancel) setQuote({ key, cents: null, error: t("quoteFailed"), needsAuth: false });
       });
     return () => {
       cancel = true;
@@ -295,7 +305,13 @@ function CheckoutContent() {
           {realCheckout && (
             <p className="mb-2 text-3xl font-black tracking-[-.04em]">{shownCents == null ? "…" : brl(shownCents)}</p>
           )}
-          {quoteError && <p className="mb-4 max-w-sm text-center text-sm text-accent-strong">{quoteError}</p>}
+          {quote.needsAuth ? (
+            <Link href={signInHref} className="mb-4 block max-w-sm cursor-pointer text-center text-sm font-semibold text-accent-strong underline underline-offset-4 hover:opacity-80">
+              {t("signInToPay")}
+            </Link>
+          ) : quoteError ? (
+            <p className="mb-4 max-w-sm text-center text-sm text-accent-strong">{quoteError}</p>
+          ) : null}
           {realCheckout ? (
             <div className="mt-5 grid w-full max-w-sm grid-cols-2 gap-3">
               {methods.expay && (

@@ -23,6 +23,10 @@
     "./stripe": {
       "types": "./dist/stripe.d.ts",
       "default": "./dist/stripe.js"
+    },
+    "./return-path": {
+      "types": "./dist/return-path.d.ts",
+      "default": "./dist/return-path.js"
     }
   },
   "dependencies": {

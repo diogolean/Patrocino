@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { AccountRole } from "@mimelux/core";
+import { safeReturnPath } from "@/lib/auth-return";
 import { apiAuth, authErrorMessage, toApiRole, toSessionUser } from "@/lib/api-auth";
 import { applyAuthCookies } from "@/lib/session-cookies";
 
@@ -10,7 +11,9 @@ export async function POST(request: Request) {
     role?: AccountRole;
     acceptTerms?: boolean;
     acceptCreatorTerms?: boolean;
+    next?: string;
   } | null;
+  const returnPath = safeReturnPath(body?.next);
   const provider = (body?.provider ?? "social").toLowerCase().replace(/[^a-z0-9]+/g, "") || "social";
   const email = `${provider}.${randomBytes(6).toString("hex")}@mimelux.test`;
   const { response, data } = await apiAuth("/auth/register", {
@@ -20,6 +23,7 @@ export async function POST(request: Request) {
     role: toApiRole(body?.role ?? "fan"),
     acceptTerms: body?.acceptTerms === true,
     acceptCreatorTerms: body?.acceptCreatorTerms === true,
+    ...(returnPath ? { next: returnPath } : {}),
   }, request);
   if (!response.ok || !data.user || !data.accessToken || !data.refreshToken) {
     return NextResponse.json(

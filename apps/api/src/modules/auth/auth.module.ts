@@ -17,6 +17,7 @@ import {
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { legalConfig } from "@mimelux/core/legal";
+import { safeReturnPath } from "@mimelux/core/return-path";
 import { Prisma, database } from "@mimelux/db/runtime";
 import type { Request } from "express";
 import { compare, hash } from "bcryptjs";
@@ -60,6 +61,7 @@ const registerSchema = credentialsSchema.extend({
   acceptTerms: z.literal(true),
   acceptCreatorTerms: z.boolean().optional(),
   locale: z.string().max(12).optional(),
+  next: z.string().max(2048).optional(),
 });
 const refreshSchema = z.object({ refreshToken: z.string().min(20) });
 const verifySchema = z.object({ token: z.string().min(20) });
@@ -156,7 +158,7 @@ async function rotateRefresh(refreshToken: string): Promise<SessionPayload> {
   }
 }
 
-async function sendVerification(user: { id: string; email: string; locale?: string | null }) {
+async function sendVerification(user: { id: string; email: string; locale?: string | null }, next: string | null) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   await database.user.update({
@@ -167,7 +169,9 @@ async function sendVerification(user: { id: string; email: string; locale?: stri
     },
   });
   const origin = process.env.WEB_ORIGIN ?? "http://127.0.0.1:3333";
-  const link = `${origin}/api/session/verify?token=${encodeURIComponent(token)}`;
+  const params = new URLSearchParams({ token });
+  if (next) params.set("next", next);
+  const link = `${origin}/api/session/verify?${params.toString()}`;
   try {
     await createEmailSender().sendVerification(user.email, link, user.locale);
   } catch (error) {
@@ -255,7 +259,7 @@ class AuthController {
           },
         },
       });
-      await sendVerification(user);
+      await sendVerification(user, safeReturnPath(input.next));
       return persistSession(user);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
