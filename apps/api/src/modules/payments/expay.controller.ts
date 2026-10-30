@@ -37,6 +37,7 @@ import {
 import { paymentMethodsEnabled } from "@mimelux/core/stripe";
 import { requireUser } from "../auth/require-user";
 import { createPrismaPaymentStore } from "./expay-store";
+import { listBuyerPaymentAlerts, markPaymentAlertSeen } from "./payment-alerts";
 import { logPayment } from "./payment-log";
 import { chargeDraftForUser, ensureQuotedPurchase, quoteCharge, quoteRequestSchema } from "./quote-charge";
 
@@ -126,6 +127,21 @@ export class ExpayPaymentsController {
       if (error instanceof ExpayError) throw apiError(503, "EXPAY_UNAVAILABLE", error.message);
       throw error;
     }
+  }
+
+  @Get("payments/expay/alerts")
+  @ApiOperation({ summary: "Pending ExPay charges and paid charges this buyer has not been shown yet" })
+  async alerts(@Headers("authorization") authorization: string | undefined) {
+    const user = await requireUser(authorization);
+    return { items: await listBuyerPaymentAlerts(user.id) };
+  }
+
+  @Post("payments/expay/alerts/:id/seen")
+  @HttpCode(200)
+  @ApiOperation({ summary: "Remember that this buyer already saw the payment confirmed alert" })
+  async seen(@Param("id") id: string, @Headers("authorization") authorization: string | undefined) {
+    const user = await requireUser(authorization);
+    return markPaymentAlertSeen(user.id, id);
   }
 
   @Get("payments/expay/charges/:id")

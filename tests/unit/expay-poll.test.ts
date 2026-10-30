@@ -5,10 +5,13 @@ import {
   PIX_POLL_INTERVAL_MS,
   clearPendingExpayCharge,
   isExpayTerminalStatus,
+  paymentAlertsToShow,
   pendingChargeOutcome,
   pixPollDelay,
   readPendingExpayCharge,
+  readSeenPaymentAlerts,
   rememberPendingExpayCharge,
+  rememberSeenPaymentAlert,
 } from "../../apps/web/lib/pix-poll";
 
 function memoryStorage(): Storage {
@@ -80,7 +83,32 @@ describe("pix confirmation polling", () => {
       expect(catalog.checkout.waitUpToTwoMinutes.length).toBeGreaterThan(10);
       expect(catalog.checkout.confirmedPayment.length).toBeGreaterThan(5);
     }
-    const pt = JSON.parse(readFileSync("apps/web/messages/pt-BR.json", "utf8")) as { checkout: { confirmedPayment: string } };
+    const pt = JSON.parse(readFileSync("apps/web/messages/pt-BR.json", "utf8")) as {
+      checkout: { confirmedPayment: string; confirmedAccess: string };
+    };
     expect(pt.checkout.confirmedPayment).toBe("Pagamento confirmado");
+    expect(pt.checkout.confirmedAccess).toBe("Pagamento confirmado / acesso liberado");
+    const phrases = catalogs.map((catalog) => catalog.checkout.confirmedAccess);
+    expect(new Set(phrases).size).toBe(5);
+  });
+
+  it("alerts on a paid charge from local storage or the account, including the next visit", () => {
+    const seen = new Set<string>();
+    const open = paymentAlertsToShow({
+      stored: { chargeId: "local", status: "pending", accessActive: false },
+      remote: [{ chargeId: "account", status: "paid", accessActive: true }],
+      seen,
+    });
+    expect(open.watch).toEqual(["local"]);
+    expect(open.confirm).toEqual(["account"]);
+
+    const storage = memoryStorage();
+    rememberSeenPaymentAlert(storage, "account");
+    const again = paymentAlertsToShow({
+      stored: null,
+      remote: [{ chargeId: "account", status: "paid", accessActive: true }],
+      seen: readSeenPaymentAlerts(storage),
+    });
+    expect(again.confirm).toEqual([]);
   });
 });

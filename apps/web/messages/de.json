@@ -441,6 +441,7 @@
     "simulation": "SIMULATION",
     "simulatedPayment": "Simulierte Zahlung",
     "confirmedPayment": "Zahlung bestätigt",
+    "confirmedAccess": "Zahlung bestätigt / Zugang frei",
     "youBelong": "Du bist dabei!",
     "requestConfirmed": "Anfrage bestätigt",
     "contentReleased": "Inhalt freigegeben",

@@ -12,6 +12,7 @@ import {
   listPendingExpayChargeIds,
   reconcilePendingExpayCharges,
 } from "../../apps/api/src/modules/payments/expay-sync";
+import { listBuyerPaymentAlerts, markPaymentAlertSeen } from "../../apps/api/src/modules/payments/payment-alerts";
 import { paymentLogRecord, stripeEventChargeId } from "../../apps/api/src/modules/payments/payment-log";
 import { chargeDraftForUser, ensureQuotedPurchase } from "../../apps/api/src/modules/payments/quote-charge";
 
@@ -35,14 +36,14 @@ describe("payment logs and buyer notice copy", () => {
   });
 
   it("writes the confirmation in the buyer's language", () => {
-    expect(paymentNoticeCopy("pt-BR").title).toBe("Pagamento confirmado");
-    expect(paymentNoticeCopy("en").title).toBe("Payment confirmed");
-    expect(paymentNoticeCopy("es").title).toBe("Pago confirmado");
-    expect(paymentNoticeCopy("de").title).toBe("Zahlung bestätigt");
-    expect(paymentNoticeCopy("fr").body).toMatch(/confirmé/);
-    expect(paymentNoticeCopy(null).title).toBe("Pagamento confirmado");
+    expect(paymentNoticeCopy("pt-BR").title).toBe("Pagamento confirmado / acesso liberado");
+    expect(paymentNoticeCopy("en").title).toBe("Payment confirmed / access unlocked");
+    expect(paymentNoticeCopy("es").title).toBe("Pago confirmado / acceso liberado");
+    expect(paymentNoticeCopy("de").title).toBe("Zahlung bestätigt / Zugang frei");
+    expect(paymentNoticeCopy("fr").title).toBe("Paiement confirmé / accès ouvert");
+    expect(paymentNoticeCopy(null).title).toBe("Pagamento confirmado / acesso liberado");
     expect(buildPaymentPushPayload({ locale: "en", url: "/assinaturas", chargeId: "ch_1" })).toMatchObject({
-      title: "Payment confirmed",
+      title: "Payment confirmed / access unlocked",
       url: "/assinaturas",
       tag: "payment-ch_1",
     });
@@ -270,6 +271,12 @@ describe("pix confirmation releases access without the modal", () => {
     });
     expect(again.duplicate).toBe(true);
     expect(await database.message.count({ where: { conversation: { fanId: fan.id } } })).toBe(1);
+    const unseen = await listBuyerPaymentAlerts(fan.id, now);
+    expect(unseen.map((item) => item.chargeId)).toContain(ids.chargeId);
+    expect(await markPaymentAlertSeen(fan.id, ids.chargeId)).toEqual({ ok: true });
+    expect(await markPaymentAlertSeen(fan.id, ids.chargeId)).toEqual({ ok: true });
+    expect((await listBuyerPaymentAlerts(fan.id, now)).map((item) => item.chargeId)).not.toContain(ids.chargeId);
+    expect(await markPaymentAlertSeen(ids.creatorUserId, ids.chargeId)).toEqual({ ok: false });
     expect(await syncChargeFromExpay(client, store, ids.chargeId)).toMatchObject({ status: "paid", accessActive: true });
   });
 
