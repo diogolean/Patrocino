@@ -24,6 +24,7 @@ import type { SessionRole } from "@mimelux/core";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ChatDock } from "@/components/chat-dock";
 import { MessageAlerts } from "@/components/message-alerts";
+import { PendingExpayToast } from "@/components/pending-expay-toast";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 import { getServerUnreadSnapshot, getUnreadSnapshot, subscribeUnread, unreadBadge } from "@/lib/unread-store";
@@ -79,6 +80,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh" data-testid="session-user" data-email={session.user?.email ?? ""} data-role={role}>
       <MessageAlerts />
+      <PendingExpayToast />
       <ChatDock />
       <aside
         data-collapsed={collapsed}

@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import Stripe from "stripe";
 import { paymentProvider, readStripeSecret } from "./payment-gateways";
 import { cancelPendingChatSequence, enqueueChatSequence } from "../chat/sequence";
+import { logPayment, stripeEventChargeId } from "./payment-log";
 import { quoteCharge } from "./quote-charge";
 import { resistsPending } from "./subscription-status";
 
@@ -596,8 +597,60 @@ function coversPurchase(expectedCents: number, paid: unknown) {
 
 function paymentIntentCovers(expectedCents: number, object: Record<string, unknown>) {
   if (!coversPurchase(expectedCents, object.amount)) return false;
-  if (typeof object.amount_received === "number" && object.amount_received !== expectedCents) return false;
-  return true;
+  const received = object.amount_received;
+  if (typeof received !== "number" || received === expectedCents || received === 0) return true;
+  return false;
+}
+
+async function purchaseSnapshot(purchaseId: string | undefined) {
+  if (!purchaseId) return null;
+  return database.purchase.findUnique({
+    where: { id: purchaseId },
+    select: { status: true, updatedAt: true, subscription: { select: { status: true } } },
+  });
+}
+
+async function applyStripeEvent(
+  event: { id: string; type: string; data: { object: unknown } },
+  purchaseId: string | undefined,
+  work: (tx: Tx) => Promise<void>,
+) {
+  const before = await purchaseSnapshot(purchaseId);
+  const result = await withEvent(event.id, event.type, event, purchaseId, work);
+  if (result.duplicate || !purchaseId) return result;
+  const after = await purchaseSnapshot(purchaseId);
+  const purchaseChanged = (before?.status ?? null) !== (after?.status ?? null);
+  const subscriptionChanged = (before?.subscription?.status ?? null) !== (after?.subscription?.status ?? null);
+  if ((purchaseChanged || subscriptionChanged) && after) {
+    logPayment("payment.status.changed", {
+      provider: "stripe",
+      chargeId: stripeEventChargeId(event),
+      purchaseId,
+      stripeEventId: event.id,
+      stripeType: event.type,
+      from: before?.status ?? null,
+      to: after.status,
+      subscriptionStatus: after.subscription?.status ?? null,
+      updatedAt: after.updatedAt.toISOString(),
+    });
+  }
+  return result;
+}
+
+async function activateLinkedSubscription(
+  tx: Tx,
+  current: { id: string; buyerId: string; creatorId: string; kind: string; subscriptionId: string | null },
+) {
+  if (!current.subscriptionId && current.kind === "SUBSCRIPTION") {
+    const linked = await tx.subscription.findUnique({
+      where: { fanId_creatorId: { fanId: current.buyerId, creatorId: current.creatorId } },
+    });
+    if (linked) {
+      await tx.purchase.update({ where: { id: current.id }, data: { subscriptionId: linked.id } });
+    }
+  }
+  const purchase = await tx.purchase.findUnique({ where: { id: current.id }, select: { subscriptionId: true } });
+  if (purchase?.subscriptionId) await activateSubscription(tx, current.id, undefined, null);
 }
 
 export async function handleStripeEvent(event: { id: string; type: string; data: { object: unknown } }) {
@@ -606,7 +659,7 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
   if (event.type === "checkout.session.completed") {
     const purchaseId = meta.purchaseId;
     if (!purchaseId) return { processed: false, reason: "missing_purchase_id" };
-    const result = await withEvent(event.id, event.type, event, purchaseId, async (tx) => {
+    const result = await applyStripeEvent(event, purchaseId, async (tx) => {
       const purchase = await tx.purchase.findUnique({ where: { id: purchaseId } });
       if (!purchase || (meta.userId && meta.userId !== purchase.buyerId)) return;
       if (!coversPurchase(purchase.amountCents, object.amount_total)) return;
@@ -620,7 +673,7 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
   if (event.type === "invoice.paid") {
     const subscriptionId = invoiceSubscriptionId(object);
     const paymentIntent = nestedId(object.payment_intent);
-    const result = await withEvent(event.id, event.type, event, meta.purchaseId, async (tx) => {
+    const result = await applyStripeEvent(event, meta.purchaseId, async (tx) => {
       const reason = text(object.billing_reason);
       const periodEnd = invoicePeriodEnd(object);
       let purchaseId = meta.purchaseId;
@@ -681,7 +734,7 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
   }
   if (event.type === "invoice.payment_failed") {
     const subscriptionId = invoiceSubscriptionId(object);
-    const result = await withEvent(event.id, event.type, event, meta.purchaseId, async (tx) => {
+    const result = await applyStripeEvent(event, meta.purchaseId, async (tx) => {
       if (meta.purchaseId) {
         await tx.purchase.updateMany({ where: { id: meta.purchaseId, status: "PENDING" }, data: { status: "FAILED" } });
       }
@@ -698,7 +751,7 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
     if (!stripeSubscriptionId) return { processed: false, reason: "missing_subscription" };
     const status = event.type === "customer.subscription.deleted" ? "CANCELED" : mapStripeStatus(text(object.status));
     const periodEnd = typeof object.current_period_end === "number" ? new Date(object.current_period_end * 1000) : null;
-    const result = await withEvent(event.id, event.type, event, undefined, async (tx) => {
+    const result = await applyStripeEvent(event, undefined, async (tx) => {
       const subscriptions = await tx.subscription.findMany({
         where: { stripeSubscriptionId },
         select: { id: true, status: true, endsAt: true, currentPeriodEnd: true },
@@ -716,11 +769,21 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
         if (status !== "ACTIVE") await cancelPendingChatSequence(tx, subscription.id);
       }
     });
+    if (!result.duplicate) {
+      logPayment("payment.status.changed", {
+        provider: "stripe",
+        chargeId: stripeEventChargeId(event),
+        subscriptionId: stripeSubscriptionId,
+        stripeEventId: event.id,
+        stripeType: event.type,
+        to: status,
+      });
+    }
     return { processed: true, ...result };
   }
   if (event.type === "charge.refunded") {
     const paymentIntent = nestedId(object.payment_intent);
-    const result = await withEvent(event.id, event.type, event, meta.purchaseId, async (tx) => {
+    const result = await applyStripeEvent(event, meta.purchaseId, async (tx) => {
       const byIntent = paymentIntent ? await tx.purchase.findFirst({ where: { providerRef: paymentIntent } }) : null;
       const byMeta = !byIntent && meta.purchaseId ? await tx.purchase.findUnique({ where: { id: meta.purchaseId } }) : null;
       const purchase = byIntent ?? byMeta;
@@ -731,7 +794,7 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
   if (event.type === "payment_intent.payment_failed") {
     const purchaseId = meta.purchaseId;
     if (!purchaseId) return { processed: false, reason: "missing_purchase_id" };
-    const result = await withEvent(event.id, event.type, event, purchaseId, async (tx) => {
+    const result = await applyStripeEvent(event, purchaseId, async (tx) => {
       const purchase = await tx.purchase.findUnique({ where: { id: purchaseId } });
       if (!purchase) return;
       if (purchase.status === "PENDING") {
@@ -750,20 +813,20 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
     if (!purchaseId) return { processed: false, reason: "missing_purchase_id" };
     const purchase = await database.purchase.findUnique({ where: { id: purchaseId } });
     if (!purchase) {
-      const result = await withEvent(event.id, event.type, event, undefined, async () => undefined);
+      const result = await applyStripeEvent(event, undefined, async () => undefined);
       return { processed: false, reason: "unknown_purchase", ...result };
     }
-    const result = await withEvent(event.id, event.type, event, purchaseId, async (tx) => {
+    const result = await applyStripeEvent(event, purchaseId, async (tx) => {
       const current = await tx.purchase.findUnique({ where: { id: purchaseId } });
       if (!current || (meta.userId && meta.userId !== current.buyerId)) return;
       if (!paymentIntentCovers(current.amountCents, object)) return;
       await tx.purchase.update({ where: { id: current.id }, data: { providerRef: text(object.id) ?? current.providerRef } });
       await settlePurchase(tx, current.id, event.id);
-      if (current.subscriptionId) await activateSubscription(tx, current.id, undefined, null);
+      await activateLinkedSubscription(tx, current);
     });
     return { processed: true, ...result };
   }
-  await withEvent(event.id, event.type, event, undefined, async () => undefined);
+  await applyStripeEvent(event, undefined, async () => undefined);
   return { processed: false };
 }
 

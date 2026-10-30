@@ -1,13 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Check, Copy, LoaderCircle, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Copy, LoaderCircle, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
 import { apiErrorText } from "@/lib/api-error";
 import { Input } from "@/components/ui/input";
 import { brl } from "@/lib/fixtures";
+import { PixPaidState, PixWaitingNotice } from "@/components/pix-waiting-notice";
+import { publishPaymentConfirmed } from "@/components/pending-expay-toast";
+import {
+  clearPendingExpayCharge,
+  isExpayTerminalStatus,
+  pixPollDelay,
+  rememberPendingExpayCharge,
+} from "@/lib/pix-poll";
 
 type ChargeView = {
   chargeId: string;
@@ -18,8 +26,6 @@ type ChargeView = {
   qrCode: string | null;
   amountCents: number;
 };
-
-const terminal = new Set(["paid", "failed", "refunded", "canceled", "expired"]);
 
 export function ExpayCheckoutModal({
   title,
@@ -49,6 +55,10 @@ export function ExpayCheckoutModal({
   const [charge, setCharge] = useState<ChargeView | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const onPaidRef = useRef(onPaid);
+  const onAmountRef = useRef(onAmount);
+  onPaidRef.current = onPaid;
+  onAmountRef.current = onAmount;
 
   useEffect(() => {
     if (payerDocument === null) return;
@@ -75,8 +85,11 @@ export function ExpayCheckoutModal({
           return;
         }
         if (!stop) {
-          setCharge(payload as ChargeView);
-          onAmount?.(payload.amountCents);
+          const next = payload as ChargeView;
+          setCharge(next);
+          onAmount?.(next.amountCents);
+          if (next.accessActive || isExpayTerminalStatus(next.status)) clearPendingExpayCharge(window.localStorage, next.chargeId);
+          else rememberPendingExpayCharge(window.localStorage, next.chargeId);
         }
       } catch {
         if (!stop) setError(t("pixFailed"));
@@ -91,34 +104,79 @@ export function ExpayCheckoutModal({
   }, [creatorId, purpose, subjectId, idempotencyKey, onAmount, payerDocument, errors, t]);
 
   useEffect(() => {
-    if (!charge?.chargeId || terminal.has(charge.status)) return;
+    if (!charge?.chargeId || charge.accessActive || isExpayTerminalStatus(charge.status)) return;
+    const chargeId = charge.chargeId;
     let stop = false;
-    const timer = window.setInterval(async () => {
+    let timer = 0;
+    let inflight = false;
+    const started = Date.now();
+
+    async function poll() {
+      if (stop || inflight) return;
+      inflight = true;
+      let finished = false;
       try {
-        const response = await fetch(`/api/payments/expay/charges/${charge.chargeId}`);
-        if (!response.ok) return;
-        const next = (await response.json()) as ChargeView;
-        if (stop) return;
-        setCharge(next);
-        if (typeof next.amountCents === "number") onAmount?.(next.amountCents);
-        if (next.accessActive) onPaid();
+        const response = await fetch(`/api/payments/expay/charges/${encodeURIComponent(chargeId)}`, { cache: "no-store" });
+        if (response.ok && !stop) {
+          const next = (await response.json()) as ChargeView;
+          setCharge(next);
+          if (typeof next.amountCents === "number") onAmountRef.current?.(next.amountCents);
+          if (next.accessActive) {
+            clearPendingExpayCharge(window.localStorage, chargeId);
+            publishPaymentConfirmed(chargeId);
+            finished = true;
+          } else if (isExpayTerminalStatus(next.status)) {
+            clearPendingExpayCharge(window.localStorage, chargeId);
+            finished = true;
+          } else {
+            rememberPendingExpayCharge(window.localStorage, chargeId);
+          }
+        }
       } catch {
-        // The next poll retries. The webhook remains the server confirmation.
+        // The next poll retries. Server sync does not depend on this tab.
+      } finally {
+        inflight = false;
       }
-    }, 3000);
+      if (!stop && !finished) schedule();
+    }
+
+    function schedule() {
+      window.clearTimeout(timer);
+      if (stop) return;
+      timer = window.setTimeout(() => void poll(), pixPollDelay(Date.now() - started));
+    }
+
+    function wake() {
+      if (document.visibilityState === "hidden" || inflight) return;
+      window.clearTimeout(timer);
+      void poll();
+    }
+
+    schedule();
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
     return () => {
       stop = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
     };
-  }, [charge?.chargeId, charge?.status, onAmount, onPaid]);
+  }, [charge?.chargeId, charge?.status, charge?.accessActive]);
+
+  function requestClose() {
+    if (charge?.accessActive) onPaidRef.current();
+    onClose();
+  }
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") requestCloseRef.current();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   const copia = charge?.copiaECola;
   const paid = Boolean(charge?.accessActive);
@@ -145,7 +203,7 @@ export function ExpayCheckoutModal({
       >
         <div className="mb-4 flex items-center justify-between">
           <p className="text-[10px] font-black uppercase tracking-[.18em] text-primary-strong">{t("pix")}</p>
-          <button type="button" aria-label={closeLabel} onClick={onClose} className="grid size-10 place-items-center rounded-full hover:bg-black/5">
+          <button type="button" aria-label={closeLabel} onClick={requestClose} className="grid size-10 place-items-center rounded-full hover:bg-black/5">
             <X className="size-4" />
           </button>
         </div>
@@ -192,15 +250,15 @@ export function ExpayCheckoutModal({
           </div>
         )}
 
-        {charge && paid && (
-          <div className="mt-6 grid place-items-center rounded-[24px] bg-emerald-500/10 px-5 py-10 text-center">
-            <span className="grid size-16 place-items-center rounded-full bg-emerald-500/15 text-emerald-600"><Check className="size-7" /></span>
-            <p className="mt-4 text-sm font-semibold">{t("accessReady")}</p>
-          </div>
-        )}
+        {charge && paid && <PixPaidState onContinue={() => onPaidRef.current()} />}
 
         {charge && !paid && (
           <div className="mt-5">
+            {!isExpayTerminalStatus(charge.status) && (
+              <div className="mb-4">
+                <PixWaitingNotice />
+              </div>
+            )}
             {charge.billingMode === "pix_monthly_fallback" && (
               <p className="mb-4 rounded-2xl bg-surface px-4 py-3 text-xs leading-5 text-muted">
                 {t("monthlyFallback")}
@@ -230,9 +288,11 @@ export function ExpayCheckoutModal({
                 </Button>
               </>
             )}
-            <p data-testid="expay-status" className="mt-4 text-center text-xs text-muted">
-              {charge.status === "expired" ? t("expired") : charge.status === "failed" || charge.status === "canceled" ? t("notCompleted") : t("waiting")}
-            </p>
+            {(charge.status === "expired" || charge.status === "failed" || charge.status === "canceled") && (
+              <p data-testid="expay-status" className="mt-4 text-center text-xs text-muted">
+                {charge.status === "expired" ? t("expired") : t("notCompleted")}
+              </p>
+            )}
           </div>
         )}
       </div>

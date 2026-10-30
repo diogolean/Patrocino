@@ -29,6 +29,7 @@ import { PROFILE_GALLERY_COLUMNS, buildProfileGallery, formatActiveUntil, format
 import { readDemo, writeDemo, type DemoReview, type DemoSpecialRequest } from "@/lib/demo-store";
 import { toast } from "sonner";
 import { apiErrorText } from "@/lib/api-error";
+import { PAYMENT_CONFIRMED_EVENT } from "@/components/pending-expay-toast";
 
 const requestStatusKey = {
   requested: "statusRequested",
@@ -107,17 +108,21 @@ export function CreatorProfile({
         if (!cancel) setStripeOn(data?.stripe === true);
       })
       .catch(() => undefined);
-    void fetch("/api/subscriptions/me", { cache: "no-store" })
-      .then(async (response) => (response.ok ? response.json() : null))
-      .then((data: { items?: { access?: boolean; creatorUsername?: string; creatorId?: string; currentPeriodEnd?: string | null }[] } | null) => {
-        if (cancel || !data?.items) return;
-        const match = data.items.find(
-          (item) => item.access && (item.creatorUsername === creator.username || item.creatorId === creator.id),
-        );
-        setServerSubscribed(Boolean(match));
-        setActiveUntil(match?.currentPeriodEnd ?? null);
-      })
-      .catch(() => undefined);
+    function loadSubscription() {
+      void fetch("/api/subscriptions/me", { cache: "no-store" })
+        .then(async (response) => (response.ok ? response.json() : null))
+        .then((data: { items?: { access?: boolean; creatorUsername?: string; creatorId?: string; currentPeriodEnd?: string | null }[] } | null) => {
+          if (cancel || !data?.items) return;
+          const match = data.items.find(
+            (item) => item.access && (item.creatorUsername === creator.username || item.creatorId === creator.id),
+          );
+          setServerSubscribed(Boolean(match));
+          setActiveUntil(match?.currentPeriodEnd ?? null);
+        })
+        .catch(() => undefined);
+    }
+    loadSubscription();
+    window.addEventListener(PAYMENT_CONFIRMED_EVENT, loadSubscription);
     void loadSubscriberCatalog(creator.username).then((catalog) => {
       if (cancel) return;
       setVideos(catalog);
@@ -132,6 +137,7 @@ export function CreatorProfile({
     });
     return () => {
       cancel = true;
+      window.removeEventListener(PAYMENT_CONFIRMED_EVENT, loadSubscription);
     };
   }, [creator.id, creator.username]);
 
