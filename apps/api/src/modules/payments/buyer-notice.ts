@@ -7,28 +7,28 @@ import { logPayment } from "./payment-log";
 
 const copy = {
   "pt-BR": {
-    title: "Pagamento confirmado",
-    body: "Seu pagamento foi confirmado e o acesso já está liberado.",
+    title: "Pagamento confirmado / acesso liberado",
+    body: "Pagamento confirmado / acesso liberado",
     subject: "Pagamento confirmado no Patrocino",
   },
   en: {
-    title: "Payment confirmed",
-    body: "Your payment is confirmed and access is now open.",
+    title: "Payment confirmed / access unlocked",
+    body: "Payment confirmed / access unlocked",
     subject: "Payment confirmed on Patrocino",
   },
   es: {
-    title: "Pago confirmado",
-    body: "Tu pago fue confirmado y el acceso ya está liberado.",
+    title: "Pago confirmado / acceso liberado",
+    body: "Pago confirmado / acceso liberado",
     subject: "Pago confirmado en Patrocino",
   },
   de: {
-    title: "Zahlung bestätigt",
-    body: "Deine Zahlung ist bestätigt und der Zugang ist frei.",
+    title: "Zahlung bestätigt / Zugang frei",
+    body: "Zahlung bestätigt / Zugang frei",
     subject: "Zahlung bestätigt bei Patrocino",
   },
   fr: {
-    title: "Paiement confirmé",
-    body: "Votre paiement est confirmé et l'accès est ouvert.",
+    title: "Paiement confirmé / accès ouvert",
+    body: "Paiement confirmé / accès ouvert",
     subject: "Paiement confirmé sur Patrocino",
   },
 } as const;
