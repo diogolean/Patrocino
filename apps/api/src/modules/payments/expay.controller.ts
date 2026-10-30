@@ -27,6 +27,7 @@ import {
   createOneOffPixCharge,
   createSubscriptionPix,
   acceptExpayTestEvents,
+  parseWebhookEvent,
   processExpayWebhook,
   readExpayWebhookSecrets,
   readSignatureHeader,
@@ -36,6 +37,7 @@ import {
 import { paymentMethodsEnabled } from "@mimelux/core/stripe";
 import { requireUser } from "../auth/require-user";
 import { createPrismaPaymentStore } from "./expay-store";
+import { logPayment } from "./payment-log";
 import { chargeDraftForUser, ensureQuotedPurchase, quoteCharge, quoteRequestSchema } from "./quote-charge";
 
 function expayEnabled() {
@@ -162,10 +164,17 @@ export class ExpayPaymentsController {
   @HttpCode(200)
   @ApiOperation({ summary: "ExPay webhook. Access changes only after GET /charges/{id}, and only for the prod secret unless test events are accepted." })
   async webhook(@Req() request: RawBodyRequest<Request>) {
+    const receivedAt = new Date().toISOString();
+    const rawBody = request.rawBody?.toString("utf8") ?? "";
+    const hinted = parseWebhookEvent(rawBody);
+    logPayment("payment.webhook.arrived", {
+      provider: "expay",
+      chargeId: hinted?.chargeId ?? null,
+      at: receivedAt,
+    });
     const secrets = readExpayWebhookSecrets();
     if (!secrets.test && !secrets.prod) throw apiError(503, "WEBHOOK_SECRET_IS_NOT_CONFIGURED", "Webhook secret is not configured.");
     const headerName = process.env.EXPAY_WEBHOOK_SIGNATURE_HEADER || EXPAY_SIGNATURE_HEADER_DEFAULT;
-    const rawBody = request.rawBody?.toString("utf8") ?? "";
     const signature = readSignatureHeader(request.headers as Record<string, string | string[] | undefined>, headerName);
     try {
       const result = await processExpayWebhook({

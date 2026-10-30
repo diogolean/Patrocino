@@ -9,6 +9,7 @@ import { paymentMethodsEnabled } from "@mimelux/core/stripe";
 import { requireUser } from "../auth/require-user";
 import { paymentProvider, readStripePublishable, readStripeSecret, readStripeWebhookSecret } from "./payment-gateways";
 import { handleStripeEvent, startPlanCheckout } from "./billing";
+import { logPayment, stripeEventChargeId } from "./payment-log";
 import { ExpayPaymentsController } from "./expay.controller";
 import { chargeDraftForUser, ensureQuotedPurchase } from "./quote-charge";
 
@@ -55,6 +56,10 @@ export class PaymentsController {
           amountCents: draft.amountCents,
           currency: "brl",
           description: draft.description,
+          buyerId: user.id,
+          creatorId: draft.creatorId,
+          purpose: draft.purpose,
+          subjectId: draft.subjectId,
         });
         if (checkout.externalId) {
           await database.purchase.update({ where: { id: purchase.id }, data: { providerRef: checkout.externalId } });
@@ -103,20 +108,34 @@ export class PaymentsController {
     @Headers("stripe-signature") signature: string | undefined,
     @Req() request: RawBodyRequest<Request>,
   ) {
+    const receivedAt = new Date().toISOString();
     if (provider !== "stripe") return { accepted: false, reason: "provider_stubbed" };
     const secret = readStripeWebhookSecret();
     const key = readStripeSecret();
     if (!secret.ok || !key.ok || !request.rawBody) {
+      logPayment("payment.webhook.arrived", { provider: "stripe", chargeId: null, at: receivedAt, accepted: false });
       return { accepted: false, reason: "stripe_webhook_not_configured" };
     }
-    if (!signature) throw apiError(400, "INVALID_STRIPE_SIGNATURE", "Invalid Stripe signature");
+    if (!signature) {
+      logPayment("payment.webhook.arrived", { provider: "stripe", chargeId: null, at: receivedAt, accepted: false });
+      throw apiError(400, "INVALID_STRIPE_SIGNATURE", "Invalid Stripe signature");
+    }
     const stripe = new Stripe(key.key);
     let event: Stripe.Event;
     try {
       event = stripe.webhooks.constructEvent(request.rawBody, signature, secret.key);
     } catch {
+      logPayment("payment.webhook.arrived", { provider: "stripe", chargeId: null, at: receivedAt, accepted: false });
       throw apiError(400, "INVALID_STRIPE_SIGNATURE", "Invalid Stripe signature");
     }
+    logPayment("payment.webhook.arrived", {
+      provider: "stripe",
+      chargeId: stripeEventChargeId(event),
+      at: receivedAt,
+      stripeEventId: event.id,
+      stripeType: event.type,
+      accepted: true,
+    });
     try {
       const result = await handleStripeEvent(event);
       return { accepted: true, ...result };

@@ -1,5 +1,7 @@
 import { database, Prisma } from "@mimelux/db/runtime";
 import { cancelPendingChatSequence, enqueueChatSequence } from "../chat/sequence";
+import { notifyBuyerOfPaidCharge } from "./buyer-notice";
+import { logPayment } from "./payment-log";
 import { laterInstant } from "./subscription-status";
 import {
   billingModes,
@@ -167,6 +169,7 @@ export function createPrismaPaymentStore(): PaymentStore {
     async saveStatus(providerChargeId, status, accessActive) {
       const current = await database.paymentRecord.findUnique({ where: { providerChargeId } });
       if (!current) throw new Error("unknown_charge");
+      const wasGranted = current.status === "paid" && current.accessActive;
       const row = await database.paymentRecord.update({
         where: { providerChargeId },
         data: {
@@ -178,6 +181,28 @@ export function createPrismaPaymentStore(): PaymentStore {
       });
       await syncPurchase(row);
       await syncSubscription(row);
+      logPayment("payment.status.changed", {
+        provider: row.provider || "expay",
+        chargeId: row.providerChargeId,
+        from: current.status,
+        to: row.status,
+        accessActive: row.accessActive,
+        paidAt: row.paidAt?.toISOString() ?? null,
+        updatedAt: row.updatedAt.toISOString(),
+      });
+      if (row.status === "paid" && row.accessActive && !wasGranted) {
+        await notifyBuyerOfPaidCharge({
+          providerChargeId: row.providerChargeId,
+          buyerId: row.buyerId,
+          creatorId: row.creatorId,
+        }).catch((error: unknown) => {
+          logPayment("payment.notice.failed", {
+            provider: row.provider || "expay",
+            chargeId: row.providerChargeId,
+            reason: error instanceof Error ? error.message : "notice_failed",
+          });
+        });
+      }
       return toCharge(row);
     },
     async findReceipt(eventId, environment) {

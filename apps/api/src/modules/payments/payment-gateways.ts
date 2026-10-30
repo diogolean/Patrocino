@@ -37,6 +37,10 @@ export type PaymentCheckout = {
   amountCents: number;
   currency: "brl";
   description: string;
+  buyerId?: string;
+  creatorId?: string;
+  purpose?: string;
+  subjectId?: string;
 };
 
 export interface PaymentProviderGateway {
@@ -60,7 +64,13 @@ export class StripeTestGateway implements PaymentProviderGateway {
         amount: input.amountCents,
         currency: input.currency,
         description: input.description,
-        metadata: { purchaseId: input.purchaseId },
+        metadata: {
+          purchaseId: input.purchaseId,
+          ...(input.buyerId ? { userId: input.buyerId } : {}),
+          ...(input.creatorId ? { creatorId: input.creatorId } : {}),
+          ...(input.purpose ? { purpose: input.purpose } : {}),
+          ...(input.subjectId ? { subjectId: input.subjectId } : {}),
+        },
         automatic_payment_methods: { enabled: true },
       },
       { idempotencyKey: input.purchaseId },

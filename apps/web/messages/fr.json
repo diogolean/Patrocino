@@ -501,6 +501,8 @@
     "expired": "Ce Pix a expiré.",
     "notCompleted": "Le paiement n'a pas été terminé.",
     "waiting": "En attente du paiement",
+    "waitForConfirmation": "Attendez la confirmation du paiement, ne fermez pas cet écran",
+    "waitUpToTwoMinutes": "La confirmation peut prendre jusqu'à environ 2 minutes.",
     "cardStartFailed": "Impossible de démarrer le paiement par carte.",
     "payWithCardTitle": "Payez par carte",
     "missingKey": "La carte n'est pas configurée. La clé publiable manque.",
