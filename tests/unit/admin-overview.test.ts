@@ -26,3 +26,45 @@ describe("executive overview math", () => {
     expect(rate(3, 0)).toBe(0);
   });
 });
+
+import { bucketStarts, percentDelta, resolveRange } from "../../apps/api/src/modules/admin/overview-range";
+
+describe("executive overview range", () => {
+  const now = new Date("2026-10-31T19:00:00Z"); // 16:00 in São Paulo
+
+  it("resolves presets in São Paulo time with an equally long previous window", () => {
+    const today = resolveRange({ range: "today" }, now);
+    expect(today.from.toISOString()).toBe("2026-10-31T03:00:00.000Z");
+    expect(today.prevFrom.toISOString()).toBe("2026-10-30T11:00:00.000Z");
+    expect(today.bucket).toBe("hour");
+    expect(resolveRange({ range: "month" }, now).from.toISOString()).toBe("2026-10-01T03:00:00.000Z");
+    expect(resolveRange({ range: "7d" }, now).from.toISOString()).toBe("2026-10-25T03:00:00.000Z");
+    expect(resolveRange({ range: "bogus" }, now).preset).toBe("30d");
+  });
+
+  it("makes custom ranges inclusive, ordered and capped at now", () => {
+    const custom = resolveRange({ range: "custom", from: "2026-10-31", to: "2026-10-01" }, now);
+    expect(custom.from.toISOString()).toBe("2026-10-01T03:00:00.000Z");
+    expect(custom.to.toISOString()).toBe(now.toISOString());
+    expect(bucketStarts(custom)).toHaveLength(31);
+    expect(resolveRange({ range: "custom", from: "x", to: "2026-10-10" }, now).to.toISOString()).toBe("2026-10-11T03:00:00.000Z");
+  });
+
+  it("computes deltas without dividing by zero", () => {
+    expect(percentDelta(150, 100)).toBe(50);
+    expect(percentDelta(5, 0)).toBeNull();
+    expect(percentDelta(0, 0)).toBe(0);
+  });
+});
+
+import { areaPath, linePath, scalePoints } from "../../apps/web/components/admin-overview/chart-geometry";
+
+describe("overview chart geometry", () => {
+  it("maps values onto the SVG box and closes the area at the bottom", () => {
+    const points = scalePoints([0, 50, 100], 200, 100, 100, 0);
+    expect(points).toEqual([[0, 100], [100, 50], [200, 0]]);
+    expect(linePath(points)).toBe("M0.0,100.0 L100.0,50.0 L200.0,0.0");
+    expect(areaPath(points, 100)).toMatch(/L200.0,100 L0.0,100 Z$/);
+    expect(scalePoints([0, 0], 10, 10, 0, 0)).toEqual([[0, 10], [10, 10]]);
+  });
+});
