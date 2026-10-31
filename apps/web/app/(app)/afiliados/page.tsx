@@ -10,14 +10,36 @@ import { affiliateLink, affiliateSummary, demoAffiliate } from "@/lib/affiliates
 import { brl, compact, creatorLikeTotal, creators } from "@/lib/gateway";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 import { paymentGateway } from "@/lib/payments";
-import { useRoleGuard } from "@/lib/use-role-guard";
+import { roleHome, useRoleGuard } from "@/lib/use-role-guard";
+import { useRouter } from "next/navigation";
+import { getServerSessionSnapshot, getSessionSnapshot, subscribeSession } from "@/lib/session";
 
-// An admin can also hold an affiliate profile; the page loads it from /affiliate/me.
-const ADMIN_ALSO = ["admin"] as const;
+// Any account can hold an affiliate profile without changing its role (e.g. a fan who also
+// promotes creators). Non-affiliate roles are let in only when /affiliate/me finds a profile.
+const PROFILE_ROLES = ["admin", "fan", "creator"] as const;
 import { toast } from "sonner";
 
 export default function AffiliateDashboardPage() {
-  const allowed = useRoleGuard("affiliate", ADMIN_ALSO);
+  const roleAllowed = useRoleGuard("affiliate", PROFILE_ROLES);
+  const router = useRouter();
+  const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
+  const sessionRole = session.user?.role;
+  const [profileOk, setProfileOk] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!roleAllowed || sessionRole === "affiliate" || sessionRole === "admin") return;
+    let cancel = false;
+    fetch("/api/affiliate/me", { cache: "no-store" })
+      .then((response) => {
+        if (cancel) return;
+        if (response.ok) setProfileOk(true);
+        else if (sessionRole) router.replace(roleHome(sessionRole));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, [roleAllowed, router, sessionRole]);
+  const allowed = roleAllowed && (sessionRole === "affiliate" || sessionRole === "admin" || profileOk === true);
   const t = useTranslations("affiliate");
   const tc = useTranslations("commerce");
   const [liveName, setLiveName] = useState<string | null>(null);
