@@ -17,6 +17,7 @@ import type { Creator, Post } from "@/lib/gateway";
 import { brl, seedComments } from "@/lib/gateway";
 import { PostVisual } from "@/components/post-visual";
 import { readDemo, writeDemo } from "@/lib/demo-store";
+import { shownCaption } from "@/lib/public-caption";
 import { getServerSessionSnapshot, getSessionSnapshot, subscribeSession } from "@/lib/session";
 
 export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
@@ -180,7 +181,13 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
         <p data-testid="post-likes" className="mt-1 text-xs font-bold">{t("likes", { count: (post.likes + (liked ? 1 : 0)).toLocaleString(locale) })}</p>
         <p className="mt-2 text-xs leading-5">
           <b className="mr-1.5">{creator.name}</b>
-          {post.mediaType === "video" ? media("exclusiveVideo", { n: post.exclusiveIndex ?? 1 }) : post.caption}
+          {shownCaption({
+            caption: post.caption,
+            video: post.mediaType === "video" || Boolean(post.playback),
+            index: post.exclusiveIndex ?? 1,
+            videoLabel: (n) => media("exclusiveVideo", { n }),
+            photoLabel: (n) => media("exclusivePhoto", { n }),
+          })}
         </p>
         {seedComments.filter((comment) => comment.postId === post.id).map((comment) => (
           <p key={comment.id} data-testid="post-comment" className="mt-2 text-xs leading-5">

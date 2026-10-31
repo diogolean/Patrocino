@@ -31,6 +31,8 @@ import { readDemo, writeDemo, type DemoReview, type DemoSpecialRequest } from "@
 import { toast } from "sonner";
 import { apiErrorText } from "@/lib/api-error";
 import { PAYMENT_CONFIRMED_EVENT } from "@/components/pending-expay-toast";
+import { demoAffiliate, recordClick } from "@/lib/affiliates";
+import { shownCaption } from "@/lib/public-caption";
 
 const requestStatusKey = {
   requested: "statusRequested",
@@ -142,6 +144,21 @@ export function CreatorProfile({
       cancel = true;
       window.removeEventListener(PAYMENT_CONFIRMED_EVENT, loadSubscription);
     };
+  }, [creator.id, creator.username]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("ref") !== demoAffiliate.code) return;
+    const subId = params.get("sub") || "direct";
+    const state = readDemo();
+    if (state.clicks.some((click) => click.code === demoAffiliate.code && click.subId === subId && click.creatorSlug === creator.username)) return;
+    writeDemo(recordClick(state, {
+      creatorId: creator.id,
+      creatorSlug: creator.username,
+      subId,
+      locale: params.get("lang") || "pt-BR",
+      suspicious: /bot|spam/i.test(subId),
+    }));
   }, [creator.id, creator.username]);
 
   const promotion = monetization.promotion;
@@ -276,7 +293,13 @@ export function CreatorProfile({
         kind: entry.post.playback ? "video" : "image",
         src: entry.post.playback || entry.post.image,
         poster: entry.post.poster || entry.post.image,
-        caption: entry.post.mediaType === "video" || entry.post.playback ? media("exclusiveVideo", { n: entry.post.exclusiveIndex ?? 1 }) : entry.post.caption,
+        caption: shownCaption({
+          caption: entry.post.caption,
+          video: entry.post.mediaType === "video" || Boolean(entry.post.playback),
+          index: entry.post.exclusiveIndex ?? 1,
+          videoLabel: (n) => media("exclusiveVideo", { n }),
+          photoLabel: (n) => media("exclusivePhoto", { n }),
+        }),
       });
     }
     const index = slides.findIndex((slide) => slide.id === id);

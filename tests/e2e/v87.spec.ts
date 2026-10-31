@@ -48,6 +48,6 @@ test("sign-in starts blank and each role still opens after the credentials are t
 
 test("a referral code without a creator opens that affiliate default page", async ({ page }) => {
   await page.goto("/r/nara?sub=qa-home");
-  await expect(page).toHaveURL(/\/r\/nara\/albina-schneider\?sub=qa-home/);
+  await expect(page).toHaveURL(/\/creator\/albina-schneider\?.*sub=qa-home/);
   await expect(page.getByRole("heading", { name: "Albina Schneider" })).toBeVisible();
 });

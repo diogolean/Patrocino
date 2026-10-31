@@ -1,3 +1,4 @@
+import { hideStoredCaption } from "@mimelux/core/exclusive-video";
 import type {
   CommentDto,
   CreatorDto,
@@ -63,7 +64,7 @@ class MockGateway implements MimeluxGateway {
         id: post.id,
         creatorId: post.creatorId,
         mediaUrl: post.image,
-        caption: post.mediaType === "video" ? "" : post.caption,
+        caption: hideStoredCaption(post.caption, post.mediaType === "video") ? "" : post.caption,
         visibility: post.visibility,
         mediaType: post.mediaType,
         priceCents: post.price,

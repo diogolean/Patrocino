@@ -1,3 +1,4 @@
+import { captionLooksLikeFilename } from "@mimelux/core/exclusive-video";
 import type { Post } from "@/lib/gateway";
 
 export function PostVisual({
@@ -42,7 +43,7 @@ export function PostVisual({
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
-      alt={post.mediaType === "video" ? "" : post.caption}
+      alt={post.mediaType === "video" || captionLooksLikeFilename(post.caption) ? "" : post.caption}
       loading="lazy"
       decoding="async"
       draggable={false}
