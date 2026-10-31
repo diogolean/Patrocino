@@ -1,7 +1,7 @@
 export type SubscriberVideo = {
   id: string;
   mediaId: string;
-  caption: string;
+  exclusiveIndex: number;
   priceCents: number;
   previewUrl: string | null;
   purchased: boolean;
@@ -13,6 +13,14 @@ export type SubscriberVideo = {
 export type GalleryEntry<T> =
   | { kind: "post"; post: T; publishedAt: string }
   | { kind: "video"; video: SubscriberVideo; publishedAt: string };
+
+export function exclusiveIndexes<T extends { id: string; publishedAt?: string }>(items: T[], isVideo: (item: T) => boolean) {
+  const ordered = items
+    .filter(isVideo)
+    .slice()
+    .sort((left, right) => (left.publishedAt ?? "").localeCompare(right.publishedAt ?? "") || left.id.localeCompare(right.id));
+  return new Map(ordered.map((item, index) => [item.id, index + 1]));
+}
 
 export function mergeGallery<T extends { publishedAt: string }>(posts: T[], videos: SubscriberVideo[]): GalleryEntry<T>[] {
   const entries: GalleryEntry<T>[] = [

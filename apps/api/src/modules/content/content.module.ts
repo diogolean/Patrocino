@@ -6,6 +6,8 @@ import { z } from "zod";
 import { assertOwnsCreator, ownsCreator } from "../access/creator-scope";
 import { optionalUser, requireUser } from "../auth/require-user";
 import { viewerCanReadPost } from "../media/entitlement";
+import { videoOrdinalIds } from "../media/video-public";
+import { exclusiveVideoIndex } from "@mimelux/core/exclusive-video";
 
 const createPostSchema = z.object({
   caption: z.string().min(1).max(500),
@@ -58,11 +60,15 @@ class ContentController {
       owns: viewer ? await ownsCreator(viewer, post.creatorId) : false,
       post,
     });
+    const video = post.media.some((item) => item.kind === "VIDEO");
+    const reveal = viewer?.role === "ADMIN";
+    const ordinals = video ? await videoOrdinalIds(post.creatorId) : [];
     return {
       item: {
         id: post.id,
         creatorId: post.creatorId,
-        caption: access ? post.caption : "",
+        caption: video && !reveal ? "" : access ? post.caption : "",
+        exclusiveIndex: video ? exclusiveVideoIndex(ordinals, post.id) : undefined,
         visibility: post.visibility,
         locked: !access,
         media: access

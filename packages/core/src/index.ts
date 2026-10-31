@@ -4,6 +4,7 @@ export * from "./assets";
 export * from "./chat-sequence";
 export * from "./contracts";
 export * from "./demo-extra-posts";
+export * from "./exclusive-video";
 export * from "./initial-creators";
 export * from "./legal";
 export * from "./monetization";

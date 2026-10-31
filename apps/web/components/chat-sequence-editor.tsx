@@ -14,7 +14,7 @@ type Step = {
   recurring: boolean;
 };
 
-type Video = { id: string; title: string; priceCents: number };
+type Video = { id: string; exclusiveIndex?: number; title?: string; priceCents: number };
 
 type Sequence = {
   creatorId: string;
@@ -29,6 +29,7 @@ async function readJson<T>(response: Response): Promise<T & { code?: unknown; me
 
 export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
   const t = useTranslations("studio");
+  const media = useTranslations("media");
   const errors = useTranslations("errors");
   const [resolvedId, setResolvedId] = useState(creatorId ?? "");
   const [enabled, setEnabled] = useState(true);
@@ -181,7 +182,7 @@ export function ChatSequenceEditor({ creatorId }: { creatorId?: string }) {
                 <option value="latest">{t("seqLatest")}</option>
                 {videos.map((video) => (
                   <option key={video.id} value={`post:${video.id}`}>
-                    {video.title}
+                    {media("exclusiveVideo", { n: video.exclusiveIndex ?? 1 })}
                   </option>
                 ))}
               </select>

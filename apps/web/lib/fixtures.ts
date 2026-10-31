@@ -37,6 +37,7 @@ export type Post = {
   poster?: string;
   playback?: string;
   caption: string;
+  exclusiveIndex?: number;
   visibility: "free" | "subscriber" | "ppv";
   mediaType: "image" | "video";
   price?: number;

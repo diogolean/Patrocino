@@ -1,12 +1,14 @@
 import { apiError } from "../../http/api-error";
 import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Module, NotFoundException, Param, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { exclusiveVideoIndex } from "@mimelux/core/exclusive-video";
 import { chatSequenceOfferModes } from "@mimelux/core/chat-sequence";
 import { database } from "@mimelux/db/runtime";
 import { z } from "zod";
 import { assertOwnsCreator } from "../access/creator-scope";
 import { optionalUser, requireUser } from "../auth/require-user";
 import { listFanInbox, markFanThreadRead } from "../notifications/unread";
+import { videoOrdinalIds } from "../media/video-public";
 import { ensureChatSequence, readFanThread, replaceChatSequence, sendFanMessage, type SequenceStepInput } from "./sequence";
 
 const messageSchema = z.object({
@@ -106,13 +108,18 @@ class ChatSequenceController {
       where: { creatorId: id, deletedAt: null, priceCents: { gt: 0 }, media: { some: { kind: "VIDEO" } } },
       orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
       take: 50,
-      select: { id: true, caption: true, priceCents: true },
+      select: { id: true, priceCents: true },
     });
+    const ordinals = await videoOrdinalIds(id);
     return {
       creatorId: id,
       enabled: sequence.enabled,
       steps: sequence.steps.map(presentStep),
-      videos: videos.map((video) => ({ id: video.id, title: video.caption, priceCents: video.priceCents })),
+      videos: videos.map((video) => ({
+        id: video.id,
+        exclusiveIndex: exclusiveVideoIndex(ordinals, video.id),
+        priceCents: video.priceCents,
+      })),
     };
   }
 

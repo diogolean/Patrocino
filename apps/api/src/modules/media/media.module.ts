@@ -33,6 +33,8 @@ import { fanSubscribed, paidPostPurchase, resolveVideoPrice, viewerCanReadPost }
 import { MEDIA_GRANT_TTL_SECONDS, readMediaGrant, signMediaGrant } from "./signed-url";
 import { chunkSizeBytes, declaredMimeMatches, detectFile, maxBytes, servedMimeType } from "./sniff";
 import { assembleChunks, openStorage, receivedChunkIndexes, type DiskStorage } from "./storage";
+import { videoOrdinalIds } from "./video-public";
+import { exclusiveVideoIndex } from "@mimelux/core/exclusive-video";
 
 const visibilitySchema = z.enum(["free", "subscribers", "ppv", "subscriber_ppv"]);
 
@@ -176,8 +178,9 @@ export class MediaController {
       include: { media: { orderBy: { createdAt: "asc" } } },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     });
+    const ordinals = await videoOrdinalIds(actor.creator.id);
     return {
-      items: posts.map((post) => this.present(post, true)),
+      items: posts.map((post) => this.present(post, ordinals, actor.admin)),
       defaultVideoPriceCents: actor.creator.defaultVideoPriceCents,
     };
   }
@@ -228,6 +231,7 @@ export class MediaController {
       include: { media: { orderBy: { createdAt: "asc" } } },
       orderBy: [{ publishedAt: "desc" }, { sortOrder: "asc" }],
     });
+    const ordinals = await videoOrdinalIds(creator.id);
     const items = [];
     for (const post of posts) {
       const media = post.media.find((item) => item.kind === "VIDEO") ?? post.media[0];
@@ -261,7 +265,7 @@ export class MediaController {
       items.push({
         id: post.id,
         mediaId: media.id,
-        caption: post.caption,
+        exclusiveIndex: exclusiveVideoIndex(ordinals, post.id),
         priceCents: post.priceCents ?? creator.defaultVideoPriceCents,
         previewUrl: previewKey ? `/media/${previewKey}${previewVersion ? `?v=${previewVersion}` : ""}` : null,
         fileUrl: null,
@@ -428,13 +432,12 @@ export class MediaController {
     });
     await database.mediaUpload.update({ where: { id: upload.id }, data: { status: "complete" } });
     const full = await database.post.findUniqueOrThrow({ where: { id: post.id }, include: { media: true } });
-    if (upload.actorId) {
-      const actor = await database.user.findUnique({ where: { id: upload.actorId } });
-      if (actor?.role === "ADMIN") {
-        await audit(actor.id, "media.upload", post.id, { creatorId: upload.creatorId, mediaId: saved.id, visibility });
-      }
+    const uploader = upload.actorId ? await database.user.findUnique({ where: { id: upload.actorId } }) : null;
+    if (uploader?.role === "ADMIN") {
+      await audit(uploader.id, "media.upload", post.id, { creatorId: upload.creatorId, mediaId: saved.id, visibility });
     }
-    return { item: this.present(full, true) };
+    const ordinals = await videoOrdinalIds(upload.creatorId);
+    return { item: this.present(full, ordinals, uploader?.role === "ADMIN") };
   }
 
   @Patch("media/items/order")
@@ -494,7 +497,7 @@ export class MediaController {
     await database.post.update({
       where: { id: post.id },
       data: {
-        caption: parsed.data.caption ?? post.caption,
+        caption: post.media.some((item) => item.kind === "VIDEO") && !actor.admin ? post.caption : (parsed.data.caption ?? post.caption),
         visibility,
         priceCents,
         publishedAt:
@@ -509,7 +512,8 @@ export class MediaController {
       await audit(actor.user.id, "media.update", post.id, { creatorId: post.creatorId, visibility });
     }
     const full = await database.post.findUniqueOrThrow({ where: { id: post.id }, include: { media: true } });
-    return { item: this.present(full, true) };
+    const ordinals = await videoOrdinalIds(post.creatorId);
+    return { item: this.present(full, ordinals, actor.admin) };
   }
 
   @Delete("media/items/:id")
@@ -668,14 +672,18 @@ export class MediaController {
         durationMs: number | null;
       }[];
     },
-    manager: boolean,
+    ordinals: string[],
+    revealCaption: boolean,
+    manager = true,
   ) {
     const media = post.media[0];
     const locked = isLocked(post.visibility);
+    const video = post.media.some((item) => item.kind === "VIDEO") || media?.kind === "VIDEO";
     return {
       id: post.id,
       creatorId: post.creatorId,
-      caption: post.caption,
+      caption: video && !revealCaption ? "" : post.caption,
+      exclusiveIndex: video ? exclusiveVideoIndex(ordinals, post.id) : undefined,
       visibility: fromVisibility(post.visibility),
       priceCents: post.priceCents,
       publishedAt: post.publishedAt?.toISOString() ?? null,

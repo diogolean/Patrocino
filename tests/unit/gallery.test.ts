@@ -20,7 +20,7 @@ function video(id: string, publishedAt: string): SubscriberVideo {
   return {
     id,
     mediaId: `media-${id}`,
-    caption: id,
+    exclusiveIndex: 1,
     priceCents: 100,
     previewUrl: null,
     purchased: false,

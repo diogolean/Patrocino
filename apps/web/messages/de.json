@@ -541,6 +541,7 @@
   },
   "media": {
     "fallbackLabel": "Medium",
+    "exclusiveVideo": "Exklusives Video #{n}",
     "previous": "Zurück",
     "next": "Weiter",
     "openFailed": "Dieses Medium konnte nicht geöffnet werden.",

@@ -43,7 +43,7 @@ type ThreadMessage = {
   id: string;
   body: string;
   mine?: boolean;
-  offer: { postId: string; title: string; priceCents: number; purchased: boolean } | null;
+  offer: { postId: string; exclusiveIndex?: number; title?: string; priceCents: number; purchased: boolean } | null;
 };
 
 type OpenThread = {
@@ -148,6 +148,7 @@ function DockNotifications() {
 export function ChatDock() {
   const pathname = usePathname();
   const t = useTranslations("dock");
+  const media = useTranslations("media");
   const creatorFallback = useTranslations("errors")("CREATOR_FALLBACK");
   const labelFor = (name: string) => name.trim() || creatorFallback;
   const previewFallback = useTranslations("notifications")("previewFallback");
@@ -392,7 +393,7 @@ export function ChatDock() {
                     </div>
                     {message.offer && (
                       <div className="mt-2 rounded-[18px] bg-ink p-3 text-white">
-                        <p className="text-base font-extrabold">{message.offer.title}</p>
+                        <p className="text-base font-extrabold">{media("exclusiveVideo", { n: message.offer.exclusiveIndex ?? 1 })}</p>
                         <p className="mt-1 text-[15px] text-white/70">{brl(message.offer.priceCents)}</p>
                         {!message.offer.purchased && (
                           <Link href={`/checkout?kind=post&id=${message.offer.postId}&creator=${thread.key}&return=${encodeURIComponent(pathname)}`} className="mt-2 block cursor-pointer text-[15px] font-bold underline">

@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { exclusiveIndexes } from "@/lib/gallery";
 import {
   ArrowDownToLine,
   ArrowUpRight,
@@ -40,6 +41,7 @@ export default function DashboardPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const locale = useLocale();
   const t = useTranslations("studio");
+  const media = useTranslations("media");
   const programCopy = useTranslations("creatorProgram");
   const [uploadName, setUploadName] = useState("");
   const [acceptsAffiliates, setAcceptsAffiliates] = useState(() => readDemo().creatorProgram.acceptsAffiliates);
@@ -87,6 +89,11 @@ export default function DashboardPage() {
     writeDemo({ specialRequests: next });
     toast.success(t("requestUpdated"));
   }
+
+  const videoNumbers = exclusiveIndexes(
+    posts.filter((item) => item.creatorId === creator.id),
+    (item) => item.mediaType === "video",
+  );
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8 lg:py-9">
@@ -168,7 +175,7 @@ export default function DashboardPage() {
             <article key={post.id} className="flex items-center gap-3 rounded-[20px] bg-surface/55 p-3 dark:bg-white/5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={post.image} alt="" className="size-14 rounded-2xl object-cover" />
-              <div className="min-w-0 flex-1"><p className="line-clamp-2 text-[9px] font-bold leading-4">{post.caption}</p><p className="mt-1 text-[8px] text-muted">{t("interactions", { count: post.likes.toLocaleString(locale) })}</p></div>
+              <div className="min-w-0 flex-1"><p className="line-clamp-2 text-[9px] font-bold leading-4">{post.mediaType === "video" ? media("exclusiveVideo", { n: videoNumbers.get(post.id) ?? 1 }) : post.caption}</p><p className="mt-1 text-[8px] text-muted">{t("interactions", { count: post.likes.toLocaleString(locale) })}</p></div>
             </article>
           ))}
         </div>

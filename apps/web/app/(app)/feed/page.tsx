@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { Sparkles } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { PostCard } from "@/components/post-card";
+import { exclusiveIndexes } from "@/lib/gallery";
 import { creators, posts, type Post } from "@/lib/gateway";
 import { ACCESS_COOKIE } from "@/lib/session-cookies";
 
@@ -14,6 +15,7 @@ function forVisitor(post: Post, cover: string): Post {
 export default async function FeedPage() {
   const jar = await cookies();
   const signedIn = Boolean(jar.get(ACCESS_COOKIE)?.value);
+  const videoNumbers = exclusiveIndexes(posts, (post) => post.mediaType === "video");
   const t = await getTranslations("feed");
   const nav = await getTranslations("nav");
 
@@ -55,7 +57,8 @@ export default async function FeedPage() {
           {posts.map((post) => {
             const creator = creators.find((item) => item.id === post.creatorId);
             if (!creator) return null;
-            return <PostCard key={post.id} post={signedIn ? post : forVisitor(post, creator.cover)} creator={creator} />;
+            const numbered = { ...post, exclusiveIndex: videoNumbers.get(post.id) };
+            return <PostCard key={post.id} post={signedIn ? numbered : forVisitor(numbered, creator.cover)} creator={creator} />;
           })}
         </div>
       </section>

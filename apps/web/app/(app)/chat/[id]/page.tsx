@@ -22,6 +22,7 @@ import { requestUnreadRefresh, THREAD_REFRESH_EVENT } from "@/lib/message-notifi
 
 export default function ConversationPage() {
   const t = useTranslations("chatPage");
+  const media = useTranslations("media");
   const params = useParams<{ id: string }>();
   const fixture = resolveChatCreator(creators, params.id);
   const [remote, setRemote] = useState<{ id: string; username: string | null; name: string; avatarUrl: string | null } | null>(null);
@@ -33,7 +34,7 @@ export default function ConversationPage() {
     id: string;
     body: string;
     mine?: boolean;
-    offer: { postId: string; title: string; priceCents: number; purchased: boolean } | null;
+    offer: { postId: string; exclusiveIndex?: number; priceCents: number; purchased: boolean } | null;
   };
   const [thread, setThread] = useState<ThreadMessage[]>([]);
 
@@ -145,7 +146,7 @@ export default function ConversationPage() {
             </div>
             {message.offer && (
               <div data-testid="chat-ppv-offer" className="mt-2 overflow-hidden rounded-[24px_24px_24px_6px] bg-ink p-4 text-white shadow-lg">
-                <p className="text-xs font-extrabold">{message.offer.title}</p>
+                <p className="text-xs font-extrabold">{media("exclusiveVideo", { n: message.offer.exclusiveIndex ?? 1 })}</p>
                 <p className="mt-1 text-[9px] text-white/60">{brl(message.offer.priceCents)}</p>
                 {!message.offer.purchased && (
                   <Link href={`/checkout?kind=post&id=${message.offer.postId}&creator=${params.id}&return=/chat/${params.id}`}>
