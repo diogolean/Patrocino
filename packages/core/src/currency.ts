@@ -220,3 +220,20 @@ export function readAffiliateCookieHeader(cookieHeader: string | null | undefine
     return parseAffiliateCookie(raw);
   }
 }
+
+/** Opaque tracking code alphabet: lowercase letters and digits without look-alikes (0/o, 1/l/i). */
+const LINK_CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+export const LINK_CODE_PATTERN = /^[a-z0-9]{6,12}$/;
+
+/** Random opaque code for an affiliate or an affiliate-creator link. Never derived from a name. */
+export function opaqueLinkCode(length = 6, random: (size: number) => Uint8Array = (size) => crypto.getRandomValues(new Uint8Array(size))) {
+  const bytes = random(length);
+  let code = "";
+  for (let index = 0; index < length; index += 1) code += LINK_CODE_ALPHABET[(bytes[index] ?? 0) % LINK_CODE_ALPHABET.length];
+  return code;
+}
+
+/** Public tracking link: /<creator-username>/<opaque link code>. The affiliate's name never appears. */
+export function affiliateLinkPath(username: string, code: string) {
+  return `/${encodeURIComponent(username)}/${encodeURIComponent(code)}`;
+}

@@ -11,10 +11,13 @@ import { brl, compact, creatorLikeTotal, creators } from "@/lib/gateway";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 import { paymentGateway } from "@/lib/payments";
 import { useRoleGuard } from "@/lib/use-role-guard";
+
+// An admin can also hold an affiliate profile; the page loads it from /affiliate/me.
+const ADMIN_ALSO = ["admin"] as const;
 import { toast } from "sonner";
 
 export default function AffiliateDashboardPage() {
-  const allowed = useRoleGuard("affiliate");
+  const allowed = useRoleGuard("affiliate", ADMIN_ALSO);
   const t = useTranslations("affiliate");
   const locale = useLocale();
   const [state, setState] = useState(() => readDemo());

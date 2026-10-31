@@ -579,7 +579,7 @@ export class MediaController {
 
   /** Unblurred cover for a fan who can read the post, e.g. a paid PPV video. */
   private posterUrl(mediaId: string, userId: string) {
-    const exp = Math.floor(Date.now() / 1000) + 60 * 60;
+    const exp = Math.floor(Date.now() / 1000) + 12 * 60 * 60;
     return `/v1/media/${mediaId}/poster?token=${encodeURIComponent(signMediaGrant({ mediaId, userId, exp, kind: "poster" }))}`;
   }
 

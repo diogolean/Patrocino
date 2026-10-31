@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { database, Prisma } from "@mimelux/db/runtime";
-import { AFFILIATE_WINDOW_DAYS, conversionRate, presentCommissionStatus, progressionSeries, type LedgerStatus } from "@mimelux/core/currency";
+import { affiliateLinkPath, AFFILIATE_WINDOW_DAYS, conversionRate, presentCommissionStatus, progressionSeries, type LedgerStatus } from "@mimelux/core/currency";
 
 const windowMs = AFFILIATE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
@@ -43,12 +43,42 @@ export async function recordAffiliateClick(input: {
   subId?: string | null;
   locale?: string | null;
   creator?: string | null;
+  /** /<creator>/<code> links: match the code only and require it to belong to that creator. */
+  exact?: boolean;
   ip?: string | null;
   userAgent?: string | null;
 }) {
+  if (input.exact) {
+    const link = await exactTrackingLink(input.code, input.creator);
+    if (!link || link.affiliate.status !== "ACTIVE") return null;
+    return createClick(link, input);
+  }
   const base = await findTrackingLink(input.code);
   if (!base || base.affiliate.status !== "ACTIVE") return null;
   const link = (await creatorLinkFor(base.affiliateId, input.creator)) ?? base;
+  return createClick(link, input);
+}
+
+type TrackingLink = NonNullable<Awaited<ReturnType<typeof findTrackingLink>>>;
+
+export async function exactTrackingLink(code: string, creator: string | null | undefined) {
+  const key = code.trim();
+  const username = creator?.trim();
+  if (!key || !username) return null;
+  const link = await database.affiliateLink.findFirst({
+    where: { active: true, code: key },
+    include: {
+      affiliate: true,
+      creator: { include: { user: { include: { profile: true } } } },
+    },
+  });
+  return link && link.creator.user.profile?.username === username ? link : null;
+}
+
+async function createClick(
+  link: TrackingLink,
+  input: { subId?: string | null; locale?: string | null; ip?: string | null; userAgent?: string | null },
+) {
   const subId = (input.subId || "direct").slice(0, 40);
   const click = await database.click.create({
     data: {
@@ -193,7 +223,7 @@ export async function affiliateDashboard(affiliateId: string, now = new Date()) 
     ).length;
     return {
       code: link.code,
-      path: `/r/${link.code}`,
+      path: affiliateLinkPath(link.creator.user.profile?.username ?? link.creatorId, link.code),
       username: link.creator.user.profile?.username ?? "",
       name: link.creator.user.profile?.name ?? "",
       clicks: link.clicks.length,

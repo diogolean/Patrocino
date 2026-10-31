@@ -4,7 +4,7 @@ import { LockKeyhole, Play } from "lucide-react";
 import { useLocale } from "next-intl";
 import { formatMoney } from "@mimelux/core/currency";
 import { refreshSession } from "@/lib/session";
-import { formatDuration, ppvCover, type SubscriberVideo } from "@/lib/gallery";
+import { formatDuration, ppvCardView, type SubscriberVideo } from "@/lib/gallery";
 
 export type { SubscriberVideo };
 
@@ -24,8 +24,7 @@ function shield(event: { preventDefault: () => void }) {
 export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; onOpen: () => void }) {
   const locale = useLocale();
   const duration = formatDuration(video.durationMs);
-  const locked = !video.purchased;
-  const cover = ppvCover(video);
+  const { locked, cover, blurred } = ppvCardView(video);
   const price = formatMoney(video.priceCents, video.currency ?? "BRL", locale);
   return (
     <button
@@ -39,7 +38,7 @@ export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; o
     >
       <span
         aria-hidden
-        className={`absolute inset-0 scale-105 bg-cover bg-center ${locked ? "blur-sm" : ""}`}
+        className={`absolute inset-0 scale-105 bg-cover bg-center ${blurred ? "blur-sm" : ""}`}
         style={cover ? { backgroundImage: `url("${cover.replace(/"/g, "")}")` } : undefined}
       />
       <span className={`absolute inset-0 ${locked ? "bg-black/25" : "bg-black/15"}`} />

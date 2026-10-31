@@ -6,6 +6,7 @@ import {
   formatDuration,
   layoutGalleryRows,
   mergeGallery,
+  ppvCardView,
   profileVideoCount,
   renewPlan,
   type SubscriberVideo,
@@ -169,5 +170,27 @@ describe("ppvCover", () => {
     expect(ppvCover({ purchased: true, posterUrl: "/v1/p", previewUrl: "/blur" })).toBe("/v1/p");
     expect(ppvCover({ purchased: false, posterUrl: "/v1/p", previewUrl: "/blur" })).toBe("/blur");
     expect(ppvCover({ purchased: true, posterUrl: null, previewUrl: "/blur" })).toBe("/blur");
+  });
+});
+
+describe("ppv card on every grid", () => {
+  const bought: SubscriberVideo = {
+    id: "v1", mediaId: "m1", purchased: true, previewUrl: "/blurred.jpg", posterUrl: "/v1/media/m1/poster?token=t",
+    publishedAt: "2026-10-30T00:00:00.000Z", priceCents: 100, exclusiveIndex: 1, durationMs: 1000,
+  } as SubscriberVideo;
+  const locked: SubscriberVideo = { ...bought, id: "v2", mediaId: "m2", purchased: false, posterUrl: undefined } as SubscriberVideo;
+  const photo = { id: "p1", mediaType: "image", publishedAt: "2026-10-29T00:00:00.000Z", visibility: "free" };
+
+  it("keeps a bought video sharp and unlocked in the posts, media and videos tabs", () => {
+    for (const tab of ["posts", "media", "videos"] as const) {
+      const entry = buildProfileGallery(tab, [photo], [bought, locked], "seed").find((item) => item.kind === "video" && item.video.id === "v1");
+      expect(entry?.kind).toBe("video");
+      if (entry?.kind !== "video") continue;
+      expect(ppvCardView(entry.video)).toEqual({ locked: false, cover: bought.posterUrl, blurred: false });
+    }
+  });
+
+  it("keeps an unbought video locked on the blurred preview", () => {
+    expect(ppvCardView(locked)).toEqual({ locked: true, cover: "/blurred.jpg", blurred: true });
   });
 });

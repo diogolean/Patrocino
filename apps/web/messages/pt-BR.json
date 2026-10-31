@@ -407,6 +407,7 @@
     "ROLE_IS_NOT_ALLOWED": "Esse papel não é permitido.",
     "CREATOR_TERMS_ARE_REQUIRED": "É preciso aceitar os termos de criador.",
     "EMAIL_ALREADY_REGISTERED": "Esse e-mail já tem uma conta.",
+    "ALREADY_AFFILIATE": "Essa conta já é afiliada.",
     "INVALID_REFRESH_TOKEN": "Sessão expirada. Entre de novo.",
     "INVALID_VERIFICATION_TOKEN": "Link de confirmação inválido.",
     "CONVERSATION_NOT_FOUND": "Conversa não encontrada.",

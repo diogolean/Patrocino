@@ -1,3 +1,4 @@
+import { affiliateLinkPath, opaqueLinkCode } from "@mimelux/core/currency";
 import { apiError } from "../../http/api-error";
 import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
@@ -107,7 +108,7 @@ async function audit(actorId: string, action: string, entityType: string, entity
 }
 
 function linkCode() {
-  return randomBytes(4).toString("hex");
+  return opaqueLinkCode(6);
 }
 
 @ApiTags("admin")
@@ -145,7 +146,7 @@ export class AdminCommerceController {
         })),
         links: row.links.map((item) => ({
           code: item.code,
-          path: `/r/${item.code}`,
+          path: affiliateLinkPath(item.creator.user.profile?.username ?? item.creatorId, item.code),
           creatorId: item.creatorId,
           username: item.creator.user.profile?.username ?? "",
         })),
@@ -190,10 +191,28 @@ export class AdminCommerceController {
     const parsed = affiliateCreateSchema.safeParse(body);
     if (!parsed.success) throw apiError(400, "INVALID_REQUEST", "Invalid request");
     const email = parsed.data.email.trim().toLowerCase();
-    const existing = await database.user.findUnique({ where: { email } });
-    if (existing) throw apiError(409, "EMAIL_ALREADY_REGISTERED", "Email already registered");
+    const existing = await database.user.findUnique({ where: { email }, include: { affiliate: true } });
+    if (existing) {
+      // An existing account (fan, creator or admin) keeps its role and login; it only gains an affiliate profile.
+      if (existing.affiliate) throw apiError(409, "ALREADY_AFFILIATE", "User is already an affiliate");
+      const attached = await database.affiliate.create({
+        data: {
+          userId: existing.id,
+          code: opaqueLinkCode(8),
+          displayName: parsed.data.name,
+          commissionBps: bps(parsed.data.commissionPercent),
+        },
+      });
+      for (const creatorId of parsed.data.creatorIds ?? []) {
+        const creator = await database.creator.findUnique({ where: { id: creatorId } });
+        if (!creator) continue;
+        await database.affiliateAssignment.create({ data: { affiliateId: attached.id, creatorId } });
+      }
+      await audit(actorId, "affiliate.attach", "affiliate", attached.id, { userId: existing.id });
+      return { id: attached.id, temporaryPassword: null, existingUser: true };
+    }
     const temporaryPassword = randomBytes(9).toString("base64url");
-    const code = linkCode();
+    const code = opaqueLinkCode(8);
     const user = await database.user.create({
       data: {
         email,
@@ -310,7 +329,7 @@ export class AdminCommerceController {
     });
     if (existing) {
       const saved = existing.active ? existing : await database.affiliateLink.update({ where: { id: existing.id }, data: { active: true } });
-      return { code: saved.code, path: `/r/${saved.code}` };
+      return { code: saved.code, path: affiliateLinkPath(creator.user.profile?.username ?? creator.id, saved.code) };
     }
     let code = linkCode();
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -323,7 +342,7 @@ export class AdminCommerceController {
       data: { affiliateId: id, creatorId: creator.id, slug: username, code },
     });
     await audit(actorId, "affiliate.link", "affiliate", id, { creatorId: creator.id, code });
-    return { code: created.code, path: `/r/${created.code}` };
+    return { code: created.code, path: affiliateLinkPath(username, created.code) };
   }
 
   @Get("admin/packs")

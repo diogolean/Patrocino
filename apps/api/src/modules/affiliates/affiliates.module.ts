@@ -13,6 +13,7 @@ const clickSchema = z.object({
   subId: z.string().trim().max(40).optional(),
   locale: z.string().trim().max(12).optional(),
   creator: z.string().trim().max(80).optional(),
+  exact: z.boolean().optional(),
 });
 
 @ApiTags("affiliates")
@@ -27,6 +28,7 @@ export class AffiliatesController {
       subId: parsed.data.subId,
       locale: parsed.data.locale,
       creator: parsed.data.creator,
+      exact: parsed.data.exact,
       ip: resolveClientIp(request),
       userAgent: request.header("user-agent"),
     });

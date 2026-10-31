@@ -407,6 +407,7 @@
     "ROLE_IS_NOT_ALLOWED": "That role is not allowed.",
     "CREATOR_TERMS_ARE_REQUIRED": "Creator terms are required.",
     "EMAIL_ALREADY_REGISTERED": "That email already has an account.",
+    "ALREADY_AFFILIATE": "This account is already an affiliate.",
     "INVALID_REFRESH_TOKEN": "Session expired. Sign in again.",
     "INVALID_VERIFICATION_TOKEN": "Invalid confirmation link.",
     "CONVERSATION_NOT_FOUND": "Conversation not found.",

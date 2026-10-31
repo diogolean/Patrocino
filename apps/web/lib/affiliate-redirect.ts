@@ -55,7 +55,7 @@ export async function resolveAffiliateRedirect(input: {
     fallbackCreator: input.fallbackCreator,
   });
   const location = path.startsWith("/creator/")
-    ? withReferralQuery(path, { sub: input.subId, lang: input.locale, ref: input.code })
+    ? withReferralQuery(path, { sub: input.subId, lang: input.locale, ref: recorded?.code })
     : path;
   const username = input.requestedCreator?.trim() || recorded?.creatorUsername?.trim() || input.fallbackCreator?.trim() || "";
   const cookie = recorded?.clickId && recorded.code && username

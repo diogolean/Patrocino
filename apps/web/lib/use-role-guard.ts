@@ -12,7 +12,7 @@ export function roleHome(role: SessionRole) {
   return "/topcreators?tab=top-creators";
 }
 
-export function useRoleGuard(required: AccountRole) {
+export function useRoleGuard(required: AccountRole, alsoAllowed: readonly SessionRole[] = []) {
   const router = useRouter();
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
 
@@ -26,8 +26,9 @@ export function useRoleGuard(required: AccountRole) {
       router.replace("/auth?route=sign-in");
       return;
     }
-    if (session.user.role !== required) router.replace(roleHome(session.user.role));
-  }, [required, router, session]);
+    if (session.user.role !== required && !alsoAllowed.includes(session.user.role)) router.replace(roleHome(session.user.role));
+  }, [required, alsoAllowed, router, session]);
 
-  return session.status === "ready" && session.user?.role === required;
+  const role = session.user?.role;
+  return session.status === "ready" && Boolean(role) && (role === required || alsoAllowed.includes(role!));
 }

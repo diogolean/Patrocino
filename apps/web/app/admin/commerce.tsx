@@ -113,7 +113,7 @@ export function AdminCommerce() {
     setNotice("");
     setPassword("");
     try {
-      const created = await loadJson<{ temporaryPassword: string }>("/api/admin/affiliates", errors, t("saveFailed"), {
+      const created = await loadJson<{ temporaryPassword: string | null }>("/api/admin/affiliates", errors, t("saveFailed"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -123,7 +123,7 @@ export function AdminCommerce() {
           creatorIds: creatorId ? [creatorId] : [],
         }),
       });
-      setPassword(created.temporaryPassword);
+      setPassword(created.temporaryPassword ?? "");
       setNotice(t("created"));
       setName("");
       setEmail("");

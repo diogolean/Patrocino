@@ -19,6 +19,15 @@ export function ppvCover(video: Pick<SubscriberVideo, "purchased" | "posterUrl" 
   return video.purchased && video.posterUrl ? video.posterUrl : video.previewUrl;
 }
 
+/**
+ * The one place that decides how a PPV video card looks on every grid (posts, media, videos):
+ * locked or not, which cover, and whether it is blurred. A bought video is never blurred.
+ */
+export function ppvCardView(video: Pick<SubscriberVideo, "purchased" | "posterUrl" | "previewUrl">) {
+  const locked = !video.purchased;
+  return { locked, cover: ppvCover(video), blurred: locked };
+}
+
 export type GalleryEntry<T> =
   | { kind: "post"; post: T; publishedAt: string }
   | { kind: "video"; video: SubscriberVideo; publishedAt: string };

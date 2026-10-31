@@ -407,6 +407,7 @@
     "ROLE_IS_NOT_ALLOWED": "Diese Rolle ist nicht erlaubt.",
     "CREATOR_TERMS_ARE_REQUIRED": "Die Creator-Bedingungen müssen akzeptiert werden.",
     "EMAIL_ALREADY_REGISTERED": "Diese E-Mail hat schon ein Konto.",
+    "ALREADY_AFFILIATE": "Dieses Konto ist bereits Affiliate.",
     "INVALID_REFRESH_TOKEN": "Sitzung abgelaufen. Melde dich erneut an.",
     "INVALID_VERIFICATION_TOKEN": "Ungültiger Bestätigungslink.",
     "CONVERSATION_NOT_FOUND": "Unterhaltung nicht gefunden.",

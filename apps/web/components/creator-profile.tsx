@@ -3,7 +3,7 @@
 import { useDemoMoney, useVisitorCurrency } from "@/lib/visitor-currency";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BadgeCheck,
   ChevronDown,
@@ -155,6 +155,28 @@ export function CreatorProfile({
       window.removeEventListener(PAYMENT_CONFIRMED_EVENT, reloadCatalog);
     };
   }, [creator.id, creator.username]);
+
+  // Every grid (posts, media, videos) reads the same catalog. Refetch it when the tab changes or the page
+  // comes back into view, so a purchase made elsewhere and the short-lived cover grant are never stale.
+  const firstTab = useRef(true);
+  useEffect(() => {
+    let cancel = false;
+    const reload = () => {
+      void loadSubscriberCatalog(creator.username).then((catalog) => {
+        if (!cancel) setVideos(catalog);
+      });
+    };
+    if (firstTab.current) firstTab.current = false;
+    else reload();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancel = true;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [tab, creator.username]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
