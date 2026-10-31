@@ -653,7 +653,7 @@ export function CreatorProfile({
               </div>
             ) : null}
             <Link href={videoCheckout(purchase)} className="inline-flex h-11 w-full items-center justify-center rounded-full bg-primary text-sm font-semibold text-ink">
-              {t("unlock", { price: brl(purchase.priceCents) })}
+              {t("unlock", { price: money(purchase.priceCents) })}
             </Link>
           </div>
         )}

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { demoAffiliate } from "@/lib/affiliates";
-import { affiliateCookie, resolveAffiliateRedirect, type RecordedClick } from "@/lib/affiliate-redirect";
+import { affiliateCookie, publicOrigin, resolveAffiliateRedirect, type RecordedClick } from "@/lib/affiliate-redirect";
 import { apiBase } from "@/lib/api-auth";
 import { creators } from "@/lib/gateway";
 
@@ -48,7 +48,7 @@ export async function GET(request: Request, context: Context) {
       secure: url.protocol === "https:",
     });
   }
-  const response = NextResponse.redirect(new URL(result.location, url.origin));
+  const response = NextResponse.redirect(new URL(result.location, publicOrigin(request)));
   if (result.cookie) response.cookies.set(result.cookie.name, result.cookie.value, result.cookie.options);
   return response;
 }

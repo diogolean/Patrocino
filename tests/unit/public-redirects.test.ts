@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { affiliateDestination, resolveAffiliateRedirect } from "../../apps/web/lib/affiliate-redirect";
+import { affiliateDestination, publicOrigin, resolveAffiliateRedirect } from "../../apps/web/lib/affiliate-redirect";
 import { googleAuthorizeUrl } from "../../apps/web/lib/google-start";
 import { shownCaption } from "../../apps/web/lib/public-caption";
 
@@ -69,5 +69,17 @@ describe("logged-in captions", () => {
     expect(shownCaption({ caption: "clip.mp4", video: true, index: 3, videoLabel: video, photoLabel: photo })).toBe("Vídeo exclusivo #3");
     expect(shownCaption({ caption: "IMG_2044.JPG", video: false, index: 2, videoLabel: video, photoLabel: photo })).toBe("Foto exclusiva #2");
     expect(shownCaption({ caption: "Domingo no parque", video: false, index: 1, videoLabel: video, photoLabel: photo })).toBe("Domingo no parque");
+  });
+});
+
+describe("publicOrigin", () => {
+  it("uses WEB_ORIGIN instead of the bind address", () => {
+    const previous = process.env.WEB_ORIGIN;
+    process.env.WEB_ORIGIN = "https://patrocino.com/";
+    expect(publicOrigin(new Request("https://0.0.0.0:3333/r/ezequiel"))).toBe("https://patrocino.com");
+    delete process.env.WEB_ORIGIN;
+    const request = new Request("https://0.0.0.0:3333/r/ezequiel", { headers: { "x-forwarded-host": "patrocino.com", "x-forwarded-proto": "https" } });
+    expect(publicOrigin(request)).toBe("https://patrocino.com");
+    if (previous !== undefined) process.env.WEB_ORIGIN = previous;
   });
 });
