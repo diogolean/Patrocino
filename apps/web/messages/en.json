@@ -1061,6 +1061,7 @@
     "packName": "Pack name",
     "createPack": "Create pack",
     "remove": "Remove",
+    "affiliateName": "Affiliate: {name}",
     "liveTitle": "Confirmed results",
     "liveBody": "Commission estimate. The full payment goes to Patrocino; the company pays the commission out later, manually. There is no automatic split at payment time.",
     "liveEmpty": "No confirmed commission yet.",

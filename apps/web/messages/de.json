@@ -1061,6 +1061,7 @@
     "packName": "Paketname",
     "createPack": "Paket erstellen",
     "remove": "Entfernen",
+    "affiliateName": "Affiliate: {name}",
     "liveTitle": "Bestätigte Ergebnisse",
     "liveBody": "Provisionsschätzung. Die volle Zahlung geht an Patrocino; die Firma zahlt die Provision später manuell aus. Keine automatische Aufteilung bei der Zahlung.",
     "liveEmpty": "Noch keine bestätigte Provision.",

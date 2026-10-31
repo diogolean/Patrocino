@@ -1061,6 +1061,7 @@
     "packName": "Nombre del paquete",
     "createPack": "Crear paquete",
     "remove": "Quitar",
+    "affiliateName": "Afiliado: {name}",
     "liveTitle": "Resultados confirmados",
     "liveBody": "Estimación de comisión. El pago entra completo en Patrocino; la empresa transfiere la comisión después, manualmente. No hay división automática en el pago.",
     "liveEmpty": "Todavía no hay comisión confirmada.",

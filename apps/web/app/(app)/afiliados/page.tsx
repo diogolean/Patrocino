@@ -19,6 +19,8 @@ import { toast } from "sonner";
 export default function AffiliateDashboardPage() {
   const allowed = useRoleGuard("affiliate", ADMIN_ALSO);
   const t = useTranslations("affiliate");
+  const tc = useTranslations("commerce");
+  const [liveName, setLiveName] = useState<string | null>(null);
   const locale = useLocale();
   const [state, setState] = useState(() => readDemo());
   const [creatorId, setCreatorId] = useState(creators[0]!.id);
@@ -88,11 +90,11 @@ export default function AffiliateDashboardPage() {
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8 lg:py-9">
       <div className="flex flex-wrap items-center gap-2">
         <Pill>{t("eyebrow")}</Pill>
-        <Pill>Demo · {demoAffiliate.name}</Pill>
+        {liveName ? <Pill active>{tc("affiliateName", { name: liveName })}</Pill> : <Pill>Demo · {demoAffiliate.name}</Pill>}
       </div>
       <h1 className="mt-3 text-3xl font-extrabold tracking-[-.045em]">{t("title")}</h1>
       <p className="mt-2 max-w-2xl text-xs leading-5 text-muted">{t("body")}</p>
-      <LiveResults locale={locale} />
+      <LiveResults locale={locale} onName={setLiveName} />
 
       <section data-testid="affiliate-mosaic" className="mt-8">
         <h2 className="text-2xl font-extrabold tracking-[-.04em]">{t("mosaicTitle")}</h2>
@@ -245,6 +247,7 @@ type LedgerRow = { id: string; createdAt: string; amountCents: number; currency:
 type SeriesPoint = { label: string; clicks: number; conversions: number; earningsCents: number };
 type LinkStat = { code: string; path: string; username: string; name: string; clicks: number; conversions: number; conversionRate: number };
 type Dashboard = {
+  name?: string;
   summary: { clicks: number; signups: number; purchases: number; money: { currency: string; commissionOwedCents: number }[] };
   ledger: LedgerRow[];
   links: LinkStat[];
@@ -252,7 +255,7 @@ type Dashboard = {
   monthly: SeriesPoint[];
 };
 
-function LiveResults({ locale }: { locale: string }) {
+function LiveResults({ locale, onName }: { locale: string; onName: (name: string | null) => void }) {
   const t = useTranslations("commerce");
   const [board, setBoard] = useState<Dashboard | null>(null);
   const [grain, setGrain] = useState<"day" | "month">("day");
@@ -261,7 +264,10 @@ function LiveResults({ locale }: { locale: string }) {
     fetch("/api/affiliate/me", { cache: "no-store" })
       .then(async (response) => (response.ok ? response.json() : null))
       .then((payload: Dashboard | null) => {
-        if (!cancel && payload?.summary) setBoard(payload);
+        if (!cancel && payload?.summary) {
+          setBoard(payload);
+          onName(payload.name ?? null);
+        }
       })
       .catch(() => {
         if (!cancel) setBoard(null);
@@ -269,7 +275,7 @@ function LiveResults({ locale }: { locale: string }) {
     return () => {
       cancel = true;
     };
-  }, []);
+  }, [onName]);
   if (!board) return null;
   const series = (grain === "day" ? board.daily : board.monthly) ?? [];
   const links = board.links ?? [];
