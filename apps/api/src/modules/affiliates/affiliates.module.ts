@@ -85,10 +85,10 @@ export class AffiliateSelfLinksController {
   async catalog(@Headers("authorization") authorization?: string) {
     await ownAffiliate(authorization);
     const creators = await database.creator.findMany({
-      where: { status: "ACTIVE", isDemo: false, acceptsAffiliates: true },
+      where: { status: "ACTIVE", acceptsAffiliates: true },
       include: {
         user: { include: { profile: true } },
-        contentPacks: { where: { active: true, isDemo: false }, select: { id: true, name: true }, orderBy: { createdAt: "asc" } },
+        contentPacks: { where: { active: true }, select: { id: true, name: true }, orderBy: { createdAt: "asc" } },
       },
     });
     return {
@@ -111,7 +111,7 @@ export class AffiliateSelfLinksController {
     const parsed = createLinkSchema.safeParse(body);
     if (!parsed.success) throw apiError(400, "INVALID_REQUEST", "Invalid request");
     const creator = await database.creator.findFirst({
-      where: { id: parsed.data.creatorId, status: "ACTIVE", isDemo: false, acceptsAffiliates: true },
+      where: { id: parsed.data.creatorId, status: "ACTIVE", acceptsAffiliates: true },
       include: { user: { include: { profile: true } } },
     });
     const username = creator?.user.profile?.username;
@@ -120,7 +120,7 @@ export class AffiliateSelfLinksController {
     let packId: string | null = null;
     if (parsed.data.packId) {
       const pack = await database.contentPack.findFirst({
-        where: { id: parsed.data.packId, creatorId: creator.id, active: true, isDemo: false },
+        where: { id: parsed.data.packId, creatorId: creator.id, active: true },
         select: { id: true },
       });
       if (!pack) throw apiError(404, "PACK_NOT_FOUND", "Pack not found");
