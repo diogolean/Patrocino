@@ -24,6 +24,7 @@ test("locale files stay free of gendered creator wording", () => {
 
 test("fan login lands on trending creators and the feed stays available", async ({ page }) => {
   await page.getByLabel("Email ou CPF").fill("fan@mimelux.com.br");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/topcreators\?tab=top-creators/);
   await expect(page.getByRole("heading", { name: "Em alta", exact: true })).toBeVisible();
@@ -104,10 +105,10 @@ test("logged-out marketing hero and editorial render in both viewports", async (
 });
 
 test("switching locale does not bring back gendered creator wording", async ({ page }) => {
-  await page.getByRole("button", { name: "FR", exact: true }).click();
+  await page.getByRole("main").getByRole("button", { name: "FR", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Transformez l'attention en revenu." })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/criadora|créatrice/i);
-  await page.getByRole("button", { name: "DE", exact: true }).click();
+  await page.getByRole("main").getByRole("button", { name: "DE", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Aus Aufmerksamkeit wird Einkommen." })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/criadora|Creatorin/i);
 });

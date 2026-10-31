@@ -13,7 +13,8 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatMoney } from "@mimelux/core/currency";
 import { Button, Logo, Pill } from "@mimelux/ui";
 import { apiErrorText } from "@/lib/api-error";
 import { brl, creators, plans, posts } from "@/lib/gateway";
@@ -55,6 +56,7 @@ function DemoPaymentGraphic({ seed, label }: { seed: string; label: string }) {
 
 function CheckoutContent() {
   const t = useTranslations("checkout");
+  const locale = useLocale();
   const errors = useTranslations("errors");
   const router = useRouter();
   const pathname = usePathname();
@@ -131,14 +133,25 @@ function CheckoutContent() {
   const realCheckout = methods.expay || methods.stripe;
   const subjectId = kind === "subscription" ? planParam : id;
   const quoteKey = realCheckout ? `${quoteCreatorId}:${purpose}:${subjectId}` : "";
-  const [quote, setQuote] = useState<{ key: string; cents: number | null; error: string; needsAuth: boolean }>({
+  const [quote, setQuote] = useState<{
+    key: string;
+    cents: number | null;
+    currency: "BRL" | "USD";
+    error: string;
+    needsAuth: boolean;
+    subscriberCents: number | null;
+    subscribed: boolean | null;
+  }>({
     key: "",
     cents: null,
+    currency: "BRL",
     error: "",
     needsAuth: false,
+    subscriberCents: null,
+    subscribed: null,
   });
   if (quote.key !== quoteKey) {
-    setQuote({ key: quoteKey, cents: null, error: "", needsAuth: false });
+    setQuote({ key: quoteKey, cents: null, currency: catalog?.currency ?? "BRL", error: "", needsAuth: false, subscriberCents: null, subscribed: null });
   }
   const quotedCents = quote.cents;
   const quoteError = quote.error;
@@ -150,6 +163,9 @@ function CheckoutContent() {
   const catalogCents = kind === "subscription" ? catalogPlan?.chargeCents : kind === "pack" ? catalogPack?.priceCents : undefined;
   const fixturePrices = process.env.NODE_ENV !== "production";
   const shownCents = quotedCents ?? catalogCents ?? (fixturePrices ? amount : null);
+  const shownCurrency = quotedCents != null ? quote.currency : catalog?.currency ?? "BRL";
+  const showPix = methods.expay && shownCurrency !== "USD";
+  const priceLabel = (cents: number) => formatMoney(cents, shownCurrency, locale);
   const pixKey = useMemo(() => `pix-${purpose}-${creator.id}-${id}-${crypto.randomUUID()}`, [purpose, creator.id, id]);
   const cardKey = useMemo(() => `card-${purpose}-${creator.id}-${id}-${crypto.randomUUID()}`, [purpose, creator.id, id]);
   const rememberAmount = useCallback((cents: number) => {
@@ -166,21 +182,38 @@ function CheckoutContent() {
       body: JSON.stringify({ creatorId: quoteCreatorId, purpose, subjectId }),
     })
       .then(async (response) => {
-        const payload = (await response.json().catch(() => ({}))) as { amountCents?: number; message?: string };
+        const payload = (await response.json().catch(() => ({}))) as {
+          amountCents?: number;
+          currency?: string;
+          message?: string;
+          subscriberCents?: number | null;
+          subscribed?: boolean | null;
+        };
         if (cancel) return;
         if (!response.ok || typeof payload.amountCents !== "number") {
           setQuote({
             key,
             cents: null,
+            currency: catalog?.currency ?? "BRL",
             error: response.status === 401 ? "" : apiErrorText(payload, errors, t("unavailable")),
             needsAuth: response.status === 401,
+            subscriberCents: null,
+            subscribed: null,
           });
           return;
         }
-        setQuote({ key, cents: payload.amountCents, error: "", needsAuth: false });
+        setQuote({
+          key,
+          cents: payload.amountCents,
+          currency: payload.currency === "USD" ? "USD" : "BRL",
+          error: "",
+          needsAuth: false,
+          subscriberCents: typeof payload.subscriberCents === "number" ? payload.subscriberCents : null,
+          subscribed: payload.subscribed === true,
+        });
       })
       .catch(() => {
-        if (!cancel) setQuote({ key, cents: null, error: t("quoteFailed"), needsAuth: false });
+        if (!cancel) setQuote({ key, cents: null, currency: "BRL", error: t("quoteFailed"), needsAuth: false, subscriberCents: null, subscribed: null });
       });
     return () => {
       cancel = true;
@@ -264,18 +297,18 @@ function CheckoutContent() {
         <Logo compact />
         <p className="mt-10 text-[10px] font-black uppercase tracking-[.2em] text-primary-strong">{t("protected")}</p>
         <h1 className="mt-2 text-3xl font-extrabold tracking-[-.05em]">{kind === "subscription" ? t("almostThere") : t("justForYou")}</h1>
-        <p className="mt-4 max-w-md text-sm leading-6 text-muted">{checkoutLead(t, realCheckout, methods.expay, methods.stripe)}</p>
+        <p className="mt-4 max-w-md text-sm leading-6 text-muted">{checkoutLead(t, realCheckout, showPix, methods.stripe)}</p>
 
         <div className="mt-7 flex items-center gap-4 rounded-[24px] border border-black/5 bg-white/60 p-4 dark:bg-white/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={creator.avatar} alt={creator.name} className="size-16 rounded-[20px] object-cover" />
           <div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{kind === "subscription" ? t("subscriptionOf", { name: creator.name }) : specialRequest ? t("requestFor", { name: creator.name }) : t("contentOf", { name: creator.name })}</p><p data-testid="checkout-plan" className="mt-1 text-[9px] text-muted">{kind === "subscription" ? `${catalogPlan?.name ?? plan.name}` : message ? t("exclusiveMessage") : pack ? (catalogPack?.name ?? t("packFallback")) : specialRequest ? t("agreedAmount") : t("exclusivePost")}</p></div>
-          <p data-testid="checkout-amount" className="text-sm font-black">{shownCents == null ? "…" : brl(shownCents)}</p>
+          <p data-testid="checkout-amount" className="text-sm font-black">{shownCents == null ? "…" : priceLabel(shownCents)}</p>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           {realCheckout ? (
             <>
-              {methods.expay && <Pill><ShieldCheck className="mr-1 size-3" /> {t("pix")}</Pill>}
+              {showPix && <Pill><ShieldCheck className="mr-1 size-3" /> {t("pix")}</Pill>}
               {methods.stripe && <Pill><CreditCard className="mr-1 size-3" /> {t("card")}</Pill>}
             </>
           ) : (
@@ -289,7 +322,7 @@ function CheckoutContent() {
 
       <section className="overflow-hidden rounded-[34px] border border-black/5 bg-white/75 shadow-[0_30px_90px_rgba(32,32,39,.12)] dark:bg-white/5">
         <div className="flex items-center justify-between border-b border-black/5 p-5 sm:px-7">
-          <div><p className="text-xs font-extrabold">{realCheckout ? t("paymentMethod") : t("payWithPix")}</p><p className="mt-1 text-[9px] text-muted">{methods.expay && methods.stripe ? t("methodsBoth") : realCheckout ? t("methodsReal") : t("methodsInstant")}</p></div>
+          <div><p className="text-xs font-extrabold">{realCheckout ? t("paymentMethod") : t("payWithPix")}</p><p className="mt-1 text-[9px] text-muted">{showPix && methods.stripe ? t("methodsBoth") : realCheckout ? t("methodsReal") : t("methodsInstant")}</p></div>
           <span className="grid size-10 place-items-center rounded-2xl bg-primary/20"><Sparkles className="size-5 text-primary-strong" /></span>
         </div>
         <div className="grid place-items-center p-6 sm:p-8">
@@ -303,7 +336,7 @@ function CheckoutContent() {
             </>
           )}
           {realCheckout && (
-            <p className="mb-2 text-3xl font-black tracking-[-.04em]">{shownCents == null ? "…" : brl(shownCents)}</p>
+            <p className="mb-2 text-3xl font-black tracking-[-.04em]">{shownCents == null ? "…" : priceLabel(shownCents)}</p>
           )}
           {quote.needsAuth ? (
             <Link href={signInHref} className="mb-4 block max-w-sm cursor-pointer text-center text-sm font-semibold text-accent-strong underline underline-offset-4 hover:opacity-80">
@@ -312,15 +345,23 @@ function CheckoutContent() {
           ) : quoteError ? (
             <p className="mb-4 max-w-sm text-center text-sm text-accent-strong">{quoteError}</p>
           ) : null}
+          {kind === "post" && quote.subscribed === false && quote.subscriberCents != null && quotedCents != null && quote.subscriberCents < quotedCents ? (
+            <div className="mb-4 max-w-sm rounded-2xl bg-primary/15 px-4 py-3 text-center text-sm" data-testid="subscriber-discount">
+              <p className="font-extrabold">{t("subscriberDiscount")}</p>
+              <p className="mt-1">{t("subscriberPays", { price: priceLabel(quote.subscriberCents) })}</p>
+              <Link href={`/creator/${creator.username}`} className="mt-2 inline-block font-bold text-primary-strong">{t("subscribeInstead")}</Link>
+            </div>
+          ) : null}
+          {realCheckout && !showPix && !methods.stripe ? <p className="mb-4 max-w-sm text-center text-sm">{t("pixOnlyBrl")}</p> : null}
           {realCheckout ? (
             <div className="mt-5 grid w-full max-w-sm grid-cols-2 gap-3">
-              {methods.expay && (
+              {showPix && (
                 <Button size="lg" className={methods.stripe ? "w-full" : "col-span-2 w-full"} onClick={() => setPixOpen(true)} disabled={quotedCents == null}>
                   {t("payPix")}
                 </Button>
               )}
               {methods.stripe && (
-                <Button size="lg" variant="outline" className={methods.expay ? "w-full" : "col-span-2 w-full"} onClick={() => setCardOpen(true)} disabled={quotedCents == null}>
+                <Button size="lg" variant="outline" className={showPix ? "w-full" : "col-span-2 w-full"} onClick={() => setCardOpen(true)} disabled={quotedCents == null}>
                   <CreditCard className="size-4" /> {t("card")}
                 </Button>
               )}
@@ -331,7 +372,7 @@ function CheckoutContent() {
               {paying ? t("confirming") : t("simulate")}
             </Button>
           )}
-          <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">{checkoutFoot(t, methods.expay, methods.stripe)}</p>
+          <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">{checkoutFoot(t, showPix, methods.stripe)}</p>
         </div>
       </section>
       {pixOpen && <ExpayCheckoutModal

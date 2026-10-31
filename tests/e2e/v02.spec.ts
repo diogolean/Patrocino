@@ -40,7 +40,8 @@ test("affiliate link signup and simulated subscription create a commission", asy
   await expect(page).toHaveURL(/\/verificacao/);
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Verificar e continuar" }).click();
-  await page.getByRole("button", { name: /Pular tutorial/ }).click();
+  const tutorial = page.getByRole("button", { name: /Pular tutorial/ });
+  if (await tutorial.isVisible().catch(() => false)) await tutorial.click();
 
   await page.goto("/creator/lunaferraz");
   await page.getByRole("link", { name: /1 mês/ }).click();
@@ -49,6 +50,7 @@ test("affiliate link signup and simulated subscription create a commission", asy
 
   await page.goto("/auth?route=sign-in");
   await page.getByLabel("Email ou CPF").fill("afiliado@mimelux.com.br");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/afiliados/);
   await expect(page.getByText("qa-tiktok").first()).toBeVisible();
@@ -57,7 +59,7 @@ test("affiliate link signup and simulated subscription create a commission", asy
 
 test("language switch and browser language change the login copy", async ({ page, browser }) => {
   await page.goto("/auth?route=sign-in");
-  await page.getByRole("button", { name: "EN", exact: true }).click();
+  await page.getByRole("main").getByRole("button", { name: "EN", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Good to see you." })).toBeVisible();
   await expect(page.getByTestId("monetize-section")).toContainText("Monetize with us, your way");
 

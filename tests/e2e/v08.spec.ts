@@ -21,6 +21,7 @@ async function acceptCookies(page: Page) {
 async function signIn(page: Page, email: string) {
   await page.goto("/auth?route=sign-in");
   await page.getByLabel("Email ou CPF").fill(email);
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
 }
 
@@ -49,7 +50,9 @@ test("home, login, profile, and logo boards use Patrocino", async ({ page }) => 
   await page.setViewportSize({ width: 1440, height: 900 });
   await acceptCookies(page);
   await page.goto("/auth?route=sign-in");
-  await expect(page.getByLabel("Email ou CPF")).toHaveValue("fan@patrocino.com");
+  await expect(page.getByLabel("Email ou CPF")).toHaveValue("");
+  await page.getByLabel("Email ou CPF").fill("fan@patrocino.com");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await expect(page.getByText("Patrocino").first()).toBeVisible();
   await expect(page.getByText("FanMimo")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("Mimelux", { ignoreCase: false });

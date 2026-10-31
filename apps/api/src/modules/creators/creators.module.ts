@@ -1,6 +1,7 @@
 import { apiError } from "../../http/api-error";
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Module, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { currencyForVisitor } from "@mimelux/core/currency";
 import { planChargeCents } from "@mimelux/core/monetization";
 import { Prisma, database } from "@mimelux/db/runtime";
 import { z } from "zod";
@@ -287,8 +288,13 @@ class CreatorsController {
 
   @Get(":username")
   @ApiOperation({ summary: "Get a creator profile" })
-  async get(@Param("username") username: string) {
-    return loadCreatorOffers(username);
+  async get(
+    @Param("username") username: string,
+    @Headers("cf-ipcountry") country?: string,
+    @Headers("x-patrocino-locale") locale?: string,
+    @Headers("accept-language") acceptLanguage?: string,
+  ) {
+    return loadCreatorOffers(username, currencyForVisitor({ country, locale, acceptLanguage }));
   }
 
   private async scopedCreator(

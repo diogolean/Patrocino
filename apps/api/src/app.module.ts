@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AdminModule } from "./modules/admin/admin.module";
+import { AffiliatesModule } from "./modules/affiliates/affiliates.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { ChatModule } from "./modules/chat/chat.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
@@ -15,6 +16,7 @@ import { HealthController } from "./health.controller";
   imports: [
     AuthModule,
     AdminModule,
+    AffiliatesModule,
     CreatorsModule,
     ContentModule,
     MediaModule,

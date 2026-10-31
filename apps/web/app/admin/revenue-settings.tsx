@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
 import { apiErrorText } from "@/lib/api-error";
@@ -24,9 +24,12 @@ export function RevenueSettings() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
+  const creatorRequest = useRef(0);
   const loadCreators = useCallback(async (nextQuery: string) => {
+    const request = ++creatorRequest.current;
     const response = await fetch(`/api/admin/creators?q=${encodeURIComponent(nextQuery)}`, { cache: "no-store" });
     const data = (await response.json()) as { code?: unknown; message?: unknown; creators?: CreatorRow[] };
+    if (request !== creatorRequest.current) return;
     if (!response.ok) {
       setError(apiErrorText(data, errors, t("creatorsFailed")));
       return;

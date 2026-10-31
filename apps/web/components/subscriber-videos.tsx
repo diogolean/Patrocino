@@ -1,7 +1,8 @@
 "use client";
 
 import { LockKeyhole, Play } from "lucide-react";
-import { brl } from "@/lib/gateway";
+import { useLocale } from "next-intl";
+import { formatMoney } from "@mimelux/core/currency";
 import { formatDuration, type SubscriberVideo } from "@/lib/gallery";
 
 export type { SubscriberVideo };
@@ -18,8 +19,10 @@ function shield(event: { preventDefault: () => void }) {
 }
 
 export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; onOpen: () => void }) {
+  const locale = useLocale();
   const duration = formatDuration(video.durationMs);
   const locked = !video.purchased;
+  const price = formatMoney(video.priceCents, video.currency ?? "BRL", locale);
   return (
     <button
       type="button"
@@ -49,7 +52,7 @@ export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; o
             </span>
           </span>
           {duration ? <span className="mt-2 block text-[10px] font-semibold">{duration}</span> : null}
-          {locked ? <span className="mt-1 block text-[10px] font-semibold">{brl(video.priceCents)}</span> : null}
+          {locked ? <span className="mt-1 block text-[10px] font-semibold">{price}</span> : null}
         </span>
       </span>
     </button>

@@ -210,20 +210,24 @@ describe("subscriber pay-per-view videos", () => {
     expect(resolveVideoPrice({ visibility: "PPV" })).toBeNull();
   });
 
-  it("blocks a non-subscriber, prices from the database, and withholds the file until purchase", async () => {
-    await expect(
-      chargeDraftForUser(
-        { id: ids.outsiderId, email: `ppv-out-${suffix}@patrocino.test` },
-        {
-          creatorId: ids.username,
-          purpose: "post",
-          subjectId: ids.postId,
-          amountCents: 1,
-          buyerId: ids.fanId,
-          idempotencyKey: `ppv-out-${suffix}`,
-        },
-      ),
-    ).rejects.toSatisfy((error: unknown) => statusOf(error) === 403);
+  it("lets a non-subscriber buy at the guest price and a subscriber at the lower price", async () => {
+    await database.post.update({
+      where: { id: ids.postId },
+      data: { guestPriceCents: 5900, guestPriceCentsUsd: 2400 },
+    });
+    const outsider = await chargeDraftForUser(
+      { id: ids.outsiderId, email: `ppv-out-${suffix}@patrocino.test` },
+      {
+        creatorId: ids.username,
+        purpose: "post",
+        subjectId: ids.postId,
+        amountCents: 1,
+        buyerId: ids.fanId,
+        idempotencyKey: `ppv-out-${suffix}`,
+      },
+    );
+    expect(outsider.buyerId).toBe(ids.outsiderId);
+    expect(outsider.amountCents).toBe(5900);
 
     const draft = await chargeDraftForUser(
       { id: ids.fanId, email: `ppv-fan-${suffix}@patrocino.test` },

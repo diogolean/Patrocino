@@ -31,6 +31,8 @@ test("visitors land on the feed and demo fan login opens trending creators", asy
   await expect(page).toHaveURL(/\/auth\?route=sign-in/);
   await expect(page.getByRole("heading", { name: "Que bom ter você aqui." })).toBeVisible();
 
+  await page.getByLabel("Email ou CPF").fill("fan@patrocino.com");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/topcreators/);
   await expect(page.getByRole("heading", { name: "Em alta", exact: true })).toBeVisible();
@@ -109,6 +111,7 @@ test("creator dashboard keeps uploads local and generated media loads", async ({
 }) => {
   await page.goto("/auth?route=sign-in");
   await page.getByLabel("Email ou CPF").fill("criadora@mimelux.com.br");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/painel/);
   await expect(page.getByTestId("media-library")).toBeVisible();

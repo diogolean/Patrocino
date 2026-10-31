@@ -1,11 +1,12 @@
 import { database } from "@mimelux/db/runtime";
+import { centsForCurrency, type ChargeCurrency } from "@mimelux/core/currency";
 import { chargeForPlan, type PromotionInput } from "../payments/plan-price";
 
 function keysFor(key: string) {
   return Array.from(new Set([key, key.replace(/-/g, "")]));
 }
 
-export async function loadCreatorOffers(key: string) {
+export async function loadCreatorOffers(key: string, currency: ChargeCurrency = "BRL") {
   const keys = keysFor(key);
   const creator = await database.creator.findFirst({
     where: {
@@ -32,12 +33,15 @@ export async function loadCreatorOffers(key: string) {
     redeemedCount: row.redeemedCount,
     active: row.active,
   }));
-  const pricedPlans = creator.plans.map((plan) => ({ plan, priced: chargeForPlan(plan, promotions) }));
+  const pricedPlans = creator.plans.map((plan) => {
+    const sticker = centsForCurrency(currency, plan.priceCents, plan.priceCentsUsd);
+    return { plan, priced: chargeForPlan({ ...plan, priceCents: sticker }, promotions) };
+  });
   const plans = pricedPlans.map(({ plan, priced }) => ({
     id: plan.id,
     name: plan.name,
     months: plan.durationMonths,
-    priceCents: plan.priceCents,
+    priceCents: priced.chargeCents,
     discountPercent: plan.discountPercent,
     chargeCents: priced.chargeCents,
     promotionPercent: priced.promotion?.discountPercent ?? 0,
@@ -65,11 +69,12 @@ export async function loadCreatorOffers(key: string) {
     likeCount: creator.posts.reduce((total, post) => total + post.likeCount, 0),
     aiGenerated: creator.aiGenerated,
     fictitious: creator.fictitious,
+    currency,
     plans,
     packs: creator.contentPacks.map((pack) => ({
       id: pack.id,
       name: pack.name,
-      priceCents: pack.priceCents,
+      priceCents: centsForCurrency(currency, pack.priceCents, pack.priceCentsUsd),
     })),
     promotion: banner
       ? {

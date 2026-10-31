@@ -31,6 +31,10 @@
     "./return-path": {
       "types": "./dist/return-path.d.ts",
       "default": "./dist/return-path.js"
+    },
+    "./currency": {
+      "types": "./dist/currency.d.ts",
+      "default": "./dist/currency.js"
     }
   },
   "dependencies": {

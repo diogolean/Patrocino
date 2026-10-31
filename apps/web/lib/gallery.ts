@@ -3,6 +3,8 @@ export type SubscriberVideo = {
   mediaId: string;
   exclusiveIndex: number;
   priceCents: number;
+  subscriberCents?: number;
+  currency?: "BRL" | "USD";
   previewUrl: string | null;
   purchased: boolean;
   subscribed: boolean;

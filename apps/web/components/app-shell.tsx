@@ -21,15 +21,16 @@ import {
 } from "lucide-react";
 import { Button, Logo, Mark } from "@mimelux/ui";
 import type { SessionRole } from "@mimelux/core";
+import { AccountIdentity } from "@/components/account-identity";
+import { AccountCharacterCard } from "@/components/character-card";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ChatDock } from "@/components/chat-dock";
 import { MessageAlerts } from "@/components/message-alerts";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 import { getServerUnreadSnapshot, getUnreadSnapshot, subscribeUnread, unreadBadge } from "@/lib/unread-store";
+import { accountDisplayName } from "@/lib/account-label";
 import { getServerSessionSnapshot, getSessionSnapshot, logoutAccount, refreshSession, subscribeSession } from "@/lib/session";
-import { creators } from "@/lib/gateway";
-
 const items = [
   { href: "/feed", label: "feed", icon: House },
   { href: "/topcreators?tab=top-creators", match: "/topcreators", label: "trending", icon: TrendingUp },
@@ -46,7 +47,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const auth = useTranslations("auth");
   const tNotifications = useTranslations("notifications");
   const unread = useSyncExternalStore(subscribeUnread, getUnreadSnapshot, getServerUnreadSnapshot).count;
-  const currentCreator = creators[0]!;
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
   const role: SessionRole = session.user?.role ?? "fan";
   const [demoMode, setDemoMode] = useState(true);
@@ -150,13 +150,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href={areaHref} className="mt-3 inline-block text-[11px] font-bold text-primary-strong">{role === "affiliate" ? t("openAffiliates") : t("openStudio")}</Link>
         </div>}
 
-        <div className={`mt-auto flex items-center rounded-2xl p-2 ${collapsed ? "justify-center" : "gap-3"}`}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={currentCreator.avatar} alt={currentCreator.name} className="size-10 rounded-full object-cover" />
-          {!collapsed && <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-extrabold">{currentCreator.name}</p>
-            <p className="truncate text-[10px] text-muted">@{currentCreator.username}</p>
-          </div>}
+        <div className="mt-auto" data-testid="account-panel">
+          {session.user && !collapsed && !session.user.avatarUrl ? (
+            <AccountCharacterCard user={session.user} variant="banner" profileHref="/conta" />
+          ) : null}
+          <div className={`flex items-center rounded-2xl p-2 ${collapsed ? "justify-center" : "gap-3"} ${session.user && !collapsed && !session.user.avatarUrl ? "justify-end pt-1" : ""}`}>
+          {session.user && (collapsed || session.user.avatarUrl) ? (
+            <Link href="/conta" className="min-w-0 flex-1" aria-label={t("accountLabel", { name: session.user.name || session.user.email })}>
+              <AccountIdentity user={session.user} label={t("account")} compact={collapsed} iconOnly={collapsed} />
+            </Link>
+          ) : null}
           <button
             aria-label={t("logout")}
             onClick={() => {
@@ -166,6 +169,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <LogOut className="size-4" />
           </button>
+          </div>
         </div>
       </aside>
 
@@ -208,8 +212,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </>
           ) : (
             <>
-              <Link href="/conta" data-testid="account-settings" className="px-2 text-[11px] font-bold text-muted hover:text-foreground">
-                {t("account")}
+              <Link href="/conta" data-testid="account-settings" aria-label={session.user ? t("accountLabel", { name: accountDisplayName(session.user) }) : t("account")} className="flex items-center rounded-full px-1 py-1 hover:bg-surface">
+                {session.user ? <AccountIdentity user={session.user} label={t("account")} compact /> : <span className="px-2 text-[11px] font-bold">{t("account")}</span>}
               </Link>
               <Link href={areaHref}>
                 <Button variant="ghost" size="icon" aria-label={t("profile")}>

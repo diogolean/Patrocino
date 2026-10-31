@@ -35,7 +35,7 @@ export function readStripeWebhookSecret(env: Env = process.env) {
 export type PaymentCheckout = {
   purchaseId: string;
   amountCents: number;
-  currency: "brl";
+  currency: "brl" | "usd";
   description: string;
   buyerId?: string;
   creatorId?: string;

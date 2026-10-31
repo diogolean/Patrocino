@@ -1,10 +1,12 @@
 import { apiError } from "../../http/api-error";
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Prisma, database } from "@mimelux/db/runtime";
+import { centsForCurrency, ppvQuote, type ChargeCurrency } from "@mimelux/core/currency";
 import { chargeForPlan } from "./plan-price";
 import type { ChargeDraft, PaymentPurpose } from "@mimelux/core/expay";
 import { z } from "zod";
 import { fanSubscribed } from "../media/entitlement";
+import { rememberReferral } from "../affiliates/tracking";
 
 const purposes = ["subscription", "post", "message", "pack", "special_request"] as const;
 
@@ -45,7 +47,11 @@ export type QuotedCharge = {
   purpose: PaymentPurpose;
   subjectId: string;
   amountCents: number;
+  currency: ChargeCurrency;
   description: string;
+  subscriberCents?: number;
+  guestCents?: number;
+  subscribed?: boolean;
 };
 
 const unavailable = () => new NotFoundException("This item is not available.");
@@ -80,6 +86,7 @@ function billable(amountCents: number) {
 export async function quoteCharge(
   user: { id: string },
   input: { creatorId: string; purpose: PaymentPurpose; subjectId: string },
+  currency: ChargeCurrency = "BRL",
 ): Promise<QuotedCharge> {
   const creator = await findCreator(input.creatorId);
   if (!creator) throw unavailable();
@@ -98,13 +105,15 @@ export async function quoteCharge(
     const promotions = await database.promotion.findMany({
       where: { creatorId: creator.id, active: true, OR: [{ planId: plan.id }, { planId: null }] },
     });
-    const priced = chargeForPlan(plan, promotions);
+    const sticker = centsForCurrency(currency, plan.priceCents, plan.priceCentsUsd);
+    const priced = chargeForPlan({ ...plan, priceCents: sticker }, promotions);
     return {
       buyerId: user.id,
       creatorId: creator.id,
       purpose: "subscription",
       subjectId: plan.id,
       amountCents: billable(priced.chargeCents),
+      currency,
       description: clip(`${creatorName} · ${plan.name}`),
     };
   }
@@ -116,49 +125,77 @@ export async function quoteCharge(
         creatorId: creator.id,
         deletedAt: null,
         publishedAt: { not: null },
-        priceCents: { gt: 0 },
+        visibility: { in: ["PPV", "SUBSCRIBER_PPV"] },
       },
     });
-    if (!post?.priceCents) throw unavailable();
-    if (post.visibility === "SUBSCRIBER_PPV" && !(await fanSubscribed(user.id, creator.id))) {
-      throw apiError(403, "AN_ACTIVE_SUBSCRIPTION_IS_REQUIRED", "An active subscription is required.");
-    }
+    if (!post) throw unavailable();
+    const subscribed = await fanSubscribed(user.id, creator.id);
+    const priced = ppvQuote({
+      currency,
+      subscribed,
+      subscriberBrl: post.priceCents,
+      subscriberUsd: post.priceCentsUsd,
+      guestBrl: post.guestPriceCents,
+      guestUsd: post.guestPriceCentsUsd,
+      defaultSubscriberBrl: creator.defaultVideoPriceCents,
+      defaultSubscriberUsd: creator.defaultVideoPriceCentsUsd,
+      defaultGuestBrl: creator.guestVideoPriceCents,
+      defaultGuestUsd: creator.guestVideoPriceCentsUsd,
+    });
+    if (priced.amountCents <= 0) throw unavailable();
     return {
       buyerId: user.id,
       creatorId: creator.id,
       purpose: "post",
       subjectId: post.id,
-      amountCents: billable(post.priceCents),
-      description: clip(`Post de ${creatorName}`),
+      amountCents: billable(priced.amountCents),
+      currency,
+      description: clip(`Vídeo exclusivo de ${creatorName}`),
+      subscriberCents: priced.subscriberCents,
+      guestCents: priced.guestCents,
+      subscribed,
     };
   }
 
   if (input.purpose === "message") {
     const message = await database.message.findFirst({
-      where: { id: input.subjectId, senderId: creator.userId, ppvPriceCents: { gt: 0 } },
+      where: {
+        id: input.subjectId,
+        senderId: creator.userId,
+        OR: currency === "USD" ? [{ ppvPriceCentsUsd: { gt: 0 } }] : [{ ppvPriceCents: { gt: 0 } }],
+      },
     });
-    if (!message?.ppvPriceCents) throw unavailable();
+    const messageCents = message ? centsForCurrency(currency, message.ppvPriceCents, message.ppvPriceCentsUsd) : 0;
+    if (!message || messageCents <= 0) throw unavailable();
     return {
       buyerId: user.id,
       creatorId: creator.id,
       purpose: "message",
       subjectId: message.id,
-      amountCents: billable(message.ppvPriceCents),
+      amountCents: billable(messageCents),
+      currency,
       description: clip(`Mensagem de ${creatorName}`),
     };
   }
 
   if (input.purpose === "pack") {
     const pack = await database.contentPack.findFirst({
-      where: { id: input.subjectId, creatorId: creator.id, active: true, priceCents: { gt: 0 } },
+      where: {
+        id: input.subjectId,
+        creatorId: creator.id,
+        active: true,
+        OR: currency === "USD" ? [{ priceCentsUsd: { gt: 0 } }] : [{ priceCents: { gt: 0 } }],
+      },
     });
-    if (!pack) throw unavailable();
+    const packCents = pack ? centsForCurrency(currency, pack.priceCents, pack.priceCentsUsd) : 0;
+    if (!pack || packCents <= 0) throw unavailable();
     return {
       buyerId: user.id,
       creatorId: creator.id,
       purpose: "pack",
       subjectId: pack.id,
-      amountCents: billable(pack.priceCents),
+      amountCents: billable(packCents),
+      currency,
       description: clip(pack.name || `Pacote de ${creatorName}`),
     };
   }
@@ -179,14 +216,21 @@ export async function quoteCharge(
     purpose: "special_request",
     subjectId: request.id,
     amountCents: billable(request.quotedPriceCents),
+    currency: "BRL",
     description: clip(`Pedido para ${creatorName}`),
   };
 }
 
-export async function chargeDraftForUser(user: { id: string; email: string }, body: unknown): Promise<ChargeDraft> {
+export async function chargeDraftForUser(
+  user: { id: string; email: string },
+  body: unknown,
+  currency: ChargeCurrency = "BRL",
+  clickId?: string | null,
+): Promise<ChargeDraft & { currency: ChargeCurrency }> {
   const parsed = chargeRequestSchema.safeParse(body);
   if (!parsed.success) throw apiError(400, "INVALID_PAYMENT_REQUEST", "Invalid payment request.");
-  const quote = await quoteCharge(user, parsed.data);
+  if (clickId) await rememberReferral(user.id, clickId);
+  const quote = await quoteCharge(user, parsed.data, currency);
   const profile = await database.profile.findUnique({ where: { userId: user.id } });
   const document = parsed.data.customer?.document?.replace(/\D/g, "") ?? "";
   return {
@@ -195,6 +239,7 @@ export async function chargeDraftForUser(user: { id: string; email: string }, bo
     purpose: quote.purpose,
     subjectId: quote.subjectId,
     amountCents: quote.amountCents,
+    currency: quote.currency,
     description: quote.description,
     customer: {
       name: profile?.name?.trim() || parsed.data.customer?.name || "Apoiador",
@@ -214,18 +259,19 @@ const purchaseKind = {
 } as const;
 
 function samePurchase(
-  existing: { buyerId: string; creatorId: string; amountCents: number; kind: string },
-  draft: ChargeDraft,
+  existing: { buyerId: string; creatorId: string; amountCents: number; kind: string; currency?: string },
+  draft: ChargeDraft & { currency?: ChargeCurrency },
 ) {
   return (
     existing.buyerId === draft.buyerId &&
     existing.creatorId === draft.creatorId &&
     existing.amountCents === draft.amountCents &&
-    existing.kind === purchaseKind[draft.purpose]
+    existing.kind === purchaseKind[draft.purpose] &&
+    (existing.currency ?? "BRL") === (draft.currency ?? "BRL")
   );
 }
 
-export async function ensureQuotedPurchase(draft: ChargeDraft) {
+export async function ensureQuotedPurchase(draft: ChargeDraft & { currency?: ChargeCurrency }) {
   const existing = await database.purchase.findUnique({ where: { idempotencyKey: draft.idempotencyKey } });
   if (existing) {
     if (!samePurchase(existing, draft)) throw apiError(409, "IDEMPOTENCY_KEY_ALREADY_USED", "Idempotency key already used.");
@@ -259,7 +305,7 @@ export async function ensureQuotedPurchase(draft: ChargeDraft) {
         creatorId: draft.creatorId,
         kind: purchaseKind[draft.purpose],
         amountCents: draft.amountCents,
-        currency: "BRL",
+        currency: draft.currency ?? "BRL",
         status: "PENDING",
         idempotencyKey: draft.idempotencyKey,
         ...(draft.purpose === "post" ? { postId: draft.subjectId } : {}),

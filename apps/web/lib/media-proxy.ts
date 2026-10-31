@@ -26,12 +26,12 @@ export async function proxyMediaJson(request: Request, path: string, init?: { me
   return NextResponse.json(data, { status: response.status });
 }
 
-export async function proxyMediaChunk(request: Request, path: string) {
+export async function proxyMediaChunk(request: Request, path: string, method: "PUT" | "POST" = "PUT") {
   const access = await accessToken();
   if (!access) return NextResponse.json({ message: "Missing access token" }, { status: 401 });
   const body = await request.arrayBuffer();
   const response = await fetch(`${apiBase()}${path}`, {
-    method: "PUT",
+    method,
     headers: {
       authorization: `Bearer ${access}`,
       "content-type": "application/octet-stream",

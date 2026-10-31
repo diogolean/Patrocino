@@ -14,6 +14,8 @@ export type MediaLibraryItem = {
   exclusiveIndex?: number;
   visibility: MediaVisibility;
   priceCents: number | null;
+  guestPriceCents?: number | null;
+  guestPriceCentsUsd?: number | null;
   publishedAt: string | null;
   sortOrder: number;
   locked: boolean;
@@ -29,6 +31,8 @@ type Draft = {
   caption: string;
   visibility: MediaVisibility;
   price: string;
+  guestBrl: string;
+  guestUsd: string;
   publishedAt: string;
 };
 
@@ -207,6 +211,8 @@ function draftFor(item: MediaLibraryItem): Draft {
     caption: item.caption,
     visibility: item.visibility,
     price: reais(item.priceCents),
+    guestBrl: reais(item.guestPriceCents ?? null),
+    guestUsd: reais(item.guestPriceCentsUsd ?? null),
     publishedAt: toLocalInput(item.publishedAt),
   };
 }
@@ -333,6 +339,8 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         ...(item.kind === "VIDEO" ? {} : { caption: draft.caption }),
+        guestPriceCents: centsFromInput(draft.guestBrl),
+        guestPriceCentsUsd: centsFromInput(draft.guestUsd),
         visibility: draft.visibility,
         priceCents: nextPrice,
         publishedAt: fromLocalInput(draft.publishedAt),
@@ -606,6 +614,28 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
                           </span>
                         )}
                       </label>
+                    )}
+                    {pricedVisibility(draft.visibility) && (
+                      <>
+                        <label className="block text-xs font-bold uppercase tracking-wide text-muted">
+                          {t("guestPriceBrl")}
+                          <input
+                            inputMode="decimal"
+                            value={draft.guestBrl}
+                            onChange={(event) => updateDraft(item.id, { guestBrl: event.target.value })}
+                            className="mt-2 h-11 w-full rounded-full border border-border bg-elevated px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-primary"
+                          />
+                        </label>
+                        <label className="block text-xs font-bold uppercase tracking-wide text-muted">
+                          {t("guestPriceUsd")}
+                          <input
+                            inputMode="decimal"
+                            value={draft.guestUsd}
+                            onChange={(event) => updateDraft(item.id, { guestUsd: event.target.value })}
+                            className="mt-2 h-11 w-full rounded-full border border-border bg-elevated px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-primary"
+                          />
+                        </label>
+                      </>
                     )}
                     <label className="block text-xs font-bold uppercase tracking-wide text-muted">
                       {t("publishAt")}
