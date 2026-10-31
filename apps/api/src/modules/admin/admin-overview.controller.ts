@@ -59,8 +59,10 @@ export class AdminOverviewController {
     ]);
     const buyers30 = new Set(paid30.map((row) => row.buyerId)).size;
 
+    // Real sales count even when the creator profile is still flagged as demo.
+    const sellingCreatorIds = [...new Set(paid30.map((row) => row.creatorId))];
     const creators = await database.creator.findMany({
-      where: { ...real, status: "ACTIVE" },
+      where: { status: "ACTIVE", OR: [{ isDemo: false }, { id: { in: sellingCreatorIds } }] },
       select: {
         id: true,
         user: { select: { profile: { select: { name: true, username: true } } } },
