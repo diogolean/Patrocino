@@ -324,8 +324,9 @@ export class AdminCommerceController {
       where: { affiliateId_creatorId: { affiliateId: id, creatorId: creator.id } },
     });
     if (!assigned) throw apiError(400, "CREATOR_IS_NOT_ASSIGNED", "Creator is not assigned");
-    const existing = await database.affiliateLink.findUnique({
-      where: { affiliateId_creatorId: { affiliateId: id, creatorId: creator.id } },
+    const existing = await database.affiliateLink.findFirst({
+      where: { affiliateId: id, creatorId: creator.id, packId: null },
+      orderBy: { createdAt: "asc" },
     });
     if (existing) {
       const saved = existing.active ? existing : await database.affiliateLink.update({ where: { id: existing.id }, data: { active: true } });

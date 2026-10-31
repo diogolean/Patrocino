@@ -104,6 +104,7 @@ async function createClick(
     creatorUsername: link.creator.user.profile?.username ?? link.creatorId,
     creatorId: link.creatorId,
     affiliateId: link.affiliateId,
+    packId: link.packId ?? null,
     clickedAt: click.createdAt.toISOString(),
   };
 }
@@ -199,8 +200,13 @@ export async function affiliateDashboard(affiliateId: string, now = new Date()) 
       orderBy: { createdAt: "desc" },
     }),
     database.affiliateLink.findMany({
-      where: { affiliateId },
-      include: { creator: { include: { user: { include: { profile: true } } } }, clicks: { select: { id: true } } },
+      where: { affiliateId, active: true },
+      include: {
+        creator: { include: { user: { include: { profile: true } } } },
+        pack: { select: { id: true, name: true } },
+        clicks: { select: { id: true } },
+      },
+      orderBy: { createdAt: "desc" },
     }),
   ]);
   const ledger = commissions.map((row) => ({
@@ -218,11 +224,20 @@ export async function affiliateDashboard(affiliateId: string, now = new Date()) 
     .map((row) => ({ at: row.createdAt, amountCents: row.amountCents }));
   const conversionDates = commissions.filter((row) => row.status !== "REJECTED").map((row) => row.createdAt);
   const linkStats = links.map((link) => {
-    const conversions = commissions.filter(
+    const linkCommissions = commissions.filter(
       (row) => row.status !== "REJECTED" && row.conversion.attribution.click.linkId === link.id,
-    ).length;
+    );
+    const conversions = linkCommissions.length;
     return {
       code: link.code,
+      label: link.label,
+      pack: link.pack ? { id: link.pack.id, name: link.pack.name } : null,
+      createdAt: link.createdAt.toISOString(),
+      money: Array.from(new Set(linkCommissions.map((row) => row.currency))).map((currency) => ({
+        currency,
+        salesCents: linkCommissions.filter((row) => row.currency === currency).reduce((sum, row) => sum + row.conversion.amountCents, 0),
+        commissionCents: linkCommissions.filter((row) => row.currency === currency).reduce((sum, row) => sum + row.amountCents, 0),
+      })),
       path: affiliateLinkPath(link.creator.user.profile?.username ?? link.creatorId, link.code),
       username: link.creator.user.profile?.username ?? "",
       name: link.creator.user.profile?.name ?? "",

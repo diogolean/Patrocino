@@ -668,6 +668,7 @@ model ContentPack {
   updatedAt   DateTime          @updatedAt
   items       ContentPackItem[]
   purchases   Purchase[]
+  affiliateLinks AffiliateLink[]
 
   @@index([creatorId, active])
   @@map("content_packs")
@@ -762,6 +763,9 @@ model AffiliateLink {
   affiliate   Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
   creatorId   String
   creator     Creator   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  packId      String?
+  pack        ContentPack? @relation(fields: [packId], references: [id], onDelete: SetNull)
+  label       String?
   slug        String
   code        String    @unique
   active      Boolean   @default(true)
@@ -769,7 +773,7 @@ model AffiliateLink {
   createdAt   DateTime  @default(now())
   clicks      Click[]
 
-  @@unique([affiliateId, creatorId])
+  @@index([affiliateId, creatorId])
   @@index([slug])
   @@map("affiliate_links")
 }

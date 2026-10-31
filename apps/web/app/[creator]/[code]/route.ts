@@ -2,23 +2,32 @@ import { NextResponse } from "next/server";
 import { LINK_CODE_PATTERN } from "@mimelux/core/currency";
 import { publicOrigin, resolveAffiliateRedirect, type RecordedClick } from "@/lib/affiliate-redirect";
 import { apiBase } from "@/lib/api-auth";
+import { upstreamAuthHeaders } from "@/lib/client-ip";
 
 type Context = { params: Promise<{ creator: string; code: string }> };
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{1,59}$/i;
 
-async function recordClick(body: { code: string; subId?: string; locale?: string; creator: string }): Promise<RecordedClick | null> {
+type Recorded = RecordedClick & { packId?: string | null };
+
+/** Forwards the visitor's IP (via the proxy secret) and user agent so the click is the visitor's, not the web server's. */
+async function recordClick(request: Request, body: { code: string; subId?: string; locale?: string; creator: string }): Promise<Recorded | null> {
+  const userAgent = request.headers.get("user-agent");
   const response = await fetch(`${apiBase()}/affiliate/clicks`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...upstreamAuthHeaders(request),
+      ...(userAgent ? { "user-agent": userAgent.slice(0, 400) } : {}),
+    },
     body: JSON.stringify({ ...body, exact: true }),
     cache: "no-store",
     signal: AbortSignal.timeout(2500),
   });
   if (!response.ok) return null;
-  const data = (await response.json()) as Partial<RecordedClick>;
+  const data = (await response.json()) as Partial<Recorded>;
   if (!data.clickId || !data.code || !data.creatorUsername) return null;
-  return { clickId: data.clickId, code: data.code, creatorUsername: data.creatorUsername, clickedAt: data.clickedAt };
+  return { clickId: data.clickId, code: data.code, creatorUsername: data.creatorUsername, clickedAt: data.clickedAt, packId: data.packId ?? null };
 }
 
 function notFound() {
@@ -32,9 +41,9 @@ export async function GET(request: Request, context: Context) {
   const url = new URL(request.url);
   const subId = url.searchParams.get("sub") ?? undefined;
   const locale = url.searchParams.get("lang") ?? undefined;
-  let recorded: RecordedClick | null = null;
+  let recorded: Recorded | null = null;
   try {
-    recorded = await recordClick({ code, creator, ...(subId ? { subId } : {}), ...(locale ? { locale } : {}) });
+    recorded = await recordClick(request, { code, creator, ...(subId ? { subId } : {}), ...(locale ? { locale } : {}) });
   } catch {
     recorded = null;
   }
@@ -47,7 +56,11 @@ export async function GET(request: Request, context: Context) {
     secure: url.protocol === "https:",
     record: async () => recorded,
   });
-  const response = NextResponse.redirect(new URL(result.location, publicOrigin(request)));
+  // Pack links open that pack's checkout; the attribution cookie is the same, so the pack sale credits the affiliate.
+  const location = recorded.packId
+    ? `/checkout?${new URLSearchParams({ kind: "pack", id: recorded.packId, creator, return: `/creator/${creator}`, ref: recorded.code }).toString()}`
+    : result.location;
+  const response = NextResponse.redirect(new URL(location, publicOrigin(request)));
   if (result.cookie) response.cookies.set(result.cookie.name, result.cookie.value, result.cookie.options);
   return response;
 }

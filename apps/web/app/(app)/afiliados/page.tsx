@@ -1,306 +1,296 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Copy, Link2, ShieldAlert } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
-import { useLocale, useTranslations } from "next-intl";
-import { formatMoney, minimumPayoutCents, paymentProviders, payoutScheduleConfirmed } from "@mimelux/core";
-import { Button, Pill } from "@mimelux/ui";
-import { affiliateLink, affiliateSummary, demoAffiliate } from "@/lib/affiliates";
-import { brl, compact, creatorLikeTotal, creators } from "@/lib/gateway";
-import { readDemo, writeDemo } from "@/lib/demo-store";
-import { paymentGateway } from "@/lib/payments";
-import { roleHome, useRoleGuard } from "@/lib/use-role-guard";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { Copy, Link2, Package, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
+import { toast } from "sonner";
+import { formatMoney } from "@mimelux/core";
+import { Button, Pill } from "@mimelux/ui";
 import { getServerSessionSnapshot, getSessionSnapshot, subscribeSession } from "@/lib/session";
+import { roleHome, useRoleGuard } from "@/lib/use-role-guard";
 
 // Any account can hold an affiliate profile without changing its role (e.g. a fan who also
 // promotes creators). Non-affiliate roles are let in only when /affiliate/me finds a profile.
 const PROFILE_ROLES = ["admin", "fan", "creator"] as const;
-import { toast } from "sonner";
+
+type LedgerStatus = "pending" | "confirmed" | "paid" | "reversed";
+type LedgerRow = { id: string; createdAt: string; amountCents: number; currency: string; status: LedgerStatus; kind: string; linkCode: string; saleCents: number };
+type SeriesPoint = { label: string; clicks: number; conversions: number; earningsCents: number };
+type LinkMoney = { currency: string; salesCents: number; commissionCents: number };
+type LinkStat = {
+  code: string;
+  path: string;
+  username: string;
+  name: string;
+  label?: string | null;
+  pack?: { id: string; name: string } | null;
+  clicks: number;
+  conversions: number;
+  conversionRate: number;
+  money?: LinkMoney[];
+};
+type Dashboard = {
+  name?: string;
+  summary: { clicks: number; signups: number; purchases: number; money: { currency: string; salesCents: number; commissionOwedCents: number }[] };
+  ledger: LedgerRow[];
+  links: LinkStat[];
+  daily: SeriesPoint[];
+  monthly: SeriesPoint[];
+};
+type Catalog = { creators: { id: string; username: string; name: string; packs: { id: string; name: string }[] }[] };
+
+function money(cents: number, currency: string, locale: string) {
+  return formatMoney(cents, currency === "USD" ? "USD" : "BRL", locale);
+}
+
+async function fetchBoard(): Promise<Dashboard | "missing" | null> {
+  const response = await fetch("/api/affiliate/me", { cache: "no-store" }).catch(() => null);
+  if (!response) return null;
+  if (response.status === 404) return "missing";
+  return response.ok ? ((await response.json()) as Dashboard) : null;
+}
 
 export default function AffiliateDashboardPage() {
   const roleAllowed = useRoleGuard("affiliate", PROFILE_ROLES);
   const router = useRouter();
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
   const sessionRole = session.user?.role;
-  const [profileOk, setProfileOk] = useState<boolean | null>(null);
+  const t = useTranslations("affiliate");
+  const tc = useTranslations("commerce");
+  const locale = useLocale();
+  const [board, setBoard] = useState<Dashboard | null>(null);
+  const [missing, setMissing] = useState(false);
+
+  const apply = useCallback((result: Dashboard | "missing" | null) => {
+    if (result === "missing") setMissing(true);
+    else if (result) setBoard(result);
+  }, []);
+  const load = useCallback(async () => apply(await fetchBoard()), [apply]);
+
   useEffect(() => {
-    if (!roleAllowed || sessionRole === "affiliate" || sessionRole === "admin") return;
+    if (!roleAllowed) return;
     let cancel = false;
-    fetch("/api/affiliate/me", { cache: "no-store" })
-      .then((response) => {
-        if (cancel) return;
-        if (response.ok) setProfileOk(true);
-        else if (sessionRole) router.replace(roleHome(sessionRole));
+    fetchBoard().then((result) => {
+      if (!cancel) apply(result);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [roleAllowed, apply]);
+
+  useEffect(() => {
+    if (missing && sessionRole && sessionRole !== "affiliate") router.replace(roleHome(sessionRole));
+  }, [missing, router, sessionRole]);
+
+  if (!roleAllowed || (!board && !missing)) return <div className="m-6 h-[70vh] rounded-[30px] skeleton" />;
+
+  return (
+    <div className="mx-auto w-full max-w-6xl px-4 pb-28 pt-6 sm:px-8 lg:py-9">
+      <div className="flex flex-wrap items-center gap-2">
+        <Pill>{t("eyebrow")}</Pill>
+        {board?.name ? <Pill active>{tc("affiliateName", { name: board.name })}</Pill> : null}
+      </div>
+      <h1 className="mt-3 text-3xl font-extrabold tracking-[-.045em]">{t("title")}</h1>
+      <p className="mt-2 max-w-2xl text-xs leading-5 text-muted">{t("body")}</p>
+      {board ? (
+        <>
+          <Summary board={board} locale={locale} />
+          <LinkBuilder onCreated={load} />
+          <MyLinks links={board.links ?? []} locale={locale} onChanged={load} />
+          <Results board={board} locale={locale} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function Summary({ board, locale }: { board: Dashboard; locale: string }) {
+  const t = useTranslations("affiliate");
+  const tc = useTranslations("commerce");
+  const rows = board.summary.money.length ? board.summary.money : [{ currency: locale === "pt-BR" ? "BRL" : "USD", salesCents: 0, commissionOwedCents: 0 }];
+  const cards: [string, string][] = [
+    [tc("clicks"), String(board.summary.clicks)],
+    [tc("signups"), String(board.summary.signups)],
+    [tc("purchases"), String(board.summary.purchases)],
+    [t("self_salesTotal"), rows.map((row) => money(row.salesCents ?? 0, row.currency, locale)).join(" · ")],
+    [tc("ledgerTitle"), rows.map((row) => money(row.commissionOwedCents, row.currency, locale)).join(" · ")],
+  ];
+  return (
+    <section data-testid="affiliate-summary" className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+      {cards.map(([label, value]) => (
+        <article key={label} className="min-w-0 rounded-[24px] border border-border bg-elevated/70 p-4 transition hover:-translate-y-0.5 hover:shadow-md active:scale-[.99]">
+          <p className="truncate text-[10px] font-bold uppercase tracking-[.14em] text-muted">{label}</p>
+          <p className="mt-2 break-words text-lg font-black leading-6">{value}</p>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function LinkBuilder({ onCreated }: { onCreated: () => Promise<void> }) {
+  const t = useTranslations("affiliate");
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [creatorId, setCreatorId] = useState("");
+  const [packId, setPackId] = useState("");
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancel = false;
+    fetch("/api/affiliate/catalog", { cache: "no-store" })
+      .then(async (response) => (response.ok ? ((await response.json()) as Catalog) : null))
+      .then((payload) => {
+        if (cancel || !payload) return;
+        setCatalog(payload);
+        setCreatorId(payload.creators[0]?.id ?? "");
       })
       .catch(() => undefined);
     return () => {
       cancel = true;
     };
-  }, [roleAllowed, router, sessionRole]);
-  const allowed = roleAllowed && (sessionRole === "affiliate" || sessionRole === "admin" || profileOk === true);
+  }, []);
+
+  const creator = catalog?.creators.find((item) => item.id === creatorId);
+
+  async function create() {
+    if (!creatorId || busy) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/affiliate/links", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ creatorId, packId: packId || null, label: label.trim() || null }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { path?: string };
+      if (response.status === 429) return void toast.error(t("self_rateLimited"));
+      if (!response.ok || !data.path) return void toast.error(t("self_createFailed"));
+      await navigator.clipboard?.writeText(`${window.location.origin}${data.path}`).catch(() => undefined);
+      toast.success(t("self_created"));
+      setLabel("");
+      await onCreated();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section data-testid="affiliate-builder" className="mt-6 rounded-[28px] border border-border bg-elevated/70 p-5">
+      <h2 className="flex items-center gap-2 text-sm font-extrabold"><Link2 className="size-4" /> {t("self_newLink")}</h2>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <label className="grid gap-1 text-[10px] font-bold text-muted">
+          {t("self_creator")}
+          <select
+            data-testid="builder-creator"
+            value={creatorId}
+            onChange={(event) => {
+              setCreatorId(event.target.value);
+              setPackId("");
+            }}
+            className="h-12 rounded-2xl border border-border bg-background px-3 text-sm font-semibold text-foreground"
+          >
+            {catalog?.creators.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1 text-[10px] font-bold text-muted">
+          {t("self_pack")}
+          <select
+            data-testid="builder-pack"
+            value={packId}
+            onChange={(event) => setPackId(event.target.value)}
+            disabled={!creator?.packs.length}
+            className="h-12 rounded-2xl border border-border bg-background px-3 text-sm font-semibold text-foreground disabled:opacity-60"
+          >
+            <option value="">{t("self_noPack")}</option>
+            {creator?.packs.map((pack) => <option key={pack.id} value={pack.id}>{pack.name}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1 text-[10px] font-bold text-muted">
+          {t("self_label")}
+          <input
+            data-testid="builder-label"
+            value={label}
+            maxLength={40}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder="tiktok, instagram…"
+            className="h-12 rounded-2xl border border-border bg-background px-3 text-sm text-foreground"
+          />
+        </label>
+      </div>
+      <Button data-testid="builder-generate" className="mt-4 w-full sm:w-auto" disabled={!creatorId || busy} onClick={create}>
+        {busy ? t("self_generating") : t("self_generate")}
+      </Button>
+    </section>
+  );
+}
+
+function MyLinks({ links, locale, onChanged }: { links: LinkStat[]; locale: string; onChanged: () => Promise<void> }) {
   const t = useTranslations("affiliate");
   const tc = useTranslations("commerce");
-  const [liveName, setLiveName] = useState<string | null>(null);
-  const locale = useLocale();
-  const [state, setState] = useState(() => readDemo());
-  const [creatorId, setCreatorId] = useState(creators[0]!.id);
-  const [subId, setSubId] = useState("tiktok");
-  const enabledCreators = creators.filter((item) => state.enabledCreatorIds.includes(item.id));
-  const creator = enabledCreators.find((item) => item.id === creatorId) ?? enabledCreators[0];
-  const link = creator ? affiliateLink(creator.username, subId || "canal", locale) : "";
   const origin = useSyncExternalStore(
     () => () => undefined,
     () => window.location.origin,
     () => "",
   );
-  const absoluteLink = `${origin}${link}`;
-  const summary = useMemo(() => affiliateSummary(state), [state]);
-  const grouped = useMemo(() => {
-    const rows = new Map<string, { creator: string; subId: string; clicks: number; sales: number; commission: number; suspicious: boolean }>();
-    for (const click of state.clicks) {
-      const key = `${click.creatorId}:${click.subId}`;
-      const current = rows.get(key) ?? {
-        creator: creators.find((item) => item.id === click.creatorId)?.name ?? click.creatorSlug,
-        subId: click.subId,
-        clicks: 0,
-        sales: 0,
-        commission: 0,
-        suspicious: false,
-      };
-      current.clicks += 1;
-      current.suspicious = current.suspicious || click.suspicious;
-      rows.set(key, current);
-    }
-    for (const commission of state.commissions) {
-      const key = `${commission.creatorId}:${commission.subId}`;
-      const current = rows.get(key);
-      if (!current || commission.status === "rejected") continue;
-      current.sales += 1;
-      current.commission += commission.amountCents;
-    }
-    return Array.from(rows.values());
-  }, [state]);
 
   async function copy(value: string) {
     await navigator.clipboard.writeText(value);
     toast.success(t("copied"));
   }
 
-  async function withdraw() {
-    await paymentGateway.requestPayout({
-      provider: state.payoutSettings.method,
-      amountCents: summary.approvedCents,
-      destinationLabel: state.payoutSettings.destination,
-    });
-    toast.success(t("withdrawDemo"));
+  async function remove(code: string) {
+    if (!window.confirm(t("self_confirmRemove"))) return;
+    const response = await fetch(`/api/affiliate/links/${encodeURIComponent(code)}`, { method: "DELETE" });
+    if (response.ok) {
+      toast.success(t("self_removed"));
+      await onChanged();
+    }
   }
-
-  function toggleCreator(id: string) {
-    const current = readDemo();
-    const enabledCreatorIds = current.enabledCreatorIds.includes(id)
-      ? current.enabledCreatorIds.filter((item) => item !== id)
-      : [...current.enabledCreatorIds, id];
-    setState(writeDemo({ enabledCreatorIds }));
-    setCreatorId(id);
-  }
-
-  if (!allowed) return <div className="m-6 h-[70vh] rounded-[30px] skeleton" />;
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8 lg:py-9">
-      <div className="flex flex-wrap items-center gap-2">
-        <Pill>{t("eyebrow")}</Pill>
-        {liveName ? <Pill active>{tc("affiliateName", { name: liveName })}</Pill> : <Pill>Demo · {demoAffiliate.name}</Pill>}
-      </div>
-      <h1 className="mt-3 text-3xl font-extrabold tracking-[-.045em]">{t("title")}</h1>
-      <p className="mt-2 max-w-2xl text-xs leading-5 text-muted">{t("body")}</p>
-      <LiveResults locale={locale} onName={setLiveName} />
-
-      <section data-testid="affiliate-mosaic" className="mt-8">
-        <h2 className="text-2xl font-extrabold tracking-[-.04em]">{t("mosaicTitle")}</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{t("mosaicBody")}</p>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {creators.map((item) => {
-            const enabled = state.enabledCreatorIds.includes(item.id);
-            return (
-              <article key={item.id} data-testid="affiliate-creator-card" className="overflow-hidden rounded-[28px] border border-border bg-elevated shadow-sm">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={item.cover} alt="" loading="lazy" decoding="async" className="h-52 w-full object-cover sm:h-64" />
-                <div className="flex items-end gap-3 px-4 pb-4">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={item.avatar} alt="" loading="lazy" decoding="async" className="-mt-8 size-16 rounded-full border-4 border-elevated object-cover shadow-lg" />
-                  <div className="min-w-0 flex-1 pt-3">
-                    <h3 className="truncate text-base font-extrabold">{item.name}</h3>
-                    <p className="truncate text-xs text-muted">{item.city}</p>
-                    <p className="mt-1 text-xs font-semibold">{compact(item.subscribers)} · {compact(creatorLikeTotal(item.id))} {t("likes")}</p>
-                  </div>
-                </div>
-                <div className="px-4 pb-4">
-                  <button
-                    type="button"
-                    data-testid={`enable-${item.username}`}
-                    aria-pressed={enabled}
-                    onClick={() => toggleCreator(item.id)}
-                    className={`h-11 w-full rounded-full text-sm font-bold ${enabled ? "bg-ink text-white" : "bg-primary text-ink"}`}
-                  >
-                    {enabled ? t("enabled") : t("enable")}
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          [t("clicks"), String(summary.clicks)],
-          [t("signups"), String(summary.signups)],
-          [t("sales"), String(summary.sales)],
-          [t("conversion"), `${Math.round(summary.conversionRate * 1000) / 10}%`],
-          [t("epc"), brl(summary.earningsPerClickCents)],
-          [t("pending"), brl(summary.pendingCents)],
-          [t("approved"), brl(summary.approvedCents)],
-          [t("paid"), brl(summary.paidCents)],
-        ].map(([label, value]) => (
-          <article key={label} className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:bg-white/5">
-            <p className="text-[10px] font-bold uppercase tracking-[.14em] text-muted">{label}</p>
-            <p className="mt-2 text-xl font-black">{value}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="mt-6 grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
-        <div className="rounded-[28px] border border-black/5 bg-white/70 p-5 dark:bg-white/5">
-          <h2 className="flex items-center gap-2 text-sm font-extrabold"><Link2 className="size-4" /> {t("links")}</h2>
-          {enabledCreators.length === 0 || !creator ? (
-            <p data-testid="affiliate-no-links" className="mt-4 rounded-2xl bg-surface/70 p-4 text-sm font-semibold">{t("noLinks")}</p>
-          ) : (
-            <>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <select aria-label={t("links")} value={creator.id} onChange={(event) => setCreatorId(event.target.value)} className="h-12 rounded-2xl border border-black/10 bg-background px-3 text-xs font-semibold">
-                  {enabledCreators.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
-                <input aria-label={t("subId")} value={subId} onChange={(event) => setSubId(event.target.value.slice(0, 40))} className="h-12 rounded-2xl border border-black/10 bg-background px-3 text-xs" />
+    <section data-testid="affiliate-my-links" className="mt-6 rounded-[28px] border border-border bg-elevated/70 p-5">
+      <h2 className="text-sm font-extrabold">{t("self_myLinks")}</h2>
+      {links.length === 0 ? <p className="mt-3 text-xs text-muted">{t("self_noOwnLinks")}</p> : null}
+      <ul className="mt-3 space-y-3">
+        {links.map((link) => {
+          const url = `${origin}${link.path}`;
+          return (
+            <li key={link.code} data-testid="affiliate-link" className="rounded-2xl bg-surface/70 p-3 transition hover:bg-surface dark:bg-white/5">
+              <div className="flex flex-wrap items-center gap-2">
+                <b className="text-sm">{link.name || link.username}</b>
+                {link.pack ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-accent/25 px-2 py-0.5 text-[10px] font-bold">
+                    <Package className="size-3" /> {link.pack.name}
+                  </span>
+                ) : null}
+                {link.label ? <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[10px] font-bold">{link.label}</span> : null}
               </div>
-              <ul data-testid="affiliate-links" className="mt-4 space-y-2">
-                {enabledCreators.map((item) => {
-                  const href = `${origin}${affiliateLink(item.username, subId || "canal", locale)}`;
-                  return (
-                    <li key={item.id} data-testid="affiliate-link" className="rounded-2xl bg-surface/70 p-3 dark:bg-white/5">
-                      <p className="text-sm font-extrabold">{item.name}</p>
-                      <p className="mt-1 break-all text-[10px] font-semibold">{href}</p>
-                    </li>
-                  );
-                })}
-              </ul>
-              <Button className="mt-4" onClick={() => copy(absoluteLink)}><Copy className="size-4" /> {t("copy")}</Button>
-              <div className="mt-5 flex items-center gap-4">
-                <div className="rounded-2xl bg-white p-3">
-                  <QRCodeSVG value={absoluteLink || "https://patrocino.com"} size={112} includeMargin={false} />
-                </div>
-                <p className="text-[10px] leading-5 text-muted">{t("qr")}</p>
+              <p className="mt-1 break-all text-xs font-semibold text-muted">{url}</p>
+              <p className="mt-2 text-xs">
+                {tc("clicks")} {link.clicks} · {tc("purchases")} {link.conversions} · {tc("conversionRate")} {Math.round(link.conversionRate * 100)}%
+                {(link.money ?? []).map((row) => (
+                  <span key={row.currency}>
+                    {" "}· {t("self_sale")} {money(row.salesCents, row.currency, locale)} · {t("self_commission")} {money(row.commissionCents, row.currency, locale)}
+                  </span>
+                ))}
+              </p>
+              <div className="mt-3 flex gap-2">
+                <Button size="sm" onClick={() => copy(url)}><Copy className="size-4" /> {t("copy")}</Button>
+                <Button size="sm" variant="outline" onClick={() => remove(link.code)}><Trash2 className="size-4" /> {t("self_remove")}</Button>
               </div>
-            </>
-          )}
-        </div>
-        <div className="overflow-hidden rounded-[28px] border border-black/5 bg-white/70 dark:bg-white/5">
-          {creator ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={creator.cover} alt="" className="h-36 w-full object-cover" />
-            </>
-          ) : null}
-          <div className="p-5">
-            <h2 className="text-sm font-extrabold">{t("kit")}</h2>
-            <p className="mt-3 text-xs leading-5">{creator ? t("kitCopy", { name: creator.name }) : t("noLinks")}</p>
-            {creator && <Button variant="outline" className="mt-4" onClick={() => copy(t("kitCopy", { name: creator.name }))}>{t("copyKit")}</Button>}
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-6 overflow-hidden rounded-[28px] border border-black/5 bg-white/70 dark:bg-white/5">
-        <h2 className="px-5 pt-5 text-sm font-extrabold">{t("breakdown")}</h2>
-        <div className="mt-3 divide-y divide-black/5">
-          {grouped.map((row) => (
-            <div key={`${row.creator}-${row.subId}`} data-testid="affiliate-row" className="grid grid-cols-2 gap-2 px-5 py-3 text-xs sm:grid-cols-5">
-              <b className="truncate">{row.creator}</b>
-              <span>{row.subId}</span>
-              <span>{row.clicks}</span>
-              <span>{row.sales}</span>
-              <span className="flex items-center gap-1 font-bold">{brl(row.commission)} {row.suspicious && <ShieldAlert className="size-3 text-accent-strong" aria-label={t("suspicious")} />}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mt-6 rounded-[28px] border border-black/5 bg-white/70 p-5 dark:bg-white/5">
-        <h2 className="text-sm font-extrabold">{t("payouts")}</h2>
-        <p className="mt-2 text-[10px] leading-5 text-muted">{t("schedule")} {t("hold")} {t("renewal")}</p>
-        {!payoutScheduleConfirmed && <p className="mt-2 text-[10px] font-bold text-primary-strong">{t("schedule")}</p>}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {paymentProviders.map((method) => (
-            <button key={method} type="button" onClick={() => {
-              const next = { ...state.payoutSettings, method };
-              setState(writeDemo({ payoutSettings: next }));
-            }}>
-              <Pill active={state.payoutSettings.method === method}>{method}</Pill>
-            </button>
-          ))}
-        </div>
-        <label className="mt-4 block text-[10px] font-bold text-muted">
-          {t("destination")}
-          <input value={state.payoutSettings.destination} onChange={(event) => {
-            const next = { ...state.payoutSettings, destination: event.target.value };
-            setState(writeDemo({ payoutSettings: next }));
-          }} className="mt-2 h-11 w-full rounded-2xl border border-black/10 bg-background px-3 text-xs font-semibold text-foreground" />
-        </label>
-        <p className="mt-3 text-[10px] text-muted">{t("minimum")}</p>
-        <Button className="mt-4" disabled={summary.approvedCents < minimumPayoutCents} onClick={withdraw}>{t("withdraw")}</Button>
-      </section>
-    </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
-type LedgerStatus = "pending" | "confirmed" | "paid" | "reversed";
-type LedgerRow = { id: string; createdAt: string; amountCents: number; currency: string; status: LedgerStatus; kind: string; linkCode: string; saleCents: number };
-type SeriesPoint = { label: string; clicks: number; conversions: number; earningsCents: number };
-type LinkStat = { code: string; path: string; username: string; name: string; clicks: number; conversions: number; conversionRate: number };
-type Dashboard = {
-  name?: string;
-  summary: { clicks: number; signups: number; purchases: number; money: { currency: string; commissionOwedCents: number }[] };
-  ledger: LedgerRow[];
-  links: LinkStat[];
-  daily: SeriesPoint[];
-  monthly: SeriesPoint[];
-};
-
-function LiveResults({ locale, onName }: { locale: string; onName: (name: string | null) => void }) {
+function Results({ board, locale }: { board: Dashboard; locale: string }) {
   const t = useTranslations("commerce");
-  const [board, setBoard] = useState<Dashboard | null>(null);
+  const ta = useTranslations("affiliate");
   const [grain, setGrain] = useState<"day" | "month">("day");
-  useEffect(() => {
-    let cancel = false;
-    fetch("/api/affiliate/me", { cache: "no-store" })
-      .then(async (response) => (response.ok ? response.json() : null))
-      .then((payload: Dashboard | null) => {
-        if (!cancel && payload?.summary) {
-          setBoard(payload);
-          onName(payload.name ?? null);
-        }
-      })
-      .catch(() => {
-        if (!cancel) setBoard(null);
-      });
-    return () => {
-      cancel = true;
-    };
-  }, [onName]);
-  if (!board) return null;
   const series = (grain === "day" ? board.daily : board.monthly) ?? [];
-  const links = board.links ?? [];
   const ledger = board.ledger ?? [];
   const peak = Math.max(1, ...series.map((point) => point.earningsCents));
   const statusLabel = (status: LedgerStatus) =>
@@ -316,9 +306,6 @@ function LiveResults({ locale, onName }: { locale: string; onName: (name: string
           </div>
         </div>
         <p className="mt-2 text-xs leading-5 text-muted">{t("liveBody")}</p>
-        <p className="mt-3 text-sm font-semibold">
-          {t("clicks")} {board.summary.clicks} · {t("signups")} {board.summary.signups} · {t("purchases")} {board.summary.purchases}
-        </p>
         <div data-testid="affiliate-chart" className="mt-4 flex h-28 items-end gap-1">
           {series.map((point) => (
             <div key={point.label} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${point.label}: ${point.clicks} / ${point.conversions}`}>
@@ -329,25 +316,16 @@ function LiveResults({ locale, onName }: { locale: string; onName: (name: string
         </div>
         <p className="mt-2 text-[10px] text-muted">{t("chartHint")}</p>
       </div>
-      <div className="rounded-[28px] border border-border bg-elevated/70 p-5">
-        <h2 className="text-sm font-extrabold">{t("perLink")}</h2>
-        <ul className="mt-3 space-y-2 text-sm">
-          {links.map((link) => (
-            <li key={link.code} data-testid="affiliate-link-rate" className="flex flex-wrap items-center justify-between gap-2">
-              <span>{link.name || link.username} · {link.path}</span>
-              <span className="font-semibold">{t("conversionRate")} {Math.round(link.conversionRate * 100)}%</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="rounded-[28px] border border-border bg-elevated/70 p-5">
-        <h2 className="text-sm font-extrabold">{t("ledgerTitle")}</h2>
+      <div className="scroll-mt-24 rounded-[28px] border border-border bg-elevated/70 p-5">
+        <h2 className="text-sm font-extrabold leading-6">{t("ledgerTitle")}</h2>
         {ledger.length === 0 ? <p className="mt-2 text-xs text-muted">{t("liveEmpty")}</p> : null}
         <ul className="mt-3 space-y-2 text-sm">
           {ledger.map((row) => (
-            <li key={row.id} data-testid="commission-row" data-status={row.status} className="flex flex-wrap items-center justify-between gap-2">
-              <span>{new Date(row.createdAt).toLocaleDateString(locale)} · {row.linkCode}</span>
-              <span className="font-semibold">{formatMoney(row.amountCents, row.currency === "USD" ? "USD" : "BRL", locale)} · {statusLabel(row.status)}</span>
+            <li key={row.id} data-testid="commission-row" data-status={row.status} className="grid gap-1 rounded-2xl bg-surface/60 p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+              <span className="text-xs text-muted">{new Date(row.createdAt).toLocaleDateString(locale)} · {row.kind} · {row.linkCode}</span>
+              <span className="text-xs font-semibold">
+                {ta("self_sale")} {money(row.saleCents, row.currency, locale)} · {ta("self_commission")} {money(row.amountCents, row.currency, locale)} · {statusLabel(row.status)}
+              </span>
             </li>
           ))}
         </ul>
