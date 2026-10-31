@@ -1164,7 +1164,9 @@
       "from": "Von",
       "to": "Bis",
       "apply": "Anwenden"
-    }
+    },
+    "newDelta": "neu",
+    "before": "vorher: {value}"
   },
   "setPassword": {
     "title": "Passwort festlegen",

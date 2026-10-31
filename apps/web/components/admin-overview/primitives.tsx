@@ -32,12 +32,12 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   );
 }
 
-export function DeltaBadge({ delta, unit = "%", label }: { delta: number | null; unit?: string; label: string }) {
-  if (delta === null) return <span className="rounded-md bg-sky-400/10 px-1.5 py-0.5 text-[11px] font-medium text-sky-300" title={label}>new</span>;
+export function DeltaBadge({ delta, unit = "%", label, newLabel }: { delta: number | null; unit?: string; label: string; newLabel: string }) {
+  if (delta === null) return <span className="shrink-0 rounded-md bg-sky-400/10 px-1.5 py-0.5 text-[11px] font-medium text-sky-300" title={label}>{newLabel}</span>;
   const tone = delta > 0 ? "bg-emerald-400/10 text-emerald-300" : delta < 0 ? "bg-rose-400/10 text-rose-300" : "bg-white/[0.06] text-muted";
   const arrow = delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
   return (
-    <span className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${tone}`} title={label} aria-label={`${label}: ${delta > 0 ? "+" : ""}${delta}${unit}`}>
+    <span className={`inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${tone}`} title={label} aria-label={`${label}: ${delta > 0 ? "+" : ""}${delta}${unit}`}>
       {arrow} {Math.abs(delta)}
       {unit}
     </span>

@@ -1164,7 +1164,9 @@
       "from": "De",
       "to": "Até",
       "apply": "Aplicar"
-    }
+    },
+    "newDelta": "novo",
+    "before": "antes: {value}"
   },
   "setPassword": {
     "title": "Definir senha",

@@ -54,10 +54,10 @@ function Body({ data }: { data: Overview }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard testId="kpi-revenue" label={t("revenue")} value={m(data.kpis.revenue.current)} delta={data.kpis.revenue.delta} deltaLabel={vsPrevious} sub={`${vsPrevious}: ${m(data.kpis.revenue.previous)}`} spark={revenueSpark} />
-        <KpiCard testId="mrr" label={t("mrr")} value={m(data.kpis.mrr.current)} delta={data.kpis.mrr.delta} deltaLabel={t("vsStart")} sub={t("activeSubsCount", { count: data.subscriptions.active.current })} />
-        <KpiCard testId="kpi-sales" label={t("sales")} value={n(data.kpis.sales.current)} delta={data.kpis.sales.delta} deltaLabel={vsPrevious} sub={t("buyersCount", { count: data.funnel.buyers })} spark={salesSpark} />
-        <KpiCard testId="kpi-conversion" label={t("conversion")} value={`${data.kpis.conversion.current}%`} delta={data.kpis.conversion.delta} deltaUnit=" pp" deltaLabel={vsPrevious} sub={t("signupsCount", { count: data.funnel.signups.current })} />
+        <KpiCard testId="kpi-revenue" label={t("revenue")} value={m(data.kpis.revenue.current)} delta={data.kpis.revenue.delta} deltaLabel={vsPrevious} newLabel={t("newDelta")} sub={t("before", { value: m(data.kpis.revenue.previous) })} spark={revenueSpark} />
+        <KpiCard testId="mrr" label={t("mrr")} value={m(data.kpis.mrr.current)} delta={data.kpis.mrr.delta} deltaLabel={t("vsStart")} newLabel={t("newDelta")} sub={t("activeSubsCount", { count: data.subscriptions.active.current })} />
+        <KpiCard testId="kpi-sales" label={t("sales")} value={n(data.kpis.sales.current)} delta={data.kpis.sales.delta} deltaLabel={vsPrevious} newLabel={t("newDelta")} sub={t("buyersCount", { count: data.funnel.buyers })} spark={salesSpark} />
+        <KpiCard testId="kpi-conversion" label={t("conversion")} value={`${data.kpis.conversion.current}%`} delta={data.kpis.conversion.delta} deltaUnit=" pp" deltaLabel={vsPrevious} newLabel={t("newDelta")} sub={t("signupsCount", { count: data.funnel.signups.current })} />
       </div>
 
       <Panel title={t("revenueOverTime")} subtitle={t("chartHint")} testId="revenue-panel">
@@ -109,7 +109,7 @@ function Body({ data }: { data: Overview }) {
                 <li key={step.label} className="rounded-xl bg-white/[0.03] p-3 ring-1 ring-white/[0.06]">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-medium text-muted">{index + 1}. {step.label}</span>
-                    {step.delta !== undefined && <DeltaBadge delta={step.delta} label={vsPrevious} />}
+                    {step.delta !== undefined && <DeltaBadge delta={step.delta} label={vsPrevious} newLabel={t("newDelta")} />}
                   </div>
                   <div className="mt-1 flex items-baseline justify-between gap-2">
                     <span className="text-lg font-semibold tabular-nums">{step.value == null ? "—" : n(step.value)}</span>
