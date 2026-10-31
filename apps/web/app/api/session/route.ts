@@ -10,7 +10,9 @@ async function userFromAccess(token: string, request: Request) {
     cache: "no-store",
   });
   if (!response.ok) return null;
-  const data = (await response.json()) as { user?: { id: string; email: string; role: string; emailVerified?: boolean } };
+  const data = (await response.json()) as {
+    user?: { id: string; email: string; role: string; emailVerified?: boolean; name?: string; username?: string; avatarUrl?: string | null };
+  };
   return data.user ? toSessionUser(data.user) : null;
 }
 

@@ -8,6 +8,7 @@ export * from "./exclusive-video";
 export * from "./initial-creators";
 export * from "./legal";
 export * from "./monetization";
+export * from "./currency";
 export * from "./return-path";
 
 export const contentModes = ["general", "adult", "hybrid"] as const;

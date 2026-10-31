@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { AccountRole } from "@mimelux/core";
+import { readAffiliateCookieHeader } from "@mimelux/core/currency";
 import { safeReturnPath } from "@/lib/auth-return";
 import { apiAuth, authErrorMessage, toApiRole, toSessionUser } from "@/lib/api-auth";
 import { applyAuthCookies } from "@/lib/session-cookies";
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
     next?: string;
   } | null;
   const returnPath = safeReturnPath(body?.next);
+  const referral = readAffiliateCookieHeader(request.headers.get("cookie"));
   const { response, data } = await apiAuth("/auth/register", {
     name: body?.name ?? "",
     email: body?.email ?? "",
@@ -25,6 +27,7 @@ export async function POST(request: Request) {
     acceptCreatorTerms: body?.acceptCreatorTerms === true,
     locale: body?.locale,
     ...(returnPath ? { next: returnPath } : {}),
+    ...(referral?.clickId ? { clickId: referral.clickId } : {}),
   }, request);
   if (!response.ok || !data.user || !data.accessToken || !data.refreshToken) {
     return NextResponse.json(

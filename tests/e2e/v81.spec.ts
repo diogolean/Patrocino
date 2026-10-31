@@ -31,7 +31,7 @@ test("dark login headline and badge use the Patrocino mark", async ({ page }) =>
   await expect(page.locator("body")).not.toContainText("FanMimo");
 
   for (const [code, title] of Object.entries(headlines)) {
-    await page.getByRole("button", { name: code, exact: true }).click();
+    await page.getByRole("main").getByRole("button", { name: code, exact: true }).click();
     const heading = page.locator("aside h2");
     await expect(heading).toHaveText(title);
     const color = await heading.evaluate((el) => getComputedStyle(el).color);
@@ -46,7 +46,7 @@ test("dark login headline and badge use the Patrocino mark", async ({ page }) =>
 
   await page.evaluate(() => localStorage.setItem("theme", "dark"));
   await page.reload();
-  await page.getByRole("button", { name: "PT", exact: true }).click();
+  await page.getByRole("main").getByRole("button", { name: "PT", exact: true }).click();
   await expect(page.locator("aside h2")).toHaveText(headlines.PT);
   await expect(page.getByRole("button", { name: "Entendi" })).toHaveCount(0);
   await mkdir(shots, { recursive: true });

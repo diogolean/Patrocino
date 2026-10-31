@@ -22,6 +22,7 @@ import { randomBytes } from "node:crypto";
 import { verify } from "jsonwebtoken";
 import { z } from "zod";
 import { ensureAdmins } from "./ensure-admin";
+import { AdminCommerceController } from "./admin-commerce.controller";
 import { AdminRevenueController } from "./admin-revenue.controller";
 
 const roles = ["FAN", "CREATOR", "AFFILIATE", "ADMIN"] as const;
@@ -245,7 +246,7 @@ class AdminBoot implements OnModuleInit {
 }
 
 @Module({
-  controllers: [AdminController, AdminRevenueController],
+  controllers: [AdminController, AdminRevenueController, AdminCommerceController],
   providers: [AdminBoot],
 })
 export class AdminModule {}

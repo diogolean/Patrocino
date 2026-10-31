@@ -11,6 +11,8 @@ import { paymentProvider, readStripePublishable, readStripeSecret, readStripeWeb
 import { handleStripeEvent, startPlanCheckout } from "./billing";
 import { logPayment, stripeEventChargeId } from "./payment-log";
 import { ExpayPaymentsController } from "./expay.controller";
+import { currencyForVisitor } from "@mimelux/core/currency";
+import { rememberReferral } from "../affiliates/tracking";
 import { chargeDraftForUser, ensureQuotedPurchase } from "./quote-charge";
 
 const demoPurchaseSchema = z.object({ mode: z.literal("demo") });
@@ -43,18 +45,27 @@ export class PaymentsController {
   @Post("payments/checkout")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create a purchase from a database plan and start checkout" })
-  async createCheckout(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
+  async createCheckout(
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("cf-ipcountry") country: string | undefined,
+    @Headers("x-patrocino-locale") locale: string | undefined,
+    @Headers("accept-language") acceptLanguage: string | undefined,
+    @Headers("x-patrocino-click") clickId: string | undefined,
+    @Body() body: unknown,
+  ) {
     const user = await requireUser(authorization);
+    const currency = currencyForVisitor({ country, locale, acceptLanguage });
+    if (clickId) await rememberReferral(user.id, clickId);
     const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     if (record.provider === "stripe" && typeof record.purpose === "string") {
       if (!paymentMethodsEnabled().stripe) throw apiError(409, "STRIPE_IS_NOT_ENABLED", "Stripe is not enabled.");
-      const draft = await chargeDraftForUser(user, body);
+      const draft = await chargeDraftForUser(user, body, currency, clickId);
       const purchase = await ensureQuotedPurchase(draft);
       try {
         const checkout = await paymentProvider("stripe").createCheckout({
           purchaseId: purchase.id,
           amountCents: draft.amountCents,
-          currency: "brl",
+          currency: draft.currency === "USD" ? "usd" : "brl",
           description: draft.description,
           buyerId: user.id,
           creatorId: draft.creatorId,
@@ -71,9 +82,11 @@ export class PaymentsController {
             creatorId: draft.creatorId,
             subjectId: draft.subjectId,
             amountCents: draft.amountCents,
+            currency: draft.currency,
             status: purchase.status,
           },
           amountCents: draft.amountCents,
+          currency: draft.currency,
           ...checkout,
         };
       } catch (error) {
@@ -86,7 +99,7 @@ export class PaymentsController {
       }
     }
     const input = parseCheckout(body);
-    return startPlanCheckout(user, input);
+    return startPlanCheckout(user, input, currency);
   }
 
   @Post("purchases/:contentId/checkout")

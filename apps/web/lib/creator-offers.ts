@@ -19,6 +19,7 @@ export type ProfilePromotion = {
 
 export type ProfileOffers = {
   source: "database";
+  currency: "BRL" | "USD";
   plans: ProfilePlan[];
   packs: ProfilePack[];
   promotion: ProfilePromotion | null;
@@ -30,7 +31,7 @@ function numberOrNull(value: unknown) {
 
 export function parseProfileOffers(payload: unknown): ProfileOffers | null {
   if (!payload || typeof payload !== "object") return null;
-  const body = payload as { plans?: unknown; packs?: unknown; promotion?: unknown };
+  const body = payload as { plans?: unknown; packs?: unknown; promotion?: unknown; currency?: unknown };
   if (!Array.isArray(body.plans)) return null;
   const plans: ProfilePlan[] = [];
   for (const item of body.plans) {
@@ -68,5 +69,6 @@ export function parseProfileOffers(payload: unknown): ProfileOffers | null {
       };
     }
   }
-  return { source: "database", plans, packs, promotion };
+  const currency = body.currency === "USD" ? "USD" : "BRL";
+  return { source: "database", currency, plans, packs, promotion };
 }

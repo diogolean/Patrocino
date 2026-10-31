@@ -29,6 +29,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { optionalUser, requireUser } from "../auth/require-user";
 import { ensureBlurredPreview, writePosterAndPreview } from "./derivatives";
+import { centsForCurrency, currencyForVisitor, ppvQuote, type ChargeCurrency } from "@mimelux/core/currency";
 import { fanSubscribed, paidPostPurchase, resolveVideoPrice, viewerCanReadPost } from "./entitlement";
 import { MEDIA_GRANT_TTL_SECONDS, readMediaGrant, signMediaGrant } from "./signed-url";
 import { chunkSizeBytes, declaredMimeMatches, detectFile, maxBytes, servedMimeType } from "./sniff";
@@ -57,6 +58,8 @@ const patchSchema = z.object({
   caption: z.string().min(1).max(500).optional(),
   visibility: visibilitySchema.optional(),
   priceCents: z.number().int().positive().nullable().optional(),
+  guestPriceCents: z.number().int().positive().nullable().optional(),
+  guestPriceCentsUsd: z.number().int().positive().nullable().optional(),
   publishedAt: z.string().datetime().nullable().optional(),
 });
 
@@ -209,7 +212,14 @@ export class MediaController {
   }
 
   @Get("creators/:key/subscriber-videos")
-  async subscriberVideos(@Param("key") key: string, @Headers("authorization") authorization?: string) {
+  async subscriberVideos(
+    @Param("key") key: string,
+    @Headers("authorization") authorization?: string,
+    @Headers("cf-ipcountry") country?: string,
+    @Headers("x-patrocino-locale") locale?: string,
+    @Headers("accept-language") acceptLanguage?: string,
+  ) {
+    const currency = currencyForVisitor({ country, locale, acceptLanguage });
     const viewer = await optionalUser(authorization);
     const keys = Array.from(new Set([key, key.replace(/-/g, "")]));
     const creator = await database.creator.findFirst({
@@ -266,7 +276,25 @@ export class MediaController {
         id: post.id,
         mediaId: media.id,
         exclusiveIndex: exclusiveVideoIndex(ordinals, post.id),
-        priceCents: post.priceCents ?? creator.defaultVideoPriceCents,
+        ...(() => {
+          const priced = ppvQuote({
+            currency,
+            subscribed,
+            subscriberBrl: post.priceCents,
+            subscriberUsd: post.priceCentsUsd,
+            guestBrl: post.guestPriceCents,
+            guestUsd: post.guestPriceCentsUsd,
+            defaultSubscriberBrl: creator.defaultVideoPriceCents,
+            defaultSubscriberUsd: creator.defaultVideoPriceCentsUsd,
+            defaultGuestBrl: creator.guestVideoPriceCents,
+            defaultGuestUsd: creator.guestVideoPriceCentsUsd,
+          });
+          return {
+            priceCents: priced.amountCents,
+            subscriberCents: priced.subscriberCents,
+            currency,
+          };
+        })(),
         previewUrl: previewKey ? `/media/${previewKey}${previewVersion ? `?v=${previewVersion}` : ""}` : null,
         fileUrl: null,
         durationMs: media.durationMs,
@@ -275,7 +303,7 @@ export class MediaController {
         subscribed,
       });
     }
-    return { items, subscribed, viewerHandle: viewer ? await this.viewerHandle(viewer.id) : null };
+    return { items, subscribed, currency, viewerHandle: viewer ? await this.viewerHandle(viewer.id) : null };
   }
 
   @Post("media/uploads")
@@ -498,6 +526,8 @@ export class MediaController {
       where: { id: post.id },
       data: {
         caption: post.media.some((item) => item.kind === "VIDEO") && !actor.admin ? post.caption : (parsed.data.caption ?? post.caption),
+        ...(parsed.data.guestPriceCents !== undefined ? { guestPriceCents: parsed.data.guestPriceCents } : {}),
+        ...(parsed.data.guestPriceCentsUsd !== undefined ? { guestPriceCentsUsd: parsed.data.guestPriceCentsUsd } : {}),
         visibility,
         priceCents,
         publishedAt:
@@ -534,7 +564,7 @@ export class MediaController {
     if (!media?.post || media.post.deletedAt || media.storageKey === "pending") throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
     const allowed = await this.canRead(authorization, media.post);
     if (!allowed) {
-      throw apiError(403, media.post.visibility === "SUBSCRIBER_PPV" ? "PURCHASE_REQUIRED" : "SUBSCRIPTION_REQUIRED", media.post.visibility === "SUBSCRIBER_PPV" ? "Purchase required" : "Subscription required");
+      throw apiError(401, "MEDIA_LOCKED", "Media is locked");
     }
     const exp = Math.floor(Date.now() / 1000) + MEDIA_GRANT_TTL_SECONDS;
     const token = signMediaGrant({ mediaId: media.id, userId: user.id, exp, kind: "file" });
@@ -659,6 +689,8 @@ export class MediaController {
       caption: string;
       visibility: string;
       priceCents: number | null;
+      guestPriceCents?: number | null;
+      guestPriceCentsUsd?: number | null;
       publishedAt: Date | null;
       sortOrder: number;
       media: {
@@ -686,6 +718,8 @@ export class MediaController {
       exclusiveIndex: video ? exclusiveVideoIndex(ordinals, post.id) : undefined,
       visibility: fromVisibility(post.visibility),
       priceCents: post.priceCents,
+      guestPriceCents: post.guestPriceCents ?? null,
+      guestPriceCentsUsd: post.guestPriceCentsUsd ?? null,
       publishedAt: post.publishedAt?.toISOString() ?? null,
       sortOrder: post.sortOrder,
       locked,

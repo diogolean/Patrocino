@@ -114,6 +114,7 @@ model User {
   emailVerificationExpiresAt DateTime?
   refreshTokenHash           String?
   stripeCustomerId String?          @unique
+  googleSub        String?          @unique
   suspendedAt      DateTime?
   deletedAt        DateTime?
   mustResetPassword Boolean         @default(false)
@@ -121,6 +122,7 @@ model User {
   termsVersion     String?
   acceptedTermsIp  String?
   locale           String?
+  referredClickId  String?
   isDemo           Boolean          @default(false)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -161,6 +163,9 @@ model Creator {
   creatorShareBps      Int?
   affiliateCommissionBps Int?
   defaultVideoPriceCents Int            @default(100)
+  defaultVideoPriceCentsUsd Int         @default(1900)
+  guestVideoPriceCents    Int?
+  guestVideoPriceCentsUsd Int?
   isDemo               Boolean          @default(false)
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
@@ -170,6 +175,7 @@ model Creator {
   purchases            Purchase[]
   ledgerEntries        LedgerEntry[]
   affiliateLinks       AffiliateLink[]
+  affiliateAssignments AffiliateAssignment[]
   promotions           Promotion[]
   contentPacks         ContentPack[]
   specialRequests      SpecialRequest[]
@@ -204,11 +210,13 @@ model Plan {
   name            String
   description     String
   priceCents      Int
+  priceCentsUsd   Int            @default(0)
   durationMonths  Int            @default(1)
   discountPercent Int            @default(0)
   active          Boolean        @default(true)
   stripeProductId String?
   stripePriceId   String?
+  stripePriceIdUsd String?
   isDemo          Boolean        @default(false)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -232,6 +240,7 @@ model Subscription {
   endsAt              DateTime?
   currentPeriodEnd    DateTime?
   cancelAtPeriodEnd   Boolean            @default(false)
+  currency            String             @default("BRL")
   stripeSubscriptionId String?           @unique
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -251,6 +260,9 @@ model Post {
   caption     String
   visibility  ContentVisibility @default(FREE)
   priceCents  Int?
+  priceCentsUsd Int?
+  guestPriceCents Int?
+  guestPriceCentsUsd Int?
   likeCount   Int               @default(0)
   sortOrder   Int               @default(0)
   isDemo      Boolean           @default(false)
@@ -353,6 +365,8 @@ model PlatformSettings {
   id                     String   @id @default("default")
   creatorShareBps        Int      @default(8000)
   affiliateCommissionBps Int      @default(2000)
+  defaultPackPriceCentsBrl Int   @default(14900)
+  defaultPackPriceCentsUsd Int   @default(4900)
   updatedAt              DateTime @updatedAt
 
   @@map("platform_settings")
@@ -382,6 +396,7 @@ model Message {
   sender         User         @relation("SentMessages", fields: [senderId], references: [id])
   body           String
   ppvPriceCents  Int?
+  ppvPriceCentsUsd Int?
   offerPostId    String?
   offerPost      Post?        @relation("MessageOffers", fields: [offerPostId], references: [id], onDelete: SetNull)
   isDemo         Boolean      @default(false)
@@ -644,6 +659,7 @@ model ContentPack {
   name        String
   description String
   priceCents  Int
+  priceCentsUsd Int             @default(0)
   active      Boolean           @default(true)
   isDemo      Boolean           @default(false)
   createdAt   DateTime          @default(now())
@@ -707,6 +723,8 @@ model Affiliate {
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   code          String          @unique
   displayName   String
+  commissionBps Int             @default(2000)
+  emailPlaceholder Boolean         @default(false)
   status        String          @default("ACTIVE")
   payoutMethod  PayoutMethod    @default(PIX)
   payoutDetails Json?
@@ -714,10 +732,26 @@ model Affiliate {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   links         AffiliateLink[]
+  assignments   AffiliateAssignment[]
   commissions   Commission[]
   payouts       Payout[]
 
   @@map("affiliates")
+}
+
+model AffiliateAssignment {
+  id            String    @id @default(cuid())
+  affiliateId   String
+  affiliate     Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  creatorId     String
+  creator       Creator   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  commissionBps Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([affiliateId, creatorId])
+  @@index([creatorId])
+  @@map("affiliate_assignments")
 }
 
 model AffiliateLink {
@@ -727,6 +761,7 @@ model AffiliateLink {
   creatorId   String
   creator     Creator   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   slug        String
+  code        String    @unique
   active      Boolean   @default(true)
   isDemo      Boolean   @default(false)
   createdAt   DateTime  @default(now())

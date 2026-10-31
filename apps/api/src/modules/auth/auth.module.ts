@@ -10,7 +10,9 @@ import {
   HttpStatus,
   Module,
   Post,
+  Query,
   Req,
+  Res,
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
@@ -19,7 +21,7 @@ import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { legalConfig } from "@mimelux/core/legal";
 import { safeReturnPath } from "@mimelux/core/return-path";
 import { Prisma, database } from "@mimelux/db/runtime";
-import type { Request } from "express";
+import type { Request, Response } from "express";
 import { compare, hash } from "bcryptjs";
 import { createHash, randomBytes } from "node:crypto";
 import { sign, verify } from "jsonwebtoken";
@@ -28,7 +30,20 @@ import { resolveClientIp } from "./client-ip";
 import { createEmailSender } from "./email-sender";
 import { localeFromAcceptLanguage, normalizeUserLocale } from "./user-locale";
 import { apiError } from "../../http/api-error";
+import { rememberReferral } from "../affiliates/tracking";
+import {
+  accountForGoogleProfile,
+  fetchGoogleProfile,
+  googleAuthorizeUrl,
+  googleConfigured,
+  googleRedirectUri,
+  readGoogleState,
+  signGoogleState,
+} from "./google-oauth";
 import { clearEmailLoginFailures, emailLoginBlocked, recordEmailLoginFailure } from "./login-failures";
+import { AvatarTooLargeError, readAvatarBody, readAvatarImage, renderAvatarJpeg } from "./avatar";
+import { openStorage } from "../media/storage";
+import { requireUser } from "./require-user";
 
 const demoEmailAliases: Record<string, string> = {
   "creator@mimelux.com.br": "criadora@mimelux.com.br",
@@ -62,6 +77,7 @@ const registerSchema = credentialsSchema.extend({
   acceptCreatorTerms: z.boolean().optional(),
   locale: z.string().max(12).optional(),
   next: z.string().max(2048).optional(),
+  clickId: z.string().max(80).optional(),
 });
 const refreshSchema = z.object({ refreshToken: z.string().min(20) });
 const verifySchema = z.object({ token: z.string().min(20) });
@@ -71,6 +87,7 @@ type AccountUser = {
   email: string;
   role: string;
   emailVerifiedAt: Date | null;
+  profile?: { name: string; username: string; avatarUrl: string | null } | null;
 };
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -91,6 +108,9 @@ function publicUser(user: AccountUser) {
     email: user.email,
     role: user.role,
     emailVerified: Boolean(user.emailVerifiedAt),
+    name: user.profile?.name ?? "",
+    username: user.profile?.username ?? "",
+    avatarUrl: user.profile?.avatarUrl ?? null,
   };
 }
 
@@ -120,11 +140,12 @@ function issueTokens(user: AccountUser) {
 
 async function persistSession(user: AccountUser) {
   const tokens = issueTokens(user);
-  await database.user.update({
+  const saved = await database.user.update({
     where: { id: user.id },
     data: { refreshTokenHash: tokenHash(tokens.refreshToken) },
+    include: { profile: true },
   });
-  return { user: publicUser(user), ...tokens };
+  return { user: publicUser(saved), ...tokens };
 }
 
 type SessionPayload = Awaited<ReturnType<typeof persistSession>>;
@@ -197,14 +218,12 @@ class AuthController {
         emailVerified?: boolean;
       };
       if (!payload.sub || !payload.email || !payload.role) throw new Error("Incomplete token");
-      return {
-        user: {
-          id: payload.sub,
-          email: payload.email,
-          role: payload.role,
-          emailVerified: Boolean(payload.emailVerified),
-        },
-      };
+      const record = await database.user.findUnique({
+        where: { id: payload.sub },
+        include: { profile: true },
+      });
+      if (!record || record.deletedAt || record.suspendedAt) throw new Error("Missing account");
+      return { user: publicUser(record) };
     } catch {
       throw apiError(401, "INVALID_ACCESS_TOKEN", "Invalid access token");
     }
@@ -232,7 +251,12 @@ class AuthController {
   @Post("register")
   @UseGuards(ThrottlerGuard)
   @ApiOperation({ summary: "Register a user and return a token pair" })
-  async register(@Body() body: unknown, @Req() request: Request, @Headers("accept-language") acceptLanguage?: string) {
+  async register(
+    @Body() body: unknown,
+    @Req() request: Request,
+    @Headers("accept-language") acceptLanguage?: string,
+    @Headers("x-patrocino-click") clickHeader?: string,
+  ) {
     const input = parseBody(registerSchema, body);
     if (input.role !== "FAN" && input.role !== "CREATOR" && input.role !== "AFFILIATE") {
       throw apiError(400, "ROLE_IS_NOT_ALLOWED", "Role is not allowed");
@@ -260,6 +284,8 @@ class AuthController {
         },
       });
       await sendVerification(user, safeReturnPath(input.next));
+      const clickId = input.clickId || clickHeader;
+      if (clickId) await rememberReferral(user.id, clickId);
       return persistSession(user);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -349,6 +375,115 @@ class AuthController {
       },
     });
     return { user: publicUser(verified) };
+  }
+
+  @Post("avatar")
+  @HttpCode(200)
+  @ApiOperation({ summary: "Upload a square profile photo" })
+  async avatar(@Headers("authorization") authorization: string | undefined, @Req() request: Request) {
+    const user = await requireUser(authorization);
+    let body: Buffer;
+    try {
+      body = await readAvatarBody(request);
+    } catch (error) {
+      if (error instanceof AvatarTooLargeError) throw apiError(413, "AVATAR_TOO_LARGE", "Avatar is too large");
+      throw error;
+    }
+    const image = readAvatarImage(body);
+    if (image.error === "AVATAR_TOO_LARGE") throw apiError(413, "AVATAR_TOO_LARGE", "Avatar is too large");
+    if (image.error) throw apiError(400, "AVATAR_INVALID", "Send a JPEG, PNG, or WebP image");
+    let jpeg: Buffer;
+    try {
+      jpeg = await renderAvatarJpeg(body);
+    } catch {
+      throw apiError(400, "AVATAR_FAILED", "Could not process the image");
+    }
+    const storage = await openStorage();
+    await storage.write(`avatars/${user.id}.jpg`, jpeg);
+    const avatarUrl = `/media/avatars/${user.id}.jpg?v=${Date.now()}`;
+    const existing = await database.profile.findUnique({ where: { userId: user.id } });
+    if (existing) {
+      await database.profile.update({ where: { userId: user.id }, data: { avatarUrl } });
+    } else {
+      const local = user.email.split("@")[0]?.slice(0, 80) || "Patrocino";
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await database.profile.create({
+            data: {
+              userId: user.id,
+              name: local,
+              username: `user-${randomBytes(6).toString("hex")}`,
+              avatarUrl,
+            },
+          });
+          break;
+        } catch (error) {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" && attempt < 2) continue;
+          throw error;
+        }
+      }
+    }
+    const record = await database.user.findUnique({ where: { id: user.id }, include: { profile: true } });
+    if (!record) throw apiError(401, "INVALID_ACCESS_TOKEN", "Invalid access token");
+    return { user: publicUser(record) };
+  }
+
+  @Get("google")
+  @ApiOperation({ summary: "Whether Google sign-in is configured" })
+  googleStatus() {
+    return { enabled: googleConfigured() };
+  }
+
+  @Get("google/start")
+  @ApiOperation({ summary: "Redirect the browser to Google" })
+  googleStart(
+    @Query("next") next: string | undefined,
+    @Query("role") role: string | undefined,
+    @Query("clickId") clickId: string | undefined,
+    @Res() response: Response,
+  ) {
+    if (!googleConfigured()) {
+      response.status(404).json({ enabled: false });
+      return;
+    }
+    const accountRole = role === "CREATOR" || role === "AFFILIATE" ? role : "FAN";
+    const state = signGoogleState({
+      next: next ?? null,
+      role: accountRole,
+      clickId: clickId ?? null,
+    });
+    response.redirect(googleAuthorizeUrl({
+      clientId: process.env.GOOGLE_CLIENT_ID!.trim(),
+      state,
+      redirectUri: googleRedirectUri(),
+    }));
+  }
+
+  @Get("google/callback")
+  @ApiOperation({ summary: "Google OAuth callback" })
+  async googleCallback(
+    @Query("code") code: string | undefined,
+    @Query("state") state: string | undefined,
+    @Res() response: Response,
+  ) {
+    const origin = (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3333").replace(/\/$/, "");
+    const fail = (reason: string) => {
+      response.redirect(`${origin}/auth?route=sign-in&google=${encodeURIComponent(reason)}`);
+    };
+    if (!googleConfigured() || !code || !state) return fail("unavailable");
+    const parsed = readGoogleState(state);
+    if (!parsed) return fail("state");
+    const profile = await fetchGoogleProfile({ code });
+    if (!profile) return fail("profile");
+    const account = await accountForGoogleProfile(profile, parsed);
+    if (account.error || !account.user) return fail(account.error ?? "profile");
+    const session = await persistSession(account.user);
+    const secure = process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production";
+    const common = `HttpOnly; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`;
+    response.append("Set-Cookie", `patrocino_access=${session.accessToken}; Max-Age=900; ${common}`);
+    response.append("Set-Cookie", `patrocino_refresh=${session.refreshToken}; Max-Age=2592000; ${common}`);
+    const next = parsed.next ?? (account.user.role === "CREATOR" ? "/painel" : account.user.role === "AFFILIATE" ? "/afiliados" : "/topcreators");
+    response.redirect(`${origin}${next}`);
   }
 }
 

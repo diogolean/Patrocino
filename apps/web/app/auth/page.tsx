@@ -2,29 +2,23 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import {
-  Apple,
   Eye,
   EyeOff,
   LoaderCircle,
-  Music2,
   ShieldCheck,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { Button, Logo, Mark } from "@mimelux/ui";
 import {
-  DEMO_ACCOUNTS,
-  isDemoAffiliateEmail,
-  isDemoCreatorEmail,
-  isDemoFanEmail,
   loginSchema,
   registerSchema,
   type AccountRole,
 } from "@mimelux/core";
 import { bindAttribution } from "@/lib/affiliates";
 import { readDemo, writeDemo } from "@/lib/demo-store";
-import { loginAccount, registerAccount, sessionErrorText, socialAccount } from "@/lib/session";
+import { loginAccount, registerAccount, sessionErrorText } from "@/lib/session";
 import { creators, posts } from "@/lib/gateway";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { MonetizeSection } from "@/components/monetize-section";
@@ -32,21 +26,6 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { toast } from "sonner";
 import { roleHome } from "@/lib/use-role-guard";
 import { authHref, postSignUpPath, safeReturnPath } from "@/lib/auth-return";
-
-const demoPassword = DEMO_ACCOUNTS.fan.password;
-
-function demoLoginFor(role: AccountRole) {
-  if (role === "creator") return { email: "criadora@patrocino.com", password: DEMO_ACCOUNTS.creator.password };
-  if (role === "affiliate") return { email: "afiliado@patrocino.com", password: DEMO_ACCOUNTS.affiliate.password };
-  return { email: "fan@patrocino.com", password: DEMO_ACCOUNTS.fan.password };
-}
-
-function stillDemoLogin(email: string, password: string) {
-  const value = email.trim().toLowerCase();
-  if (!value) return password === "" || password === demoPassword;
-  if (password !== demoPassword) return false;
-  return isDemoFanEmail(value) || isDemoCreatorEmail(value) || isDemoAffiliateEmail(value);
-}
 
 function AuthContent() {
   const router = useRouter();
@@ -61,39 +40,33 @@ function AuthContent() {
   const preset = requestedRole === "creator" || requestedRole === "affiliate" ? requestedRole : "fan";
   const [role, setRole] = useState<AccountRole>(preset);
   const [professional, setProfessional] = useState(preset !== "fan");
-  const initialLogin = signUp ? { email: "", password: "" } : demoLoginFor(preset);
-  const [email, setEmail] = useState(initialLogin.email);
-  const [password, setPassword] = useState(initialLogin.password);
-  const mode = signUp ? "up" : "in";
-  const [seenMode, setSeenMode] = useState(mode);
-  if (seenMode !== mode) {
-    setSeenMode(mode);
-    if (signUp) {
-      if (stillDemoLogin(email, password)) {
-        setEmail("");
-        setPassword("");
-      }
-    } else if (!email.trim() || stillDemoLogin(email, password)) {
-      const demo = demoLoginFor(role);
-      setEmail(demo.email);
-      setPassword(demo.password);
-    }
-  }
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedCreatorTerms, setAcceptedCreatorTerms] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [social, setSocial] = useState("");
+  const [googleOn, setGoogleOn] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    let cancel = false;
+    fetch("/api/auth/google", { cache: "no-store" })
+      .then(async (response) => (response.ok ? response.json() : { enabled: false }))
+      .then((payload: { enabled?: boolean }) => {
+        if (!cancel) setGoogleOn(payload.enabled === true);
+      })
+      .catch(() => {
+        if (!cancel) setGoogleOn(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
   const featuredCreator = creators[0]!;
   const featuredPost = posts[0]!;
 
   function chooseRole(next: AccountRole) {
     setRole(next);
-    if (signUp || !stillDemoLogin(email, password)) return;
-    const demo = demoLoginFor(next);
-    setEmail(demo.email);
-    setPassword(demo.password);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -145,28 +118,16 @@ function AuthContent() {
     }
   }
 
-  async function socialLogin(name: string) {
+  function startGoogle() {
     const nextRole: AccountRole = professional ? (role === "affiliate" ? "affiliate" : "creator") : "fan";
-    if (!signUp) {
-      setError(t("socialNeedsSignup"));
-      return;
-    }
-    if (!acceptedTerms || (nextRole === "creator" && !acceptedCreatorTerms)) {
+    if (signUp && (!acceptedTerms || (nextRole === "creator" && !acceptedCreatorTerms))) {
       setError(t("acceptRequired"));
       return;
     }
-    setSocial(name);
-    try {
-      const user = await socialAccount(name, nextRole, {
-        acceptTerms: true,
-        acceptCreatorTerms: nextRole === "creator",
-        next: nextPath ?? undefined,
-      });
-      router.push(nextPath ? (signUp ? postSignUpPath(nextPath) : nextPath) : signUp ? "/onboarding" : roleHome(user.role));
-    } catch (caught) {
-      setSocial("");
-      setError(sessionErrorText(caught, errors, page("enterFailed")));
-    }
+    const params = new URLSearchParams();
+    if (nextPath) params.set("next", nextPath);
+    if (signUp) params.set("role", nextRole);
+    window.location.assign(`/api/auth/google/start?${params.toString()}`);
   }
 
   return (
@@ -314,24 +275,17 @@ function AuthContent() {
             {t("or")}
           </div>
 
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { label: "Google", icon: <span className="text-base font-black">G</span> },
-              { label: "X", icon: <span className="text-base font-black">𝕏</span> },
-              { label: "Apple", icon: <Apple className="size-4" /> },
-              { label: "TikTok", icon: <Music2 className="size-4" /> },
-            ].map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                aria-label={t("social", { provider: item.label })}
-                onClick={() => socialLogin(item.label)}
-                className="grid h-12 place-items-center rounded-full border border-black/8 bg-white/60 transition hover:-translate-y-0.5 hover:bg-white dark:bg-white/5 dark:hover:bg-white/10"
-              >
-                {social === item.label ? <LoaderCircle className="size-4 animate-spin" /> : item.icon}
-              </button>
-            ))}
-          </div>
+          {googleOn ? (
+            <button
+              type="button"
+              data-testid="google-sign-in"
+              onClick={startGoogle}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/8 bg-white/80 text-sm font-bold transition hover:bg-white dark:bg-white/5"
+            >
+              <span className="text-base font-black">G</span>
+              {signUp ? t("googleSignUp") : t("googleSignIn")}
+            </button>
+          ) : null}
 
           <p className="mt-7 text-center text-xs text-muted">
             {signUp ? t("hasAccount") : t("noAccount")}{" "}
@@ -389,18 +343,6 @@ function AuthContent() {
       </aside>
       </div>
       {!signUp && <MonetizeSection />}
-
-      {social && (
-        <div className="fixed inset-0 z-[60] grid place-items-center bg-background/90 backdrop-blur-md">
-          <div className="text-center">
-            <div className="mx-auto grid size-16 place-items-center rounded-3xl bg-primary">
-              <LoaderCircle className="size-7 animate-spin text-ink" />
-            </div>
-            <p className="mt-5 text-lg font-extrabold">{t("entering")}</p>
-            <p className="mt-1 text-xs text-muted">{t("connecting", { provider: social })}</p>
-          </div>
-        </div>
-      )}
     </main>
   );
 }

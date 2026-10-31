@@ -2,14 +2,17 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSyncExternalStore } from "react";
 import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
-import { logoutAccount } from "@/lib/session";
+import { AccountCharacterCard } from "@/components/character-card";
+import { getServerSessionSnapshot, getSessionSnapshot, logoutAccount, subscribeSession } from "@/lib/session";
 import { useSignedIn } from "@/lib/use-signed-in";
 
 export default function AccountPage() {
   const ready = useSignedIn();
   const t = useTranslations("account");
+  const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
   const router = useRouter();
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState("");
@@ -75,6 +78,11 @@ export default function AccountPage() {
   return (
     <div className="mx-auto w-full max-w-lg px-4 py-8 sm:px-6">
       <p className="text-[10px] font-bold uppercase tracking-[.18em] text-primary-strong">{t("eyebrow")}</p>
+      {session.user ? (
+        <div className="mt-4" data-testid="account-panel">
+          <AccountCharacterCard user={session.user} />
+        </div>
+      ) : null}
       <h1 className="mt-2 text-3xl font-extrabold tracking-[-.04em]">{t("title")}</h1>
       <p className="mt-3 text-sm leading-6 text-muted">{t("body")}</p>
 

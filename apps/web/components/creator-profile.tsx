@@ -18,6 +18,7 @@ import {
   Video,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
+import { formatMoney } from "@mimelux/core/currency";
 import { Button, Pill, PremiumModal } from "@mimelux/ui";
 import type { Creator, Post } from "@/lib/gateway";
 import { brl, compact, plans, reviewsFor } from "@/lib/gateway";
@@ -58,6 +59,7 @@ export function CreatorProfile({
 }) {
   const router = useRouter();
   const locale = useLocale();
+  const money = (cents: number) => formatMoney(cents, offers?.currency ?? "BRL", locale);
   const t = useTranslations("profile");
   const media = useTranslations("media");
   const errors = useTranslations("errors");
@@ -286,11 +288,7 @@ export function CreatorProfile({
       openSlides(video.id);
       return;
     }
-    if (video.subscribed || memberSubscribed) {
-      setPurchase(video);
-      return;
-    }
-    setSubscribePrompt(true);
+    setPurchase(video);
   }
 
   function subscribeWithCard() {
@@ -418,7 +416,7 @@ export function CreatorProfile({
                   {renewOpen && (
                     <Link href={renewal.href} className={`flex h-11 w-full items-center justify-between rounded-full border border-primary/35 bg-gradient-to-r from-primary/20 via-elevated to-accent/20 px-5 text-sm font-semibold ${planGlow}`}>
                       <span>{renewal.label}</span>
-                      <span>{creator.free ? t("free") : brl(renewal.cents)}</span>
+                      <span>{creator.free ? t("free") : money(renewal.cents)}</span>
                     </Link>
                   )}
                 </>
@@ -429,7 +427,7 @@ export function CreatorProfile({
           ) : primaryPlan ? (
             <Link href={databaseHref(primaryPlan.id)} className={`flex h-11 w-full items-center justify-between rounded-full bg-gradient-to-r from-primary to-primary-strong/90 px-5 text-sm font-semibold text-ink ${planGlow}`}>
               <span>{primaryPlan.months === 1 ? `1 ${t("month")}` : primaryPlan.name}</span>
-              <span data-testid="plan-price" data-months={primaryPlan.months}>{brl(primaryPlan.chargeCents)}</span>
+              <span data-testid="plan-price" data-months={primaryPlan.months}>{money(primaryPlan.chargeCents)}</span>
             </Link>
           ) : (
             <Link href={planHref(1)} className={`flex h-11 w-full items-center justify-between rounded-full bg-gradient-to-r from-primary to-primary-strong/90 px-5 text-sm font-semibold text-ink ${planGlow}`}>
@@ -464,7 +462,7 @@ export function CreatorProfile({
                 ? extraPlans.map((plan) => (
                     <Link key={plan.id} href={databaseHref(plan.id)} className={`flex h-11 w-full items-center justify-between rounded-full border border-primary/35 bg-gradient-to-r from-primary/20 via-elevated to-accent/20 px-5 text-sm font-semibold ${planGlow}`}>
                       <span>{plan.name}</span>
-                      <span data-testid="plan-price" data-months={plan.months}>{brl(plan.chargeCents)}</span>
+                      <span data-testid="plan-price" data-months={plan.months}>{money(plan.chargeCents)}</span>
                     </Link>
                   ))
                 : ([3, 6, 12] as const).map((months) => (
@@ -477,7 +475,7 @@ export function CreatorProfile({
                 ? offers?.packs.map((pack) => (
                     <Link key={pack.id} href={`/checkout?kind=pack&id=${pack.id}&creator=${creator.username}&return=/creator/${creator.username}`} className={`flex h-10 w-full items-center justify-between rounded-full border border-accent/40 bg-gradient-to-r from-accent/15 to-primary/10 px-5 text-sm font-semibold ${planGlow}`}>
                       <span>{pack.name}</span>
-                      <span data-testid="pack-price">{brl(pack.priceCents)}</span>
+                      <span data-testid="pack-price">{money(pack.priceCents)}</span>
                     </Link>
                   ))
                 : (
@@ -488,6 +486,12 @@ export function CreatorProfile({
                   )}
             </div>
           )}
+          {memberSubscribed && offers?.packs.map((pack) => (
+            <Link key={pack.id} href={`/checkout?kind=pack&id=${pack.id}&creator=${creator.username}&return=/creator/${creator.username}`} className={`mt-1.5 flex h-10 w-full items-center justify-between rounded-full border border-accent/40 bg-gradient-to-r from-accent/15 to-primary/10 px-5 text-sm font-semibold ${planGlow}`}>
+              <span>{pack.name}</span>
+              <span data-testid="pack-price">{money(pack.priceCents)}</span>
+            </Link>
+          ))}
         </div>
         <Button variant="outline" data-testid="profile-special" className="mt-1.5 h-10 w-full rounded-full" onClick={() => setRequestOpen(true)}>
           <Sparkles className="size-4" /> {t("special")}
@@ -614,8 +618,17 @@ export function CreatorProfile({
           <div className="space-y-3">
             <p className="text-sm font-semibold">
               {formatDuration(purchase.durationMs) ? `${formatDuration(purchase.durationMs)} · ` : ""}
-              {brl(purchase.priceCents)}
+              {money(purchase.priceCents)}
             </p>
+            {!purchase.subscribed && purchase.subscriberCents != null && purchase.subscriberCents < purchase.priceCents ? (
+              <div className="rounded-2xl bg-primary/15 px-3 py-3 text-sm" data-testid="subscriber-discount">
+                <p className="font-extrabold">{t("subscriberDiscount")}</p>
+                <p className="mt-1 text-muted">{t("subscriberPays", { price: money(purchase.subscriberCents) })}</p>
+                <Link href={primaryPlan ? databaseHref(primaryPlan.id) : planHref(1)} className="mt-2 inline-block font-bold text-primary-strong">
+                  {t("seePlan")}
+                </Link>
+              </div>
+            ) : null}
             <Link href={videoCheckout(purchase)} className="inline-flex h-11 w-full items-center justify-center rounded-full bg-primary text-sm font-semibold text-ink">
               {t("unlock", { price: brl(purchase.priceCents) })}
             </Link>

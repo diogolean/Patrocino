@@ -17,6 +17,7 @@ async function loginAs(
   email: string,
 ) {
   await page.getByLabel("Email ou CPF").fill(email);
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
 }
 

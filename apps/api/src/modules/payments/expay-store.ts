@@ -2,6 +2,7 @@ import { database, Prisma } from "@mimelux/db/runtime";
 import { cancelPendingChatSequence, enqueueChatSequence } from "../chat/sequence";
 import { notifyBuyerOfPaidCharge } from "./buyer-notice";
 import { logPayment } from "./payment-log";
+import { reversePurchase, settlePurchase } from "./billing";
 import { laterInstant } from "./subscription-status";
 import {
   billingModes,
@@ -83,12 +84,28 @@ function toCharge(row: {
   };
 }
 
-async function syncPurchase(row: { idempotencyKey: string; status: string; accessActive: boolean }) {
-  const status = row.accessActive ? "PAID" : row.status === "failed" ? "FAILED" : row.status === "refunded" || row.status === "canceled" ? "REFUNDED" : "PENDING";
-  await database.purchase.updateMany({
-    where: { idempotencyKey: row.idempotencyKey },
-    data: { status },
-  });
+async function syncPurchase(row: {
+  idempotencyKey: string;
+  status: string;
+  accessActive: boolean;
+  providerChargeId: string;
+}) {
+  const purchase = await database.purchase.findUnique({ where: { idempotencyKey: row.idempotencyKey } });
+  if (!purchase) return;
+  if (row.accessActive && purchase.status === "PENDING") {
+    await database.$transaction((tx) => settlePurchase(tx, purchase.id, row.providerChargeId));
+    return;
+  }
+  if ((row.status === "refunded" || row.status === "canceled") && purchase.status === "PAID") {
+    await database.$transaction((tx) => reversePurchase(tx, purchase.id, `refund:${row.providerChargeId}`));
+    return;
+  }
+  if ((row.status === "failed" || row.status === "canceled" || row.status === "refunded") && purchase.status === "PENDING") {
+    await database.purchase.update({
+      where: { id: purchase.id },
+      data: { status: row.status === "failed" ? "FAILED" : "REFUNDED" },
+    });
+  }
 }
 
 async function syncSubscription(row: {

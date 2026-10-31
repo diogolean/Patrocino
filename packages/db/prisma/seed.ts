@@ -1,4 +1,4 @@
-import { PrismaClient, type OwnershipType, type UserRole } from "@prisma/client";
+import { Prisma, PrismaClient, type OwnershipType, type UserRole } from "@prisma/client";
 import { hash } from "bcryptjs";
 import {
   demoCreatorCreatedAt,
@@ -277,6 +277,62 @@ export async function seedDatabase() {
   await seedChatSequenceDefaults();
   await versionStoredAssetUrls();
   await ensureSeedAdmins();
+  await seedEzequiel();
+}
+
+export async function seedEzequiel() {
+  const placeholderEmail = "ezequiel.afiliado@patrocino.com";
+  const password = process.env.PATROCINO_CREATORS_PASSWORD?.trim() ?? "";
+  const byCode = await prisma.affiliate.findUnique({ where: { code: "ezequiel" } });
+  const existingUser = byCode
+    ? await prisma.user.findUnique({ where: { id: byCode.userId } })
+    : await prisma.user.findUnique({ where: { email: placeholderEmail } });
+  if (!existingUser && !password) return;
+  const user =
+    existingUser ??
+    (await prisma.user.create({
+      data: {
+        email: placeholderEmail,
+        passwordHash: await hash(password, 12),
+        role: "AFFILIATE",
+        emailVerifiedAt: new Date(),
+      },
+    }));
+  await ensureProfile({ userId: user.id, name: "Ezequiel", username: "ezequiel" });
+  const existing = byCode ?? (await prisma.affiliate.findUnique({ where: { userId: user.id } }));
+  const affiliate =
+    existing ??
+    (await prisma.affiliate.create({
+      data: {
+        userId: user.id,
+        code: "ezequiel",
+        displayName: "Ezequiel",
+        commissionBps: 2000,
+        emailPlaceholder: true,
+      },
+    }));
+  const creators = await prisma.creator.findMany({ select: { id: true }, orderBy: { createdAt: "asc" } });
+  for (const creator of creators) {
+    const assigned = await prisma.affiliateAssignment.findUnique({
+      where: { affiliateId_creatorId: { affiliateId: affiliate.id, creatorId: creator.id } },
+    });
+    if (!assigned) {
+      await prisma.affiliateAssignment.create({ data: { affiliateId: affiliate.id, creatorId: creator.id } });
+    }
+  }
+  const link = await prisma.affiliateLink.findFirst({ where: { affiliateId: affiliate.id } });
+  const first = creators[0];
+  if (!link && first) {
+    const profile = await prisma.profile.findFirst({ where: { user: { creator: { id: first.id } } } });
+    await prisma.affiliateLink.create({
+      data: {
+        affiliateId: affiliate.id,
+        creatorId: first.id,
+        slug: profile?.username ?? "ezequiel",
+        code: "ezequiel",
+      },
+    });
+  }
 }
 
 function posterDiskKey(poster: string | undefined) {
@@ -480,13 +536,17 @@ async function seedChatSequenceDefaults() {
     const action = chatSequenceSeedAction(existing?.steps ?? null);
     if (action === "keep") continue;
     if (!existing) {
-      await prisma.chatSequence.create({
-        data: {
-          creatorId: row.id,
-          enabled: true,
-          steps: { create: defaultStepData() },
-        },
-      });
+      try {
+        await prisma.chatSequence.create({
+          data: {
+            creatorId: row.id,
+            enabled: true,
+            steps: { create: defaultStepData() },
+          },
+        });
+      } catch (error) {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2003") throw error;
+      }
     } else {
       await prisma.chatSequenceStep.deleteMany({ where: { sequenceId: existing.id } });
       await prisma.chatSequenceStep.createMany({

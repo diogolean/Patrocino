@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Copy, Link2, ShieldAlert } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useLocale, useTranslations } from "next-intl";
-import { minimumPayoutCents, paymentProviders, payoutScheduleConfirmed } from "@mimelux/core";
+import { formatMoney, minimumPayoutCents, paymentProviders, payoutScheduleConfirmed } from "@mimelux/core";
 import { Button, Pill } from "@mimelux/ui";
 import { affiliateLink, affiliateSummary, demoAffiliate } from "@/lib/affiliates";
 import { brl, compact, creatorLikeTotal, creators } from "@/lib/gateway";
@@ -89,6 +89,7 @@ export default function AffiliateDashboardPage() {
       </div>
       <h1 className="mt-3 text-3xl font-extrabold tracking-[-.045em]">{t("title")}</h1>
       <p className="mt-2 max-w-2xl text-xs leading-5 text-muted">{t("body")}</p>
+      <LiveResults locale={locale} />
 
       <section data-testid="affiliate-mosaic" className="mt-8">
         <h2 className="text-2xl font-extrabold tracking-[-.04em]">{t("mosaicTitle")}</h2>
@@ -233,5 +234,93 @@ export default function AffiliateDashboardPage() {
         <Button className="mt-4" disabled={summary.approvedCents < minimumPayoutCents} onClick={withdraw}>{t("withdraw")}</Button>
       </section>
     </div>
+  );
+}
+
+type LedgerStatus = "pending" | "confirmed" | "paid" | "reversed";
+type LedgerRow = { id: string; createdAt: string; amountCents: number; currency: string; status: LedgerStatus; kind: string; linkCode: string; saleCents: number };
+type SeriesPoint = { label: string; clicks: number; conversions: number; earningsCents: number };
+type LinkStat = { code: string; path: string; username: string; name: string; clicks: number; conversions: number; conversionRate: number };
+type Dashboard = {
+  summary: { clicks: number; signups: number; purchases: number; money: { currency: string; commissionOwedCents: number }[] };
+  ledger: LedgerRow[];
+  links: LinkStat[];
+  daily: SeriesPoint[];
+  monthly: SeriesPoint[];
+};
+
+function LiveResults({ locale }: { locale: string }) {
+  const t = useTranslations("commerce");
+  const [board, setBoard] = useState<Dashboard | null>(null);
+  const [grain, setGrain] = useState<"day" | "month">("day");
+  useEffect(() => {
+    let cancel = false;
+    fetch("/api/affiliate/me", { cache: "no-store" })
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((payload: Dashboard | null) => {
+        if (!cancel && payload?.summary) setBoard(payload);
+      })
+      .catch(() => {
+        if (!cancel) setBoard(null);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
+  if (!board) return null;
+  const series = (grain === "day" ? board.daily : board.monthly) ?? [];
+  const links = board.links ?? [];
+  const ledger = board.ledger ?? [];
+  const peak = Math.max(1, ...series.map((point) => point.earningsCents));
+  const statusLabel = (status: LedgerStatus) =>
+    status === "confirmed" ? t("statusConfirmed") : status === "paid" ? t("statusPaid") : status === "reversed" ? t("statusReversed") : t("statusPending");
+  return (
+    <section data-testid="affiliate-live" className="mt-6 space-y-4">
+      <div className="rounded-[28px] border border-border bg-elevated/70 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-extrabold">{t("liveTitle")}</h2>
+          <div className="flex gap-2 text-xs font-bold">
+            <button type="button" data-testid="chart-daily" onClick={() => setGrain("day")} className={grain === "day" ? "text-primary-strong" : "text-muted"}>{t("daily")}</button>
+            <button type="button" data-testid="chart-monthly" onClick={() => setGrain("month")} className={grain === "month" ? "text-primary-strong" : "text-muted"}>{t("monthly")}</button>
+          </div>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-muted">{t("liveBody")}</p>
+        <p className="mt-3 text-sm font-semibold">
+          {t("clicks")} {board.summary.clicks} · {t("signups")} {board.summary.signups} · {t("purchases")} {board.summary.purchases}
+        </p>
+        <div data-testid="affiliate-chart" className="mt-4 flex h-28 items-end gap-1">
+          {series.map((point) => (
+            <div key={point.label} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${point.label}: ${point.clicks} / ${point.conversions}`}>
+              <div className="w-full rounded-t bg-primary" style={{ height: `${Math.max(4, Math.round((point.earningsCents / peak) * 88))}px` }} />
+              <span className="truncate text-[9px] text-muted">{point.label.slice(5)}</span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2 text-[10px] text-muted">{t("chartHint")}</p>
+      </div>
+      <div className="rounded-[28px] border border-border bg-elevated/70 p-5">
+        <h2 className="text-sm font-extrabold">{t("perLink")}</h2>
+        <ul className="mt-3 space-y-2 text-sm">
+          {links.map((link) => (
+            <li key={link.code} data-testid="affiliate-link-rate" className="flex flex-wrap items-center justify-between gap-2">
+              <span>{link.name || link.username} · {link.path}</span>
+              <span className="font-semibold">{t("conversionRate")} {Math.round(link.conversionRate * 100)}%</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="rounded-[28px] border border-border bg-elevated/70 p-5">
+        <h2 className="text-sm font-extrabold">{t("ledgerTitle")}</h2>
+        {ledger.length === 0 ? <p className="mt-2 text-xs text-muted">{t("liveEmpty")}</p> : null}
+        <ul className="mt-3 space-y-2 text-sm">
+          {ledger.map((row) => (
+            <li key={row.id} data-testid="commission-row" data-status={row.status} className="flex flex-wrap items-center justify-between gap-2">
+              <span>{new Date(row.createdAt).toLocaleDateString(locale)} · {row.linkCode}</span>
+              <span className="font-semibold">{formatMoney(row.amountCents, row.currency === "USD" ? "USD" : "BRL", locale)} · {statusLabel(row.status)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }

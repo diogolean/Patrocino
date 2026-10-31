@@ -1,18 +1,23 @@
 import { expect, test } from "@playwright/test";
 
-test("the sign-in role picker uses the matching demo account", async ({ page }) => {
+test("sign-in starts blank and each role still opens after the credentials are typed", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/auth?route=sign-in");
+  await expect(page.getByLabel("Email ou CPF")).toHaveValue("");
+  await expect(page.locator('input[name="password"]')).toHaveValue("");
 
   await page.getByLabel("Email ou CPF").fill("pessoa.real@mimelux.test");
   await page.getByRole("switch", { name: "Criador ou afiliado" }).click();
   await expect(page.getByLabel("Email ou CPF")).toHaveValue("pessoa.real@mimelux.test");
+  await expect(page.locator('input[name="password"]')).toHaveValue("");
 
   await page.goto("/auth?route=sign-in");
   await page.getByRole("switch", { name: "Criador ou afiliado" }).click();
   await page.getByRole("button", { name: "Afiliado", exact: true }).click();
-  await expect(page.getByLabel("Email ou CPF")).toHaveValue("afiliado@patrocino.com");
-  await expect(page.locator('input[name="password"]')).toHaveValue("mimelux123");
+  await expect(page.getByLabel("Email ou CPF")).toHaveValue("");
+  await expect(page.locator('input[name="password"]')).toHaveValue("");
+  await page.getByLabel("Email ou CPF").fill("afiliado@patrocino.com");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/afiliados/);
   await expect(page.getByTestId("session-user")).toHaveAttribute("data-role", "affiliate");
@@ -21,13 +26,17 @@ test("the sign-in role picker uses the matching demo account", async ({ page }) 
   await page.goto("/auth?route=sign-in");
   await page.getByRole("switch", { name: "Criador ou afiliado" }).click();
   await page.getByRole("button", { name: "Criador", exact: true }).click();
-  await expect(page.getByLabel("Email ou CPF")).toHaveValue("criadora@patrocino.com");
+  await expect(page.getByLabel("Email ou CPF")).toHaveValue("");
+  await page.getByLabel("Email ou CPF").fill("criadora@patrocino.com");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/painel$/);
   await expect(page.getByTestId("session-user")).toHaveAttribute("data-role", "creator");
 
   await page.goto("/auth?route=sign-in");
-  await expect(page.getByLabel("Email ou CPF")).toHaveValue("fan@patrocino.com");
+  await expect(page.getByLabel("Email ou CPF")).toHaveValue("");
+  await page.getByLabel("Email ou CPF").fill("fan@patrocino.com");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/topcreators/);
   await expect(page.getByTestId("session-user")).toHaveAttribute("data-role", "fan");

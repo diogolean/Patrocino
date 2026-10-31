@@ -22,16 +22,19 @@ test.beforeEach(async ({ page }) => {
 
 test("FanMimo aliases reach the same homes as the original demo accounts", async ({ page }) => {
   await page.getByLabel("Email ou CPF").fill("fan@fanmimo.com.br");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/topcreators/);
 
   await page.goto("/auth?route=sign-in");
   await page.getByLabel("Email ou CPF").fill("criadora@fanmimo.com");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/painel$/);
 
   await page.goto("/auth?route=sign-in");
   await page.getByLabel("Email ou CPF").fill("afiliado@fanmimo.com.br");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/afiliados$/);
 });

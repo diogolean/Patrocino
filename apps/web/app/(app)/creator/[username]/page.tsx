@@ -2,12 +2,15 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { CreatorProfile } from "@/components/creator-profile";
 import { apiBase } from "@/lib/api-auth";
+import { visitorForwardHeaders } from "@/lib/client-ip";
 import { parseProfileOffers, type ProfileOffers } from "@/lib/creator-offers";
 import { creators, posts, postsForCreator } from "@/lib/gateway";
 
 async function loadOffers(username: string): Promise<ProfileOffers | null> {
   try {
+    const headerList = await headers();
     const response = await fetch(`${apiBase()}/creators/${encodeURIComponent(username)}`, {
+      headers: visitorForwardHeaders(headerList),
       cache: "no-store",
       signal: AbortSignal.timeout(2500),
     });
@@ -40,7 +43,7 @@ export default async function CreatorPage(props: {
       price: undefined,
     }));
 
-  const priced = offers ?? (process.env.NODE_ENV === "production" ? { source: "database" as const, plans: [], packs: [], promotion: null } : null);
+  const priced = offers ?? (process.env.NODE_ENV === "production" ? { source: "database" as const, currency: "BRL" as const, plans: [], packs: [], promotion: null } : null);
   const gallerySession = (await headers()).get("x-gallery-session") ?? "";
   return (
     <CreatorProfile

@@ -35,7 +35,15 @@ export async function paidPostPurchase(buyerId: string, postId: string) {
     where: { buyerId, postId, status: "PAID" },
     select: { id: true },
   });
-  return Boolean(purchase);
+  if (purchase) return true;
+  const packed = await database.contentPackItem.findFirst({
+    where: {
+      postId,
+      pack: { purchases: { some: { buyerId, status: "PAID", kind: "PACK" } } },
+    },
+    select: { id: true },
+  });
+  return Boolean(packed);
 }
 
 export async function viewerCanReadPost(input: {

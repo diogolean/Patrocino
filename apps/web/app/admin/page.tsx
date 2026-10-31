@@ -1,13 +1,17 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { LoaderCircle, Shield } from "lucide-react";
 import { Button, Logo } from "@mimelux/ui";
+import { AccountIdentity } from "@/components/account-identity";
+import { accountDisplayName } from "@/lib/account-label";
 import { apiErrorText } from "@/lib/api-error";
 import { getServerSessionSnapshot, getSessionSnapshot, refreshSession, subscribeSession } from "@/lib/session";
 import { roleHome } from "@/lib/use-role-guard";
+import { AdminCommerce } from "./commerce";
 import { AdminCreatorStudio } from "./creator-studio";
 import { AdminMedia } from "./media-library";
 import { RevenueSettings } from "./revenue-settings";
@@ -48,6 +52,7 @@ export default function AdminPage() {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations("admin");
+  const nav = useTranslations("nav");
   const auth = useTranslations("auth");
   const errors = useTranslations("errors");
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
@@ -227,12 +232,18 @@ export default function AdminPage() {
     >
       <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-4 sm:px-8">
         <Logo compact />
-        <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-primary-strong">
-          <Shield className="size-4" />
-          {t("adminLabel")}
-        </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <Link href="/conta" data-testid="account-settings" aria-label={nav("accountLabel", { name: accountDisplayName(session.user) })} className="min-w-0">
+            <AccountIdentity user={session.user} label={nav("account")} compact />
+          </Link>
+          <p className="hidden items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-primary-strong sm:flex">
+            <Shield className="size-4" />
+            {t("adminLabel")}
+          </p>
+        </div>
       </header>
       <RevenueSettings />
+      <AdminCommerce />
       <AdminMedia />
       <AdminCreatorStudio />
       <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[320px_1fr] sm:px-8">

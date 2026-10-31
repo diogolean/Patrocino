@@ -6,6 +6,9 @@ export type SessionUser = {
   email: string;
   role: SessionRole;
   emailVerified: boolean;
+  name: string;
+  username: string;
+  avatarUrl: string | null;
 };
 
 type ApiUser = {
@@ -13,6 +16,9 @@ type ApiUser = {
   email: string;
   role: string;
   emailVerified?: boolean;
+  name?: string;
+  username?: string;
+  avatarUrl?: string | null;
 };
 
 export function apiBase() {
@@ -39,6 +45,9 @@ export function toSessionUser(user: ApiUser): SessionUser {
     email: user.email,
     role: toAccountRole(user.role),
     emailVerified: Boolean(user.emailVerified),
+    name: user.name ?? "",
+    username: user.username ?? "",
+    avatarUrl: user.avatarUrl ?? null,
   };
 }
 

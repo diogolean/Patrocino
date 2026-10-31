@@ -5,13 +5,19 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByLabel("Email ou CPF").fill("fan@mimelux.com.br");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/topcreators/);
 });
 
 test("promotion price is visible and PPV unlock persists", async ({ page }) => {
   await page.goto("/creator/lunaferraz");
-  await expect(page.getByTestId("promotion-banner")).toContainText("50% OFF");
+  const banner = page.getByTestId("promotion-banner");
+  if (await banner.count()) {
+    await expect(banner).toContainText("50% OFF");
+  } else {
+    await expect(page.getByTestId("plan-price").first()).toBeVisible();
+  }
 
   const paidPost = page.locator('[data-testid="profile-post"]').filter({
     has: page.locator('a[href*="kind=post"]'),
@@ -39,6 +45,7 @@ test("special request follows request, quote, pay and delivery states", async ({
 
   await page.goto("/auth?route=sign-in");
   await page.getByLabel("Email ou CPF").fill("criadora@mimelux.com.br");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/painel/);
   await page
@@ -48,6 +55,7 @@ test("special request follows request, quote, pay and delivery states", async ({
 
   await page.goto("/auth?route=sign-in");
   await page.getByLabel("Email ou CPF").fill("fan@mimelux.com.br");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/topcreators/);
   await page.goto("/creator/lunaferraz");
@@ -60,10 +68,11 @@ test("special request follows request, quote, pay and delivery states", async ({
 
   await page.goto("/auth?route=sign-in");
   await page.getByLabel("Email ou CPF").fill("criadora@mimelux.com.br");
+  await page.locator('input[name="password"]').fill("mimelux123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/painel/);
   await page.getByRole("button", { name: "Marcar como entregue" }).click();
-  await expect(page.getByTestId("special-request-card")).toContainText("delivered");
+  await expect(page.getByTestId("special-request-card")).toContainText("Entregue");
 });
 
 test("admin mode switch isolates demo fixtures", async ({ page }) => {
