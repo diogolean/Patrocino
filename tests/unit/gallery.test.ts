@@ -162,3 +162,12 @@ describe("profile gallery and subscription copy", () => {
     expect(publicMediaAllowed(["..", "etc", "passwd"])).toBe(false);
   });
 });
+
+describe("ppvCover", () => {
+  it("shows the clear poster only to the buyer", async () => {
+    const { ppvCover } = await import("../../apps/web/lib/gallery");
+    expect(ppvCover({ purchased: true, posterUrl: "/v1/p", previewUrl: "/blur" })).toBe("/v1/p");
+    expect(ppvCover({ purchased: false, posterUrl: "/v1/p", previewUrl: "/blur" })).toBe("/blur");
+    expect(ppvCover({ purchased: true, posterUrl: null, previewUrl: "/blur" })).toBe("/blur");
+  });
+});

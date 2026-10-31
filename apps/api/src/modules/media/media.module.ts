@@ -247,6 +247,7 @@ export class MediaController {
       const media = post.media.find((item) => item.kind === "VIDEO") ?? post.media[0];
       if (!media || media.storageKey === "pending") continue;
       const purchased = viewer ? await paidPostPurchase(viewer.id, post.id) : false;
+      const posterUrl = viewer && purchased && media.posterKey ? this.posterUrl(media.id, viewer.id) : null;
       let previewKey = media.previewKey;
       if (media.kind === "VIDEO") {
         const storage = await this.storage();
@@ -296,6 +297,7 @@ export class MediaController {
           };
         })(),
         previewUrl: previewKey ? `/media/${previewKey}${previewVersion ? `?v=${previewVersion}` : ""}` : null,
+        posterUrl,
         fileUrl: null,
         durationMs: media.durationMs,
         publishedAt: post.publishedAt?.toISOString() ?? null,
@@ -573,6 +575,33 @@ export class MediaController {
       expiresAt: new Date(exp * 1000).toISOString(),
       handle: await this.viewerHandle(user.id),
     };
+  }
+
+  /** Unblurred cover for a fan who can read the post, e.g. a paid PPV video. */
+  private posterUrl(mediaId: string, userId: string) {
+    const exp = Math.floor(Date.now() / 1000) + 60 * 60;
+    return `/v1/media/${mediaId}/poster?token=${encodeURIComponent(signMediaGrant({ mediaId, userId, exp, kind: "poster" }))}`;
+  }
+
+  @Get("media/:id/poster")
+  async poster(@Param("id") id: string, @Res() response: Response, @Query("token") token?: string) {
+    const grant = token ? readMediaGrant(token, Date.now(), undefined, "poster") : null;
+    if (!grant || grant.mediaId !== id) throw apiError(401, "MEDIA_LINK_EXPIRED", "Media link expired");
+    const media = await database.media.findUnique({ where: { id }, include: { post: true } });
+    if (!media?.post || media.post.deletedAt || !media.posterKey) throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
+    const user = await database.user.findUnique({ where: { id: grant.userId } });
+    if (!user || user.deletedAt || user.suspendedAt) throw apiError(401, "MEDIA_LINK_EXPIRED", "Media link expired");
+    const owner = await database.creator.findUnique({ where: { userId: user.id } });
+    if (!(await viewerCanReadPost({ user, owns: owner?.id === media.post.creatorId, post: media.post }))) {
+      throw apiError(403, "PURCHASE_REQUIRED", "Purchase required");
+    }
+    const storage = await this.storage();
+    if (!(await storage.exists(media.posterKey))) throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
+    response.setHeader("Content-Type", "image/jpeg");
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    response.setHeader("Cache-Control", "private, max-age=3600");
+    response.setHeader("Content-Length", String(await storage.size(media.posterKey)));
+    await pipeStream(createReadStream(storage.resolve(media.posterKey)), response);
   }
 
   @Get("media/:id/file")

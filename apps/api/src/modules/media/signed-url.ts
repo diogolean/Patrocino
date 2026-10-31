@@ -4,7 +4,7 @@ export type MediaGrant = {
   mediaId: string;
   userId: string;
   exp: number;
-  kind: "file";
+  kind: "file" | "poster";
 };
 
 export const MEDIA_GRANT_TTL_SECONDS = 8 * 60;
@@ -26,7 +26,7 @@ export function signMediaGrant(grant: MediaGrant, key = secret()) {
   return `${payload}.${signature}`;
 }
 
-export function readMediaGrant(token: string, now = Date.now(), key = secret()): MediaGrant | null {
+export function readMediaGrant(token: string, now = Date.now(), key = secret(), kind: MediaGrant["kind"] = "file"): MediaGrant | null {
   const parts = token.split(".");
   if (parts.length !== 2) return null;
   const [payload, signature] = parts;
@@ -37,12 +37,12 @@ export function readMediaGrant(token: string, now = Date.now(), key = secret()):
   if (left.length !== right.length || !timingSafeEqual(left, right)) return null;
   try {
     const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Partial<MediaGrant>;
-    if (parsed.kind !== "file") return null;
+    if (parsed.kind !== kind) return null;
     if (typeof parsed.mediaId !== "string" || !parsed.mediaId) return null;
     if (typeof parsed.userId !== "string" || !parsed.userId) return null;
     if (typeof parsed.exp !== "number" || !Number.isFinite(parsed.exp)) return null;
     if (parsed.exp * 1000 <= now) return null;
-    return { mediaId: parsed.mediaId, userId: parsed.userId, exp: parsed.exp, kind: "file" };
+    return { mediaId: parsed.mediaId, userId: parsed.userId, exp: parsed.exp, kind };
   } catch {
     return null;
   }

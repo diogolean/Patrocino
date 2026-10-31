@@ -3,11 +3,14 @@
 import { LockKeyhole, Play } from "lucide-react";
 import { useLocale } from "next-intl";
 import { formatMoney } from "@mimelux/core/currency";
-import { formatDuration, type SubscriberVideo } from "@/lib/gallery";
+import { refreshSession } from "@/lib/session";
+import { formatDuration, ppvCover, type SubscriberVideo } from "@/lib/gallery";
 
 export type { SubscriberVideo };
 
 export async function loadSubscriberCatalog(username: string): Promise<SubscriberVideo[]> {
+  // The 15-minute access cookie may have lapsed; renew it first so a buyer is not served the anonymous, locked catalog.
+  await refreshSession().catch(() => null);
   const response = await fetch(`/api/creators/${encodeURIComponent(username)}/subscriber-videos`, { cache: "no-store" });
   if (!response.ok) return [];
   const data = (await response.json().catch(() => ({}))) as { items?: SubscriberVideo[] };
@@ -22,6 +25,7 @@ export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; o
   const locale = useLocale();
   const duration = formatDuration(video.durationMs);
   const locked = !video.purchased;
+  const cover = ppvCover(video);
   const price = formatMoney(video.priceCents, video.currency ?? "BRL", locale);
   return (
     <button
@@ -36,7 +40,7 @@ export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; o
       <span
         aria-hidden
         className={`absolute inset-0 scale-105 bg-cover bg-center ${locked ? "blur-sm" : ""}`}
-        style={video.previewUrl ? { backgroundImage: `url("${video.previewUrl.replace(/"/g, "")}")` } : undefined}
+        style={cover ? { backgroundImage: `url("${cover.replace(/"/g, "")}")` } : undefined}
       />
       <span className={`absolute inset-0 ${locked ? "bg-black/25" : "bg-black/15"}`} />
       <span className="relative grid h-full place-items-center p-2 text-center">

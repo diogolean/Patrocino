@@ -29,3 +29,15 @@ describe("short-lived media grants", () => {
     expect(readMediaGrant(other, now, key)?.mediaId).toBe("media-2");
   });
 });
+
+describe("poster grants", () => {
+  it("keeps poster and file grants apart", () => {
+    const now = Date.parse("2026-10-31T12:00:00.000Z");
+    const exp = Math.floor(now / 1000) + 60;
+    const poster = signMediaGrant({ mediaId: "m", userId: "fan", exp, kind: "poster" }, key);
+    const file = signMediaGrant({ mediaId: "m", userId: "fan", exp, kind: "file" }, key);
+    expect(readMediaGrant(poster, now, key, "poster")?.kind).toBe("poster");
+    expect(readMediaGrant(poster, now, key)).toBeNull();
+    expect(readMediaGrant(file, now, key, "poster")).toBeNull();
+  });
+});

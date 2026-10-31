@@ -129,8 +129,14 @@ export function CreatorProfile({
         })
         .catch(() => undefined);
     }
+    function reloadCatalog() {
+      void loadSubscriberCatalog(creator.username).then((catalog) => {
+        if (!cancel) setVideos(catalog);
+      });
+    }
     loadSubscription();
     window.addEventListener(PAYMENT_CONFIRMED_EVENT, loadSubscription);
+    window.addEventListener(PAYMENT_CONFIRMED_EVENT, reloadCatalog);
     void loadSubscriberCatalog(creator.username).then((catalog) => {
       if (cancel) return;
       setVideos(catalog);
@@ -146,6 +152,7 @@ export function CreatorProfile({
     return () => {
       cancel = true;
       window.removeEventListener(PAYMENT_CONFIRMED_EVENT, loadSubscription);
+      window.removeEventListener(PAYMENT_CONFIRMED_EVENT, reloadCatalog);
     };
   }, [creator.id, creator.username]);
 

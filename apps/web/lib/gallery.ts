@@ -6,11 +6,18 @@ export type SubscriberVideo = {
   subscriberCents?: number;
   currency?: "BRL" | "USD";
   previewUrl: string | null;
+  /** Unblurred cover, only sent to a fan who bought the video. */
+  posterUrl?: string | null;
   purchased: boolean;
   subscribed: boolean;
   durationMs: number | null;
   publishedAt: string | null;
 };
+
+/** Card cover: the buyer sees the clear poster, everyone else the blurred preview. */
+export function ppvCover(video: Pick<SubscriberVideo, "purchased" | "posterUrl" | "previewUrl">) {
+  return video.purchased && video.posterUrl ? video.posterUrl : video.previewUrl;
+}
 
 export type GalleryEntry<T> =
   | { kind: "post"; post: T; publishedAt: string }
