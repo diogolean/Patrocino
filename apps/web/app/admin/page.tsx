@@ -15,6 +15,7 @@ import { AdminCommerce } from "./commerce";
 import { AdminCreatorStudio } from "./creator-studio";
 import { AdminMedia } from "./media-library";
 import { RevenueSettings } from "./revenue-settings";
+import { ExecutiveOverview } from "./overview";
 
 type AdminRole = "FAN" | "CREATOR" | "AFFILIATE" | "ADMIN";
 
@@ -242,6 +243,7 @@ export default function AdminPage() {
           </p>
         </div>
       </header>
+      <ExecutiveOverview />
       <RevenueSettings />
       <AdminCommerce />
       <AdminMedia />

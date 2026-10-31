@@ -118,6 +118,8 @@ model User {
   suspendedAt      DateTime?
   deletedAt        DateTime?
   mustResetPassword Boolean         @default(false)
+  passwordSetTokenHash String?      @unique
+  passwordSetExpiresAt DateTime?
   acceptedTermsAt  DateTime?
   termsVersion     String?
   acceptedTermsIp  String?

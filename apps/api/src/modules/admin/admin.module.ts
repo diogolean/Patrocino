@@ -24,6 +24,7 @@ import { z } from "zod";
 import { ensureAdmins } from "./ensure-admin";
 import { AdminCommerceController } from "./admin-commerce.controller";
 import { AdminRevenueController } from "./admin-revenue.controller";
+import { AdminOverviewController } from "./admin-overview.controller";
 
 const roles = ["FAN", "CREATOR", "AFFILIATE", "ADMIN"] as const;
 const patchSchema = z.object({
@@ -246,7 +247,7 @@ class AdminBoot implements OnModuleInit {
 }
 
 @Module({
-  controllers: [AdminController, AdminRevenueController, AdminCommerceController],
+  controllers: [AdminController, AdminRevenueController, AdminCommerceController, AdminOverviewController],
   providers: [AdminBoot],
 })
 export class AdminModule {}

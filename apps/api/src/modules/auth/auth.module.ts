@@ -81,6 +81,7 @@ const registerSchema = credentialsSchema.extend({
 });
 const refreshSchema = z.object({ refreshToken: z.string().min(20) });
 const verifySchema = z.object({ token: z.string().min(20) });
+const setPasswordSchema = z.object({ token: z.string().min(20).max(200), password: z.string().min(8).max(120) });
 
 type AccountUser = {
   id: string;
@@ -375,6 +376,30 @@ class AuthController {
       },
     });
     return { user: publicUser(verified) };
+  }
+
+  @Post("password/set")
+  @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
+  @ApiOperation({ summary: "Set a password with a one-time link token" })
+  async setPassword(@Body() body: unknown) {
+    const input = parseBody(setPasswordSchema, body);
+    const user = await database.user.findUnique({ where: { passwordSetTokenHash: tokenHash(input.token) } });
+    if (!user?.passwordSetExpiresAt || user.passwordSetExpiresAt.getTime() < Date.now() || user.deletedAt || user.suspendedAt) {
+      throw apiError(401, "INVALID_PASSWORD_LINK", "Invalid or expired link");
+    }
+    const updated = await database.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await hash(input.password, 12),
+        passwordSetTokenHash: null,
+        passwordSetExpiresAt: null,
+        mustResetPassword: false,
+        refreshTokenHash: null,
+        emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
+      },
+    });
+    return { ok: true, email: updated.email };
   }
 
   @Post("avatar")
