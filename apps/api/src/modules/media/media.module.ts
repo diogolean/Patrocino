@@ -35,7 +35,7 @@ import { MEDIA_GRANT_TTL_SECONDS, readMediaGrant, signMediaGrant } from "./signe
 import { chunkSizeBytes, declaredMimeMatches, detectFile, maxBytes, servedMimeType } from "./sniff";
 import { assembleChunks, openStorage, receivedChunkIndexes, type DiskStorage } from "./storage";
 import { videoOrdinalIds } from "./video-public";
-import { exclusiveVideoIndex } from "@mimelux/core/exclusive-video";
+import { exclusiveVideoIndex, hideStoredCaption } from "@mimelux/core/exclusive-video";
 
 const visibilitySchema = z.enum(["free", "subscribers", "ppv", "subscriber_ppv"]);
 
@@ -711,11 +711,12 @@ export class MediaController {
     const media = post.media[0];
     const locked = isLocked(post.visibility);
     const video = post.media.some((item) => item.kind === "VIDEO") || media?.kind === "VIDEO";
+    const hidden = !revealCaption && hideStoredCaption(post.caption, video);
     return {
       id: post.id,
       creatorId: post.creatorId,
-      caption: video && !revealCaption ? "" : post.caption,
-      exclusiveIndex: video ? exclusiveVideoIndex(ordinals, post.id) : undefined,
+      caption: hidden ? "" : post.caption,
+      exclusiveIndex: hidden || video ? exclusiveVideoIndex(ordinals, post.id) : undefined,
       visibility: fromVisibility(post.visibility),
       priceCents: post.priceCents,
       guestPriceCents: post.guestPriceCents ?? null,

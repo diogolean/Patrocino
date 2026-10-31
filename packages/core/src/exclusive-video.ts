@@ -23,6 +23,21 @@ export function exclusiveVideoIndex(orderedIds: readonly string[], id: string) {
   return index >= 0 ? index + 1 : 1;
 }
 
+const filenameExtension = /\.(jpe?g|png|gif|webp|heic|heif|avif|bmp|mp4|m4v|mov|webm|mkv|avi|qt)$/i;
+
+/** True when a caption is an upload name rather than a written description. */
+export function captionLooksLikeFilename(value: string | null | undefined) {
+  const name = (value ?? "").trim();
+  if (!name || name.length > 180) return false;
+  if (name.includes("/") || name.includes("\\")) return true;
+  return filenameExtension.test(name);
+}
+
+/** Videos never show a stored title. Photos do only when the caption is not a filename. */
+export function hideStoredCaption(caption: string | null | undefined, video: boolean) {
+  return video || captionLooksLikeFilename(caption);
+}
+
 /** Drops a stored title or filename from text a fan can see. */
 export function redactVideoTitle(text: string, secret: string | null | undefined, replacement: string) {
   const needle = secret?.trim();

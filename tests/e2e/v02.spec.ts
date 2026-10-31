@@ -19,11 +19,8 @@ test("signup offers fan, creator, and affiliate areas", async ({ page }) => {
 });
 
 test("affiliate link signup and simulated subscription create a commission", async ({ page }) => {
-  const clickLogged = page.waitForResponse(
-    (response) => response.url().includes("/api/affiliate/clicks") && response.ok(),
-  );
   await page.goto("/r/nara/lunaferraz?lang=pt-BR&sub=qa-tiktok");
-  await clickLogged;
+  await expect(page).toHaveURL(/\/creator\/lunaferraz/);
   await expect(page.getByRole("heading", { name: "Luna Ferraz" })).toBeVisible();
   await expect.poll(() =>
     page.evaluate(() => localStorage.getItem("mimelux-demo")?.includes("qa-tiktok") ?? false),
@@ -31,7 +28,7 @@ test("affiliate link signup and simulated subscription create a commission", asy
   const cookies = await page.context().cookies();
   expect(cookies.some((cookie) => cookie.name === "mimelux_attr" && cookie.httpOnly)).toBe(true);
 
-  await page.getByRole("link", { name: "Quero fazer parte" }).first().click();
+  await page.getByRole("link", { name: "Cadastre-se" }).first().click();
   await page.getByLabel("Seu nome").fill("Pessoa Indicada");
   await page.getByLabel("Email ou CPF").fill("indicada@mimelux.test");
   await page.locator('input[name="password"]').fill("mimelux123");

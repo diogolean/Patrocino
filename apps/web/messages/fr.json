@@ -565,6 +565,7 @@
   "media": {
     "fallbackLabel": "Média",
     "exclusiveVideo": "Vidéo exclusive #{n}",
+    "exclusivePhoto": "Photo exclusive #{n}",
     "guestPriceBrl": "Sans abonnement (R$)",
     "guestPriceUsd": "Sans abonnement (US$)",
     "previous": "Précédent",

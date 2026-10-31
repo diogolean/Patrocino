@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exclusiveVideoIndex, exclusiveVideoLabel, redactVideoTitle } from "./exclusive-video";
+import { captionLooksLikeFilename, exclusiveVideoIndex, exclusiveVideoLabel, hideStoredCaption, redactVideoTitle } from "./exclusive-video";
 
 describe("exclusive video labels", () => {
   it("numbers videos from a stable order and never repeats the stored title", () => {
@@ -15,5 +15,15 @@ describe("exclusive video labels", () => {
     const body = redactVideoTitle("Olha clip.mp4 agora", "clip.mp4", exclusiveVideoLabel(1, "pt-BR"));
     expect(body).toBe("Olha Vídeo exclusivo #1 agora");
     expect(body).not.toContain("clip.mp4");
+  });
+
+  it("hides every video title and any photo caption that is a filename", () => {
+    expect(hideStoredCaption("Bastidores da semana", true)).toBe(true);
+    expect(hideStoredCaption("Um café em Berlin", false)).toBe(false);
+    expect(captionLooksLikeFilename("IMG_2044.JPG")).toBe(true);
+    expect(captionLooksLikeFilename("clip.mp4")).toBe(true);
+    expect(captionLooksLikeFilename("uploads/private/photo.webp")).toBe(true);
+    expect(captionLooksLikeFilename("Domingo no parque")).toBe(false);
+    expect(hideStoredCaption("photo.png", false)).toBe(true);
   });
 });
