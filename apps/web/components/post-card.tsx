@@ -21,6 +21,7 @@ import { getServerSessionSnapshot, getSessionSnapshot, subscribeSession } from "
 
 export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
   const t = useTranslations("feed");
+  const media = useTranslations("media");
   const locale = useLocale();
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
   const signedIn = Boolean(session.user);
@@ -179,7 +180,7 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
         <p data-testid="post-likes" className="mt-1 text-xs font-bold">{t("likes", { count: (post.likes + (liked ? 1 : 0)).toLocaleString(locale) })}</p>
         <p className="mt-2 text-xs leading-5">
           <b className="mr-1.5">{creator.name}</b>
-          {post.caption}
+          {post.mediaType === "video" ? media("exclusiveVideo", { n: post.exclusiveIndex ?? 1 }) : post.caption}
         </p>
         {seedComments.filter((comment) => comment.postId === post.id).map((comment) => (
           <p key={comment.id} data-testid="post-comment" className="mt-2 text-xs leading-5">

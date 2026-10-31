@@ -127,6 +127,7 @@ describe("creator chat sequence", () => {
     expect(welcomeMessage?.conversation.creatorId).toBe(creatorUser.creator!.id);
     expect(welcomeMessage?.senderId).toBe(creatorUser.id);
     expect(welcomeMessage?.body).toContain("Marina");
+    expect(welcomeMessage?.body).not.toContain("Bastidores");
     expect(welcomeMessage?.body).toContain(`/creator/seqcreator${suffix}?tab=videos`);
     expect(welcomeMessage?.body).toContain("pedido especial");
     expect(welcomeMessage?.body.toLowerCase()).not.toMatch(/equipe|\bbot\b/);

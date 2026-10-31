@@ -7,8 +7,10 @@ import {
   renderChatSequence,
   type ChatSequenceOfferMode,
 } from "@mimelux/core/chat-sequence";
+import { exclusiveVideoIndex, exclusiveVideoLabel, redactVideoTitle } from "@mimelux/core/exclusive-video";
 import { findCreatorByKey } from "./creator-key";
 import { notifyFanOfMessage } from "../notifications/fan-notify";
+import { videoOrdinalIds } from "../media/video-public";
 
 type Db = {
   chatSequence: Prisma.TransactionClient["chatSequence"];
@@ -21,7 +23,7 @@ type Db = {
   creator: Prisma.TransactionClient["creator"];
 };
 
-type Offer = { postId: string; title: string; priceCents: number };
+type Offer = { postId: string; exclusiveIndex: number; priceCents: number };
 
 function isUnique(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
@@ -137,12 +139,13 @@ async function resolveOffer(
         priceCents: { gt: 0 },
         media: { some: { kind: "VIDEO" } },
       },
-      select: { id: true, caption: true, priceCents: true },
+      select: { id: true, priceCents: true },
     });
     if (!post?.priceCents) return null;
     const bought = await purchasedPostIds(db, input.buyerId, [post.id]);
     if (bought.has(post.id)) return null;
-    return { postId: post.id, title: post.caption, priceCents: post.priceCents };
+    const ordinals = await videoOrdinalIds(input.creatorId);
+    return { postId: post.id, exclusiveIndex: exclusiveVideoIndex(ordinals, post.id), priceCents: post.priceCents };
   }
   const posts = await db.post.findMany({
     where: {
@@ -155,12 +158,13 @@ async function resolveOffer(
     },
     orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
     take: 30,
-    select: { id: true, caption: true, priceCents: true },
+    select: { id: true, priceCents: true },
   });
   const bought = await purchasedPostIds(db, input.buyerId, posts.map((post) => post.id));
   const next = posts.find((post) => post.priceCents && !bought.has(post.id));
   if (!next?.priceCents) return null;
-  return { postId: next.id, title: next.caption, priceCents: next.priceCents };
+  const ordinals = await videoOrdinalIds(input.creatorId);
+  return { postId: next.id, exclusiveIndex: exclusiveVideoIndex(ordinals, next.id), priceCents: next.priceCents };
 }
 
 async function deliverJob(
@@ -211,7 +215,7 @@ async function deliverJob(
   const body = renderChatSequence(step.bodyTemplate, {
     fanName,
     creatorName,
-    videoTitle: offer?.title ?? "",
+    videoTitle: offer ? exclusiveVideoLabel(offer.exclusiveIndex, subscription.fan.locale) : "",
     price: offer ? brl(offer.priceCents) : "",
     videosUrl,
     requestUrl,
@@ -346,21 +350,25 @@ export async function readFanThread(fanId: string, creatorKey: string) {
   if (!conversation) return { messages: [] as ThreadMessage[], creator: identity };
   const postIds = conversation.messages.map((message) => message.offerPostId).filter((id): id is string => Boolean(id));
   const bought = await purchasedPostIds(database, fanId, postIds);
+  const ordinals = await videoOrdinalIds(creator.id);
+  const fan = await database.user.findUnique({ where: { id: fanId }, select: { locale: true } });
   const messages: ThreadMessage[] = conversation.messages.map((message) => {
     const mine = message.senderId === fanId;
     const post = mine ? null : message.offerPost;
+    const exclusiveIndex = post ? exclusiveVideoIndex(ordinals, post.id) : 1;
+    const label = post ? exclusiveVideoLabel(exclusiveIndex, fan?.locale) : "";
     const offer =
       post && !post.deletedAt && post.priceCents
         ? {
             postId: post.id,
-            title: post.caption,
+            exclusiveIndex,
             priceCents: post.priceCents,
             purchased: bought.has(post.id),
           }
         : null;
     return {
       id: message.id,
-      body: message.body,
+      body: post ? redactVideoTitle(message.body, post.caption, label) : message.body,
       createdAt: message.createdAt.toISOString(),
       mine,
       offer,
@@ -410,7 +418,7 @@ export type ThreadMessage = {
   body: string;
   createdAt: string;
   mine: boolean;
-  offer: { postId: string; title: string; priceCents: number; purchased: boolean } | null;
+  offer: { postId: string; exclusiveIndex: number; priceCents: number; purchased: boolean } | null;
 };
 
 export type SequenceStepInput = {

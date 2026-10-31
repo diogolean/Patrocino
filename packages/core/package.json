@@ -16,6 +16,10 @@
       "types": "./dist/chat-sequence.d.ts",
       "default": "./dist/chat-sequence.js"
     },
+    "./exclusive-video": {
+      "types": "./dist/exclusive-video.d.ts",
+      "default": "./dist/exclusive-video.js"
+    },
     "./expay": {
       "types": "./dist/expay.d.ts",
       "default": "./dist/expay.js"

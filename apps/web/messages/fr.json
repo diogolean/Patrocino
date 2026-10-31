@@ -541,6 +541,7 @@
   },
   "media": {
     "fallbackLabel": "Média",
+    "exclusiveVideo": "Vidéo exclusive #{n}",
     "previous": "Précédent",
     "next": "Suivante",
     "openFailed": "Impossible d'ouvrir ce média.",

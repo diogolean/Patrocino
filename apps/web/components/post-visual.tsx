@@ -42,7 +42,7 @@ export function PostVisual({
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
-      alt={post.caption}
+      alt={post.mediaType === "video" ? "" : post.caption}
       loading="lazy"
       decoding="async"
       draggable={false}

@@ -1,5 +1,6 @@
 import { database } from "@mimelux/db/runtime";
 import webpush from "web-push";
+import { publicVideoText } from "../media/video-public";
 import {
   buildMessagePushPayload,
   deliverPush,
@@ -23,6 +24,7 @@ export async function notifyFanOfMessage(messageId: string) {
     const message = await database.message.findUnique({
       where: { id: messageId },
       include: {
+        offerPost: { select: { id: true, caption: true, creatorId: true } },
         conversation: {
           include: {
             fan: { select: { locale: true } },
@@ -38,9 +40,18 @@ export async function notifyFanOfMessage(messageId: string) {
     const profile = message.conversation.creator?.user.profile;
     const creatorId = message.conversation.creatorId ?? message.conversation.creator?.id;
     if (!creatorId) return { enabled: true as const, sent: 0, removed: 0 };
+    const scrubbed = message.offerPost
+      ? await publicVideoText({
+          creatorId: message.offerPost.creatorId,
+          postId: message.offerPost.id,
+          secret: message.offerPost.caption,
+          text: message.body,
+          locale: message.conversation.fan?.locale,
+        })
+      : null;
     const payload = buildMessagePushPayload({
       creatorName: profile?.name?.trim() || profile?.username || "Patrocino",
-      body: message.body,
+      body: scrubbed?.text ?? message.body,
       creatorId,
       creatorUsername: profile?.username,
       icon: profile?.avatarUrl,

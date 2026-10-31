@@ -59,6 +59,7 @@ export function CreatorProfile({
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations("profile");
+  const media = useTranslations("media");
   const errors = useTranslations("errors");
   const [subscribing, setSubscribing] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
@@ -131,7 +132,7 @@ export function CreatorProfile({
       const index = purchased.findIndex((video) => video.id === play);
       if (index < 0) return;
       setViewer({
-        slides: purchased.map((video) => ({ id: video.id, kind: "video" as const, mediaId: video.mediaId, caption: video.caption })),
+        slides: purchased.map((video) => ({ id: video.id, kind: "video" as const, mediaId: video.mediaId, caption: media("exclusiveVideo", { n: video.exclusiveIndex }) })),
         index,
       });
     });
@@ -264,7 +265,7 @@ export function CreatorProfile({
     for (const entry of gallery) {
       if (entry.kind === "video") {
         if (!entry.video.purchased) continue;
-        slides.push({ id: entry.video.id, kind: "video", mediaId: entry.video.mediaId, caption: entry.video.caption });
+        slides.push({ id: entry.video.id, kind: "video", mediaId: entry.video.mediaId, caption: media("exclusiveVideo", { n: entry.video.exclusiveIndex }) });
         continue;
       }
       if (postLocked(entry.post)) continue;
@@ -273,7 +274,7 @@ export function CreatorProfile({
         kind: entry.post.playback ? "video" : "image",
         src: entry.post.playback || entry.post.image,
         poster: entry.post.poster || entry.post.image,
-        caption: entry.post.caption,
+        caption: entry.post.mediaType === "video" || entry.post.playback ? media("exclusiveVideo", { n: entry.post.exclusiveIndex ?? 1 }) : entry.post.caption,
       });
     }
     const index = slides.findIndex((slide) => slide.id === id);
@@ -608,7 +609,7 @@ export function CreatorProfile({
           {t("seePlan")}
         </Link>
       </PremiumModal>
-      <PremiumModal open={Boolean(purchase)} onClose={() => setPurchase(null)} title={purchase?.caption || t("videoFallback")} description={t("purchaseBody")}>
+      <PremiumModal open={Boolean(purchase)} onClose={() => setPurchase(null)} title={purchase ? media("exclusiveVideo", { n: purchase.exclusiveIndex }) : t("videoFallback")} description={t("purchaseBody")}>
         {purchase && (
           <div className="space-y-3">
             <p className="text-sm font-semibold">

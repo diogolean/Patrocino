@@ -11,6 +11,7 @@ export type MediaLibraryItem = {
   id: string;
   creatorId: string;
   caption: string;
+  exclusiveIndex?: number;
   visibility: MediaVisibility;
   priceCents: number | null;
   publishedAt: string | null;
@@ -331,7 +332,7 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        caption: draft.caption,
+        ...(item.kind === "VIDEO" ? {} : { caption: draft.caption }),
         visibility: draft.visibility,
         priceCents: nextPrice,
         publishedAt: fromLocalInput(draft.publishedAt),
@@ -563,6 +564,9 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
                     {scheduled && <span>{t("scheduled")}</span>}
                     {item.byteSize ? <span className="text-muted">{formatBytes(item.byteSize)}</span> : null}
                   </div>
+                  {item.kind === "VIDEO" ? (
+                    <p className="text-sm font-extrabold">{t("exclusiveVideo", { n: item.exclusiveIndex ?? index + 1 })}</p>
+                  ) : (
                   <label className="block text-xs font-bold uppercase tracking-wide text-muted">
                     {t("caption")}
                     <input
@@ -571,6 +575,7 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
                       className="mt-2 h-11 w-full rounded-full border border-border bg-elevated px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-primary"
                     />
                   </label>
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-xs font-bold uppercase tracking-wide text-muted">
                       {t("access")}
