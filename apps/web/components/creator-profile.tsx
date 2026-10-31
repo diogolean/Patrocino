@@ -490,6 +490,19 @@ export function CreatorProfile({
               <span data-testid="plan-price" data-months={1}>{creator.free ? t("free") : demoMoney(planTotal(1))}</span>
             </Link>
           )}
+          {offers?.packs.map((pack) => (
+            <Link key={pack.id} data-testid="pack-card" href={`/checkout?kind=pack&id=${pack.id}&creator=${creator.username}&return=/creator/${creator.username}`} className={`flex w-full items-center gap-3 rounded-[22px] border border-accent/50 bg-gradient-to-r from-accent/25 via-elevated to-primary/20 p-3 ${planGlow}`}>
+              <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-accent to-primary text-white"><Sparkles className="size-5" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-extrabold">{pack.name}</span>
+                <span className="block text-[11px] leading-4 text-muted">{t("packCardBody")}</span>
+              </span>
+              <span className="shrink-0 text-right">
+                <span data-testid="pack-price" className="block text-sm font-extrabold">{money(pack.priceCents)}</span>
+                <span className="block text-[11px] font-bold text-primary-strong">{t("packCta")}</span>
+              </span>
+            </Link>
+          ))}
           {!memberSubscribed && (
           <button type="button" aria-expanded={promosOpen} onClick={() => setPromosOpen((value) => !value)} className="flex h-7 w-full items-center justify-between text-xs font-semibold leading-4">
             {t("promotions")}
@@ -528,19 +541,6 @@ export function CreatorProfile({
                   ))}
             </div>
           )}
-          {offers?.packs.map((pack) => (
-            <Link key={pack.id} data-testid="pack-card" href={`/checkout?kind=pack&id=${pack.id}&creator=${creator.username}&return=/creator/${creator.username}`} className={`mt-2 flex w-full items-center gap-3 rounded-[22px] border border-accent/50 bg-gradient-to-r from-accent/25 via-elevated to-primary/20 p-3 ${planGlow}`}>
-              <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-accent to-primary text-white"><Sparkles className="size-5" /></span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-extrabold">{pack.name}</span>
-                <span className="block text-[11px] leading-4 text-muted">{t("packCardBody")}</span>
-              </span>
-              <span className="shrink-0 text-right">
-                <span data-testid="pack-price" className="block text-sm font-extrabold">{money(pack.priceCents)}</span>
-                <span className="block text-[11px] font-bold text-primary-strong">{t("packCta")}</span>
-              </span>
-            </Link>
-          ))}
         </div>
         <Button variant="outline" data-testid="profile-special" className="mt-1.5 h-10 w-full rounded-full" onClick={() => setRequestOpen(true)}>
           <Sparkles className="size-4" /> {t("special")}
