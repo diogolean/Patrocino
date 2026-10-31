@@ -20,7 +20,9 @@ describe("visitor currency", () => {
     expect(currencyForVisitor({ country: "br" })).toBe("BRL");
     expect(currencyForVisitor({ locale: "pt-BR" })).toBe("BRL");
     expect(currencyForVisitor({ acceptLanguage: "pt-BR,en;q=0.8" })).toBe("BRL");
-    expect(currencyForVisitor({})).toBe("BRL");
+    expect(currencyForVisitor({})).toBe("USD");
+    expect(currencyForVisitor({ acceptLanguage: "pt-PT" })).toBe("USD");
+    expect(currencyForVisitor({ country: "PT", locale: "pt" })).toBe("USD");
   });
 
   it("uses USD for every other country and hides the Brazil fallback", () => {

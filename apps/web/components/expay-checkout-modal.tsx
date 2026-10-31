@@ -1,5 +1,6 @@
 "use client";
 
+import { useMoney } from "@/lib/visitor-currency";
 import { useEffect, useRef, useState } from "react";
 import { Copy, LoaderCircle, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -7,7 +8,6 @@ import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
 import { apiErrorText } from "@/lib/api-error";
 import { Input } from "@/components/ui/input";
-import { brl } from "@/lib/fixtures";
 import { PixPaidState, PixWaitingNotice } from "@/components/pix-waiting-notice";
 import { publishPaymentConfirmed } from "@/components/pending-expay-toast";
 import {
@@ -46,6 +46,7 @@ export function ExpayCheckoutModal({
   onPaid: () => void;
   onAmount?: (amountCents: number) => void;
 }) {
+  const money = useMoney();
   const t = useTranslations("checkout");
   const errors = useTranslations("errors");
   const closeLabel = useTranslations("dialog")("close");
@@ -209,7 +210,7 @@ export function ExpayCheckoutModal({
         </div>
         <h2 id="expay-title" className="text-2xl font-extrabold tracking-[-.04em]">{paid ? t("confirmedPayment") : t("payWithPix")}</h2>
         <p className="mt-2 text-sm leading-6 text-muted">{title}</p>
-        {charge && <p data-testid="expay-amount" className="mt-3 text-lg font-black">{brl(charge.amountCents)}</p>}
+        {charge && <p data-testid="expay-amount" className="mt-3 text-lg font-black">{money(charge.amountCents, "BRL")}</p>}
 
         {error && <p className="mt-5 rounded-2xl bg-accent/15 px-4 py-3 text-sm text-accent-strong">{error}</p>}
         {amountMismatch && <p className="mt-5 rounded-2xl bg-accent/15 px-4 py-3 text-sm text-accent-strong">{t("mismatch")}</p>}

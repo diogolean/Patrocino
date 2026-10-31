@@ -1038,7 +1038,7 @@
     "clicks": "Clicks",
     "signups": "Signups",
     "purchases": "Purchases",
-    "owed": "Commission owed",
+    "owed": "Commission to be paid out",
     "generateLink": "Generate link",
     "linkReady": "Link created",
     "assign": "Assign creator",
@@ -1061,18 +1061,18 @@
     "createPack": "Create pack",
     "remove": "Remove",
     "liveTitle": "Confirmed results",
-    "liveBody": "Clicks, signups, purchases, and commission credited only after payment.",
+    "liveBody": "Commission estimate. The full payment goes to Patrocino; the company pays the commission out later, manually. There is no automatic split at payment time.",
     "liveEmpty": "No confirmed commission yet.",
-    "statusPending": "Pending",
-    "statusConfirmed": "Confirmed",
-    "statusPaid": "Paid",
+    "statusPending": "Pending (to be paid out)",
+    "statusConfirmed": "Confirmed (to be paid out)",
+    "statusPaid": "Paid out",
     "statusReversed": "Reversed",
     "daily": "Daily",
     "monthly": "Monthly",
     "conversionRate": "Conversion",
-    "markPaid": "Mark as paid",
+    "markPaid": "Mark as paid out",
     "chartHint": "Bars show commission. Each column also counts clicks and conversions.",
     "perLink": "Per link",
-    "ledgerTitle": "Commission ledger"
+    "ledgerTitle": "Commissions to be paid out"
   }
 }

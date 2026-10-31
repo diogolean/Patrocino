@@ -11,6 +11,8 @@ import { exclusiveVideoIndex, exclusiveVideoLabel, redactVideoTitle } from "@mim
 import { findCreatorByKey } from "./creator-key";
 import { notifyFanOfMessage } from "../notifications/fan-notify";
 import { videoOrdinalIds } from "../media/video-public";
+import { fanSubscribed } from "../media/entitlement";
+import { formatMoney, ppvQuote, type ChargeCurrency } from "@mimelux/core/currency";
 
 type Db = {
   chatSequence: Prisma.TransactionClient["chatSequence"];
@@ -41,6 +43,14 @@ function sequenceRuns(
 
 function brl(cents: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
+}
+
+/** Sequence messages bake the BRL price into the text when sent; show the visitor's price instead. */
+export function localizeBakedPrice(body: string, bakedBrlCents: number, cents: number, currency: ChargeCurrency) {
+  const baked = brl(bakedBrlCents);
+  if (currency === "BRL" && cents === bakedBrlCents) return body;
+  const shown = formatMoney(cents, currency, currency === "BRL" ? "pt-BR" : "en-US");
+  return body.split(baked).join(shown).split(baked.replace(/\u00a0/g, " ")).join(shown);
 }
 
 export async function ensureChatSequence(db: Db, creatorId: string) {
@@ -328,7 +338,7 @@ export function startChatSequenceWorker() {
   timer.unref();
 }
 
-export async function readFanThread(fanId: string, creatorKey: string) {
+export async function readFanThread(fanId: string, creatorKey: string, currency: ChargeCurrency = "USD") {
   const creator = await findCreatorByKey(creatorKey);
   if (!creator) return { messages: [] as ThreadMessage[], creator: null };
   const profile = creator.user.profile;
@@ -343,7 +353,7 @@ export async function readFanThread(fanId: string, creatorKey: string) {
     include: {
       messages: {
         orderBy: { createdAt: "asc" },
-        include: { offerPost: { select: { id: true, caption: true, priceCents: true, deletedAt: true } } },
+        include: { offerPost: { select: { id: true, caption: true, priceCents: true, priceCentsUsd: true, guestPriceCents: true, guestPriceCentsUsd: true, deletedAt: true } } },
       },
     },
   });
@@ -352,23 +362,41 @@ export async function readFanThread(fanId: string, creatorKey: string) {
   const bought = await purchasedPostIds(database, fanId, postIds);
   const ordinals = await videoOrdinalIds(creator.id);
   const fan = await database.user.findUnique({ where: { id: fanId }, select: { locale: true } });
+  const subscribed = await fanSubscribed(fanId, creator.id);
   const messages: ThreadMessage[] = conversation.messages.map((message) => {
     const mine = message.senderId === fanId;
     const post = mine ? null : message.offerPost;
     const exclusiveIndex = post ? exclusiveVideoIndex(ordinals, post.id) : 1;
     const label = post ? exclusiveVideoLabel(exclusiveIndex, fan?.locale) : "";
+    const priceCents = post
+      ? ppvQuote({
+          currency,
+          subscribed,
+          subscriberBrl: post.priceCents,
+          subscriberUsd: post.priceCentsUsd,
+          guestBrl: post.guestPriceCents,
+          guestUsd: post.guestPriceCentsUsd,
+          defaultSubscriberBrl: creator.defaultVideoPriceCents,
+          defaultSubscriberUsd: creator.defaultVideoPriceCentsUsd,
+          defaultGuestBrl: creator.guestVideoPriceCents,
+          defaultGuestUsd: creator.guestVideoPriceCentsUsd,
+        }).amountCents
+      : 0;
     const offer =
       post && !post.deletedAt && post.priceCents
         ? {
             postId: post.id,
             exclusiveIndex,
-            priceCents: post.priceCents,
+            priceCents,
+            currency,
             purchased: bought.has(post.id),
           }
         : null;
+    let body = post ? redactVideoTitle(message.body, post.caption, label) : message.body;
+    if (offer && message.ppvPriceCents) body = localizeBakedPrice(body, message.ppvPriceCents, priceCents, currency);
     return {
       id: message.id,
-      body: post ? redactVideoTitle(message.body, post.caption, label) : message.body,
+      body,
       createdAt: message.createdAt.toISOString(),
       mine,
       offer,
@@ -418,7 +446,7 @@ export type ThreadMessage = {
   body: string;
   createdAt: string;
   mine: boolean;
-  offer: { postId: string; exclusiveIndex: number; priceCents: number; purchased: boolean } | null;
+  offer: { postId: string; exclusiveIndex: number; priceCents: number; currency: ChargeCurrency; purchased: boolean } | null;
 };
 
 export type SequenceStepInput = {

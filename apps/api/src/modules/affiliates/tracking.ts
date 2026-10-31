@@ -25,15 +25,30 @@ export async function findTrackingLink(code: string) {
   });
 }
 
+/** /r/<affiliate>/<creator> counts the click on that affiliate's own link for the creator when one exists. */
+async function creatorLinkFor(affiliateId: string, creator: string | null | undefined) {
+  const username = creator?.trim();
+  if (!username) return null;
+  return database.affiliateLink.findFirst({
+    where: { affiliateId, active: true, creator: { user: { profile: { is: { username } } } } },
+    include: {
+      affiliate: true,
+      creator: { include: { user: { include: { profile: true } } } },
+    },
+  });
+}
+
 export async function recordAffiliateClick(input: {
   code: string;
   subId?: string | null;
   locale?: string | null;
+  creator?: string | null;
   ip?: string | null;
   userAgent?: string | null;
 }) {
-  const link = await findTrackingLink(input.code);
-  if (!link || link.affiliate.status !== "ACTIVE") return null;
+  const base = await findTrackingLink(input.code);
+  if (!base || base.affiliate.status !== "ACTIVE") return null;
+  const link = (await creatorLinkFor(base.affiliateId, input.creator)) ?? base;
   const subId = (input.subId || "direct").slice(0, 40);
   const click = await database.click.create({
     data: {

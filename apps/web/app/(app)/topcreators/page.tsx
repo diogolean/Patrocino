@@ -1,5 +1,6 @@
 "use client";
 
+import { useDemoMoney } from "@/lib/visitor-currency";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, useSyncExternalStore } from "react";
@@ -13,7 +14,7 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
-import { brl, compact, creatorLikeTotal, creators } from "@/lib/gateway";
+import { compact, creatorLikeTotal, creators } from "@/lib/gateway";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 
 function TopCreatorsContent() {
@@ -130,6 +131,7 @@ function TopCreatorsContent() {
 }
 
 function Highlights() {
+  const demoMoney = useDemoMoney();
   const t = useTranslations("trending");
   const free = creators.filter((creator) => creator.free);
   return (
@@ -161,7 +163,7 @@ function Highlights() {
             <Link key={creator.id} href={`/creator/${creator.username}`} className="card-lift flex items-center gap-3 rounded-[22px] border border-black/5 bg-white/60 p-3 dark:bg-white/5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={creator.avatar} alt="" loading="lazy" decoding="async" className="size-14 rounded-2xl object-cover" />
-              <div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{creator.name}</p><p className="text-[9px] text-muted"><s>{brl(creator.price + 1000)}</s> · <b className="text-primary-strong">{brl(creator.price)}</b></p></div>
+              <div className="min-w-0 flex-1"><p className="truncate text-xs font-extrabold">{creator.name}</p><p className="text-[9px] text-muted"><s>{demoMoney(creator.price + 1000)}</s> · <b className="text-primary-strong">{demoMoney(creator.price)}</b></p></div>
               <span className="rounded-full bg-primary/20 px-2 py-1 text-[8px] font-black">-{20 + index * 5}%</span>
             </Link>
           ))}

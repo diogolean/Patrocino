@@ -1038,7 +1038,7 @@
     "clicks": "Cliques",
     "signups": "Cadastros",
     "purchases": "Compras",
-    "owed": "Comissão a pagar",
+    "owed": "Comissão a repassar",
     "generateLink": "Gerar link",
     "linkReady": "Link criado",
     "assign": "Atribuir criador",
@@ -1061,18 +1061,18 @@
     "createPack": "Criar pacote",
     "remove": "Excluir",
     "liveTitle": "Resultados confirmados",
-    "liveBody": "Cliques, cadastros, compras e comissão creditada só depois do pagamento.",
+    "liveBody": "Estimativa de comissão. O pagamento entra inteiro na Patrocino; a comissão é repassada depois pela empresa, manualmente. Não há divisão automática no pagamento.",
     "liveEmpty": "Ainda não há comissão confirmada.",
-    "statusPending": "Pendente",
-    "statusConfirmed": "Confirmada",
-    "statusPaid": "Paga",
+    "statusPending": "Pendente (a repassar)",
+    "statusConfirmed": "Confirmada (a repassar)",
+    "statusPaid": "Repassada",
     "statusReversed": "Estornada",
     "daily": "Diário",
     "monthly": "Mensal",
     "conversionRate": "Conversão",
-    "markPaid": "Marcar como paga",
+    "markPaid": "Marcar como repassada",
     "chartHint": "As barras mostram a comissão. Cada coluna também conta cliques e conversões.",
     "perLink": "Por link",
-    "ledgerTitle": "Livro de comissões"
+    "ledgerTitle": "Comissões a repassar"
   }
 }

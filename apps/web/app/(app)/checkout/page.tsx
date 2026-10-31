@@ -1,5 +1,6 @@
 "use client";
 
+import { useVisitorCurrency } from "@/lib/visitor-currency";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
@@ -55,6 +56,7 @@ function DemoPaymentGraphic({ seed, label }: { seed: string; label: string }) {
 }
 
 function CheckoutContent() {
+  const visitorCurrency = useVisitorCurrency();
   const t = useTranslations("checkout");
   const locale = useLocale();
   const errors = useTranslations("errors");
@@ -144,14 +146,14 @@ function CheckoutContent() {
   }>({
     key: "",
     cents: null,
-    currency: "BRL",
+    currency: visitorCurrency,
     error: "",
     needsAuth: false,
     subscriberCents: null,
     subscribed: null,
   });
   if (quote.key !== quoteKey) {
-    setQuote({ key: quoteKey, cents: null, currency: catalog?.currency ?? "BRL", error: "", needsAuth: false, subscriberCents: null, subscribed: null });
+    setQuote({ key: quoteKey, cents: null, currency: catalog?.currency ?? visitorCurrency, error: "", needsAuth: false, subscriberCents: null, subscribed: null });
   }
   const quotedCents = quote.cents;
   const quoteError = quote.error;
@@ -163,7 +165,7 @@ function CheckoutContent() {
   const catalogCents = kind === "subscription" ? catalogPlan?.chargeCents : kind === "pack" ? catalogPack?.priceCents : undefined;
   const fixturePrices = process.env.NODE_ENV !== "production";
   const shownCents = quotedCents ?? catalogCents ?? (fixturePrices ? amount : null);
-  const shownCurrency = quotedCents != null ? quote.currency : catalog?.currency ?? "BRL";
+  const shownCurrency = quotedCents != null ? quote.currency : catalog?.currency ?? visitorCurrency;
   const showPix = methods.expay && shownCurrency !== "USD";
   const priceLabel = (cents: number) => formatMoney(cents, shownCurrency, locale);
   const pixKey = useMemo(() => `pix-${purpose}-${creator.id}-${id}-${crypto.randomUUID()}`, [purpose, creator.id, id]);
@@ -194,7 +196,7 @@ function CheckoutContent() {
           setQuote({
             key,
             cents: null,
-            currency: catalog?.currency ?? "BRL",
+            currency: catalog?.currency ?? visitorCurrency,
             error: response.status === 401 ? "" : apiErrorText(payload, errors, t("unavailable")),
             needsAuth: response.status === 401,
             subscriberCents: null,
@@ -213,7 +215,7 @@ function CheckoutContent() {
         });
       })
       .catch(() => {
-        if (!cancel) setQuote({ key, cents: null, currency: "BRL", error: t("quoteFailed"), needsAuth: false, subscriberCents: null, subscribed: null });
+        if (!cancel) setQuote({ key, cents: null, currency: visitorCurrency, error: t("quoteFailed"), needsAuth: false, subscriberCents: null, subscribed: null });
       });
     return () => {
       cancel = true;

@@ -229,7 +229,8 @@ function presentSubscription(row: {
   currentPeriodEnd: Date | null;
   endsAt: Date | null;
   isDemo: boolean;
-  plan?: { name: string; priceCents: number; durationMonths: number; discountPercent: number } | null;
+  currency?: string | null;
+  plan?: { name: string; priceCents: number; priceCentsUsd?: number | null; durationMonths: number; discountPercent: number } | null;
   creator?: { user: { profile: { name: string; username: string } | null } } | null;
 }) {
   const currentPeriodEnd = row.currentPeriodEnd ?? row.endsAt;
@@ -240,7 +241,13 @@ function presentSubscription(row: {
     creatorUsername: row.creator?.user.profile?.username ?? "",
     planId: row.planId,
     planName: row.plan?.name ?? "",
-    amountCents: row.plan ? planChargeCents(row.plan) : 0,
+    amountCents: row.plan
+      ? planChargeCents({
+          priceCents: row.currency === "USD" && row.plan.priceCentsUsd ? row.plan.priceCentsUsd : row.plan.priceCents,
+          discountPercent: row.plan.discountPercent,
+        })
+      : 0,
+    currency: row.currency === "USD" && row.plan?.priceCentsUsd ? "USD" : "BRL",
     status: row.status,
     cancelAtPeriodEnd: row.cancelAtPeriodEnd,
     currentPeriodEnd,

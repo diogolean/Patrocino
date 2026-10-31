@@ -1,5 +1,6 @@
 "use client";
 
+import { useDemoMoney } from "@/lib/visitor-currency";
 import Link from "next/link";
 import { FormEvent, useEffect, useState, useSyncExternalStore } from "react";
 import {
@@ -14,13 +15,14 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 import { Button, Pill } from "@mimelux/ui";
 import type { Creator, Post } from "@/lib/gateway";
-import { brl, seedComments } from "@/lib/gateway";
+import { seedComments } from "@/lib/gateway";
 import { PostVisual } from "@/components/post-visual";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 import { shownCaption } from "@/lib/public-caption";
 import { getServerSessionSnapshot, getSessionSnapshot, subscribeSession } from "@/lib/session";
 
 export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
+  const demoMoney = useDemoMoney();
   const t = useTranslations("feed");
   const media = useTranslations("media");
   const locale = useLocale();
@@ -155,7 +157,7 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
               <Link href={checkout}>
                 <Button size="sm" className="mt-4 w-full">
                   <Sparkles className="size-3.5" />
-                  {post.visibility === "subscriber" ? t("subscribePrice", { price: brl(creator.price) }) : t("unlockPrice", { price: brl(post.price || 0) })}
+                  {post.visibility === "subscriber" ? t("subscribePrice", { price: demoMoney(creator.price) }) : t("unlockPrice", { price: demoMoney(post.price || 0) })}
                 </Button>
               </Link>
             </div>

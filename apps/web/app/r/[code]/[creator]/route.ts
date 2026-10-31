@@ -5,7 +5,7 @@ import { apiBase } from "@/lib/api-auth";
 
 type Context = { params: Promise<{ code: string; creator: string }> };
 
-async function recordClick(body: { code: string; subId?: string; locale?: string }): Promise<RecordedClick | null> {
+async function recordClick(body: { code: string; subId?: string; locale?: string; creator?: string }): Promise<RecordedClick | null> {
   const response = await fetch(`${apiBase()}/affiliate/clicks`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -35,7 +35,7 @@ export async function GET(request: Request, context: Context) {
     subId,
     locale,
     secure: url.protocol === "https:",
-    record: recordClick,
+    record: (body) => recordClick({ ...body, creator }),
   });
   if (!result.cookie && code === demoAffiliate.code) {
     result.cookie = affiliateCookie({

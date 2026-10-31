@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { Poppins } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
+import { cookies, headers } from "next/headers";
+import { currencyForVisitor } from "@mimelux/core/currency";
+import { VisitorCurrencyProvider } from "@/lib/visitor-currency";
 import { PersistLocaleCookie } from "@/components/persist-locale";
 import { Providers } from "@/components/providers";
 import { SiteFooter } from "@/components/site-footer";
@@ -59,15 +62,23 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getLocale();
   const messages = await getMessages();
+  const header = await headers();
+  const currency = currencyForVisitor({
+    country: header.get("cf-ipcountry") ?? header.get("x-country"),
+    locale: (await cookies()).get("mimelux-locale")?.value,
+    acceptLanguage: header.get("accept-language"),
+  });
   return (
     <html lang={locale} suppressHydrationWarning>
       <body className={`${poppins.variable} min-h-full antialiased`}>
         <NextIntlClientProvider locale={locale} messages={messages}>
+          <VisitorCurrencyProvider currency={currency}>
           <Providers>
             <PersistLocaleCookie />
             {children}
             <SiteFooter />
           </Providers>
+          </VisitorCurrencyProvider>
         </NextIntlClientProvider>
       </body>
     </html>

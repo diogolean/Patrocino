@@ -1038,7 +1038,7 @@
     "clicks": "Klicks",
     "signups": "Anmeldungen",
     "purchases": "Käufe",
-    "owed": "Offene Provision",
+    "owed": "Auszuzahlende Provision",
     "generateLink": "Link erzeugen",
     "linkReady": "Link erstellt",
     "assign": "Creator zuweisen",
@@ -1061,18 +1061,18 @@
     "createPack": "Paket erstellen",
     "remove": "Entfernen",
     "liveTitle": "Bestätigte Ergebnisse",
-    "liveBody": "Klicks, Anmeldungen, Käufe und Provision erst nach bestätigter Zahlung.",
+    "liveBody": "Provisionsschätzung. Die volle Zahlung geht an Patrocino; die Firma zahlt die Provision später manuell aus. Keine automatische Aufteilung bei der Zahlung.",
     "liveEmpty": "Noch keine bestätigte Provision.",
-    "statusPending": "Offen",
-    "statusConfirmed": "Bestätigt",
-    "statusPaid": "Bezahlt",
+    "statusPending": "Ausstehend (auszuzahlen)",
+    "statusConfirmed": "Bestätigt (auszuzahlen)",
+    "statusPaid": "Ausgezahlt",
     "statusReversed": "Storniert",
     "daily": "Täglich",
     "monthly": "Monatlich",
     "conversionRate": "Conversion",
-    "markPaid": "Als bezahlt markieren",
+    "markPaid": "Als ausgezahlt markieren",
     "chartHint": "Die Balken zeigen die Provision. Jede Spalte zählt auch Klicks und Conversions.",
     "perLink": "Pro Link",
-    "ledgerTitle": "Provisionsbuch"
+    "ledgerTitle": "Auszuzahlende Provisionen"
   }
 }

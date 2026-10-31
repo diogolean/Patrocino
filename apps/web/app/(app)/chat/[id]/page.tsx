@@ -1,5 +1,6 @@
 "use client";
 
+import { useDemoMoney, useMoney } from "@/lib/visitor-currency";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
@@ -16,11 +17,13 @@ import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
 import { PushOptIn } from "@/components/push-opt-in";
 import { messageBodyParts, resolveChatCreator } from "@/lib/chat-creator";
-import { brl, creators, posts } from "@/lib/gateway";
+import { creators, posts } from "@/lib/gateway";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 import { requestUnreadRefresh, THREAD_REFRESH_EVENT } from "@/lib/message-notifications";
 
 export default function ConversationPage() {
+  const money = useMoney();
+  const demoMoney = useDemoMoney();
   const t = useTranslations("chatPage");
   const media = useTranslations("media");
   const params = useParams<{ id: string }>();
@@ -34,7 +37,7 @@ export default function ConversationPage() {
     id: string;
     body: string;
     mine?: boolean;
-    offer: { postId: string; exclusiveIndex?: number; priceCents: number; purchased: boolean } | null;
+    offer: { postId: string; exclusiveIndex?: number; priceCents: number; currency?: "BRL" | "USD"; purchased: boolean } | null;
   };
   const [thread, setThread] = useState<ThreadMessage[]>([]);
 
@@ -122,7 +125,7 @@ export default function ConversationPage() {
             <p className="mt-1 text-[9px] leading-4 text-white/60">{unlocked ? t("unlockedBody") : t("lockedBody")}</p>
             {!unlocked && (
               <Link href={`/checkout?kind=message&id=${messageId}&creator=${fixture.id}&return=/chat/${fixture.id}`}>
-                <Button size="sm" className="mt-3 w-full"><Sparkles className="size-3.5" /> {t("unlock", { price: brl(1290) })}</Button>
+                <Button size="sm" className="mt-3 w-full"><Sparkles className="size-3.5" /> {t("unlock", { price: demoMoney(1290) })}</Button>
               </Link>
             )}
             <span className="mt-2 block text-right text-[8px] text-white/40">{t("timeLocked")}</span>
@@ -147,10 +150,10 @@ export default function ConversationPage() {
             {message.offer && (
               <div data-testid="chat-ppv-offer" className="mt-2 overflow-hidden rounded-[24px_24px_24px_6px] bg-ink p-4 text-white shadow-lg">
                 <p className="text-xs font-extrabold">{media("exclusiveVideo", { n: message.offer.exclusiveIndex ?? 1 })}</p>
-                <p className="mt-1 text-[9px] text-white/60">{brl(message.offer.priceCents)}</p>
+                <p className="mt-1 text-[9px] text-white/60">{money(message.offer.priceCents, message.offer.currency)}</p>
                 {!message.offer.purchased && (
                   <Link href={`/checkout?kind=post&id=${message.offer.postId}&creator=${params.id}&return=/chat/${params.id}`}>
-                    <Button size="sm" className="mt-3 w-full"><Sparkles className="size-3.5" /> {t("unlock", { price: brl(message.offer.priceCents) })}</Button>
+                    <Button size="sm" className="mt-3 w-full"><Sparkles className="size-3.5" /> {t("unlock", { price: money(message.offer.priceCents, message.offer.currency) })}</Button>
                   </Link>
                 )}
               </div>

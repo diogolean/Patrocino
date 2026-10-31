@@ -1,5 +1,6 @@
 "use client";
 
+import { useDemoMoney, useVisitorCurrency } from "@/lib/visitor-currency";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -21,7 +22,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { formatMoney } from "@mimelux/core/currency";
 import { Button, Pill, PremiumModal } from "@mimelux/ui";
 import type { Creator, Post } from "@/lib/gateway";
-import { brl, compact, plans, reviewsFor } from "@/lib/gateway";
+import { compact, plans, reviewsFor } from "@/lib/gateway";
 import { PostVisual } from "@/components/post-visual";
 import { loadSubscriberCatalog, SubscriberPpvCard, type SubscriberVideo } from "@/components/subscriber-videos";
 import { MediaViewer, type ViewerSlide } from "@/components/media-viewer";
@@ -61,7 +62,9 @@ export function CreatorProfile({
 }) {
   const router = useRouter();
   const locale = useLocale();
-  const money = (cents: number) => formatMoney(cents, offers?.currency ?? "BRL", locale);
+  const visitorCurrency = useVisitorCurrency();
+  const money = (cents: number) => formatMoney(cents, offers?.currency ?? visitorCurrency, locale);
+  const demoMoney = useDemoMoney();
   const t = useTranslations("profile");
   const media = useTranslations("media");
   const errors = useTranslations("errors");
@@ -455,7 +458,7 @@ export function CreatorProfile({
           ) : (
             <Link href={planHref(1)} className={`flex h-11 w-full items-center justify-between rounded-full bg-gradient-to-r from-primary to-primary-strong/90 px-5 text-sm font-semibold text-ink ${planGlow}`}>
               <span>1 {t("month")}</span>
-              <span data-testid="plan-price" data-months={1}>{creator.free ? t("free") : brl(planTotal(1))}</span>
+              <span data-testid="plan-price" data-months={1}>{creator.free ? t("free") : demoMoney(planTotal(1))}</span>
             </Link>
           )}
           {!memberSubscribed && (
@@ -491,7 +494,7 @@ export function CreatorProfile({
                 : ([3, 6, 12] as const).map((months) => (
                     <Link key={months} href={planHref(months)} className={`flex h-11 w-full items-center justify-between rounded-full border border-primary/35 bg-gradient-to-r from-primary/20 via-elevated to-accent/20 px-5 text-sm font-semibold ${planGlow}`}>
                       <span>{months} {t("months")}</span>
-                      <span data-testid="plan-price" data-months={months}>{creator.free ? t("free") : brl(planTotal(months))}</span>
+                      <span data-testid="plan-price" data-months={months}>{creator.free ? t("free") : demoMoney(planTotal(months))}</span>
                     </Link>
                   ))}
               {databasePlans
@@ -504,7 +507,7 @@ export function CreatorProfile({
                 : (
                     <Link href={`/checkout?kind=pack&id=summer-pack&creator=${creator.id}&return=/creator/${creator.username}`} className={`flex h-10 w-full items-center justify-between rounded-full border border-accent/40 bg-gradient-to-r from-accent/15 to-primary/10 px-5 text-sm font-semibold ${planGlow}`}>
                       <span>{t("packName")}</span>
-                      <span>{brl(4_990)}</span>
+                      <span>{demoMoney(4_990)}</span>
                     </Link>
                   )}
             </div>
@@ -529,7 +532,7 @@ export function CreatorProfile({
               <article key={request.id} className="rounded-[20px] bg-surface/70 p-4">
                 <div className="flex items-start justify-between gap-3"><p className="line-clamp-2 text-xs font-semibold">{request.description}</p><Pill>{request.status in requestStatusKey ? t(requestStatusKey[request.status]) : request.status}</Pill></div>
                 {request.status === "quoted" && request.quotedPriceCents && (
-                  <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs font-semibold">{t("counteroffer", { price: brl(request.quotedPriceCents) })}</p><Link href={`/checkout?kind=special_request&id=${request.id}&creator=${creator.id}&amount=${request.quotedPriceCents}&return=/creator/${creator.username}`}><Button size="sm">{t("acceptPay")}</Button></Link></div>
+                  <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs font-semibold">{t("counteroffer", { price: formatMoney(request.quotedPriceCents, "BRL", locale) })}</p><Link href={`/checkout?kind=special_request&id=${request.id}&creator=${creator.id}&amount=${request.quotedPriceCents}&return=/creator/${creator.username}`}><Button size="sm">{t("acceptPay")}</Button></Link></div>
                 )}
               </article>
             ))}

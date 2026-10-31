@@ -1,12 +1,12 @@
 "use client";
 
+import { useMoney } from "@/lib/visitor-currency";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
 import { apiErrorText } from "@/lib/api-error";
-import { brl } from "@/lib/gateway";
 
 type SubscriptionItem = {
   id: string;
@@ -14,6 +14,7 @@ type SubscriptionItem = {
   creatorUsername: string;
   planName: string;
   amountCents: number;
+  currency?: string;
   status: string;
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
@@ -30,6 +31,7 @@ const statusKey = {
 } as const;
 
 export default function SubscriptionsPage() {
+  const money = useMoney();
   const t = useTranslations("billing");
   const errors = useTranslations("errors");
   const locale = useLocale();
@@ -97,7 +99,7 @@ export default function SubscriptionsPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-extrabold">{item.creatorName || item.creatorUsername}</h2>
-                <p className="mt-1 text-sm text-muted">{item.planName || t("planFallback")} · {brl(item.amountCents)}</p>
+                <p className="mt-1 text-sm text-muted">{item.planName || t("planFallback")} · {money(item.amountCents, item.currency === "USD" ? "USD" : "BRL")}</p>
               </div>
               <p className="text-xs font-bold uppercase tracking-wide text-primary-strong">
                 {item.status in statusKey ? t(statusKey[item.status as keyof typeof statusKey]) : item.status}

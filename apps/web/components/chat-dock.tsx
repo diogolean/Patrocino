@@ -1,5 +1,6 @@
 "use client";
 
+import { useMoney } from "@/lib/visitor-currency";
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
@@ -7,7 +8,6 @@ import { useTranslations } from "next-intl";
 import { ArrowLeft, Expand, MessageCircle, Minus, Send, X } from "lucide-react";
 import { Button } from "@mimelux/ui";
 import { messageBodyParts } from "@/lib/chat-creator";
-import { brl } from "@/lib/gateway";
 import {
   INCOMING_MESSAGE_EVENT,
   OPEN_THREAD_EVENT,
@@ -43,7 +43,7 @@ type ThreadMessage = {
   id: string;
   body: string;
   mine?: boolean;
-  offer: { postId: string; exclusiveIndex?: number; title?: string; priceCents: number; purchased: boolean } | null;
+  offer: { postId: string; exclusiveIndex?: number; title?: string; priceCents: number; currency?: "BRL" | "USD"; purchased: boolean } | null;
 };
 
 type OpenThread = {
@@ -146,6 +146,7 @@ function DockNotifications() {
 }
 
 export function ChatDock() {
+  const money = useMoney();
   const pathname = usePathname();
   const t = useTranslations("dock");
   const media = useTranslations("media");
@@ -394,10 +395,10 @@ export function ChatDock() {
                     {message.offer && (
                       <div className="mt-2 rounded-[18px] bg-ink p-3 text-white">
                         <p className="text-base font-extrabold">{media("exclusiveVideo", { n: message.offer.exclusiveIndex ?? 1 })}</p>
-                        <p className="mt-1 text-[15px] text-white/70">{brl(message.offer.priceCents)}</p>
+                        <p className="mt-1 text-[15px] text-white/70">{money(message.offer.priceCents, message.offer.currency)}</p>
                         {!message.offer.purchased && (
                           <Link href={`/checkout?kind=post&id=${message.offer.postId}&creator=${thread.key}&return=${encodeURIComponent(pathname)}`} className="mt-2 block cursor-pointer text-[15px] font-bold underline">
-                            {t("unlock", { price: brl(message.offer.priceCents) })}
+                            {t("unlock", { price: money(message.offer.priceCents, message.offer.currency) })}
                           </Link>
                         )}
                       </div>

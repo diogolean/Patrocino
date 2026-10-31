@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { exclusiveVideoIndex } from "@mimelux/core/exclusive-video";
 import { chatSequenceOfferModes } from "@mimelux/core/chat-sequence";
 import { database } from "@mimelux/db/runtime";
+import { currencyForVisitor } from "@mimelux/core/currency";
 import { z } from "zod";
 import { assertOwnsCreator } from "../access/creator-scope";
 import { optionalUser, requireUser } from "../auth/require-user";
@@ -44,10 +45,16 @@ class ChatController {
 
   @Get("with/:creatorKey")
   @ApiOperation({ summary: "Read the signed-in fan thread with a creator" })
-  async withCreator(@Headers("authorization") authorization: string | undefined, @Param("creatorKey") creatorKey: string) {
+  async withCreator(
+    @Headers("authorization") authorization: string | undefined,
+    @Param("creatorKey") creatorKey: string,
+    @Headers("cf-ipcountry") country?: string,
+    @Headers("x-patrocino-locale") locale?: string,
+    @Headers("accept-language") acceptLanguage?: string,
+  ) {
     const user = await optionalUser(authorization);
     if (!user) return { messages: [] };
-    const thread = await readFanThread(user.id, creatorKey);
+    const thread = await readFanThread(user.id, creatorKey, currencyForVisitor({ country, locale, acceptLanguage }));
     await markFanThreadRead(user.id, creatorKey);
     return thread;
   }

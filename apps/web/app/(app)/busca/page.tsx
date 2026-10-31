@@ -1,11 +1,12 @@
 "use client";
 
+import { useDemoMoney } from "@/lib/visitor-currency";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { BadgeCheck, Search, SlidersHorizontal, TrendingUp } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { Pill } from "@mimelux/ui";
-import { brl, creators } from "@/lib/gateway";
+import { creators } from "@/lib/gateway";
 
 const categories = [
   { id: "all", match: "" },
@@ -19,6 +20,7 @@ const categories = [
 ] as const;
 
 export default function SearchPage() {
+  const demoMoney = useDemoMoney();
   const t = useTranslations("search");
   const locale = useLocale();
   const [query, setQuery] = useState("");
@@ -74,7 +76,7 @@ export default function SearchPage() {
                 <div className="min-w-0 flex-1 pb-1">
                   <div className="flex items-center gap-1"><h3 className="truncate text-xs font-extrabold">{creator.name}</h3>{creator.verified && <BadgeCheck className="size-3.5 shrink-0 fill-primary text-white" />}</div>
                   <p className="mt-0.5 truncate text-[9px] text-muted">@{creator.username} · {creator.category}</p>
-                  <p className="mt-1 text-[9px] font-bold text-primary-strong">{creator.free ? t("free") : t("fromPrice", { price: brl(creator.price) })}</p>
+                  <p className="mt-1 text-[9px] font-bold text-primary-strong">{creator.free ? t("free") : t("fromPrice", { price: demoMoney(creator.price) })}</p>
                 </div>
                 <span className="mb-1 shrink-0 rounded-full border border-border px-3 py-2 text-[9px] font-bold">{t("viewProfile")}</span>
               </div>

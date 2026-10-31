@@ -33,8 +33,8 @@ export function normalizeCountry(value: string | null | undefined): string | nul
 }
 
 /**
- * Brazil pays in BRL. When the edge country header is missing, pt-BR (and a bare pt)
- * also pays in BRL. Every other detected country or language pays in USD.
+ * USD is the default. Only Brazil (edge country BR) pays in BRL. With no country header at all,
+ * the site's pt locale or a pt-BR browser still gets BRL; anything else, or nothing, gets USD.
  */
 export function currencyForVisitor(input: {
   country?: string | null;
@@ -42,13 +42,11 @@ export function currencyForVisitor(input: {
   acceptLanguage?: string | null;
 }): ChargeCurrency {
   const country = normalizeCountry(input.country);
-  if (country === "BR") return "BRL";
-  if (country) return "USD";
+  if (country) return country === "BR" ? "BRL" : "USD";
   const explicit = (input.locale ?? "").trim().toLowerCase();
-  if (explicit) return explicit.startsWith("pt") ? "BRL" : "USD";
+  if (explicit === "pt" || explicit === "pt-br") return "BRL";
   const header = (input.acceptLanguage ?? "").split(",")[0]?.split(";")[0]?.trim().toLowerCase() ?? "";
-  if (!header || header.startsWith("pt")) return "BRL";
-  return "USD";
+  return header === "pt-br" ? "BRL" : "USD";
 }
 
 export function formatMoney(cents: number, currency: ChargeCurrency, locale: string) {

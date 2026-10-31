@@ -1038,7 +1038,7 @@
     "clicks": "Clics",
     "signups": "Inscriptions",
     "purchases": "Achats",
-    "owed": "Commission due",
+    "owed": "Commission à reverser",
     "generateLink": "Générer le lien",
     "linkReady": "Lien créé",
     "assign": "Assigner un créateur",
@@ -1061,18 +1061,18 @@
     "createPack": "Créer le pack",
     "remove": "Retirer",
     "liveTitle": "Résultats confirmés",
-    "liveBody": "Clics, inscriptions, achats et commission créditée seulement après le paiement.",
+    "liveBody": "Estimation de commission. Le paiement complet revient à Patrocino ; l'entreprise verse la commission plus tard, manuellement. Aucun partage automatique au paiement.",
     "liveEmpty": "Aucune commission confirmée pour le moment.",
-    "statusPending": "En attente",
-    "statusConfirmed": "Confirmée",
-    "statusPaid": "Payée",
+    "statusPending": "En attente (à reverser)",
+    "statusConfirmed": "Confirmée (à reverser)",
+    "statusPaid": "Reversée",
     "statusReversed": "Annulée",
     "daily": "Quotidien",
     "monthly": "Mensuel",
     "conversionRate": "Conversion",
-    "markPaid": "Marquer comme payée",
+    "markPaid": "Marquer comme reversée",
     "chartHint": "Les barres montrent la commission. Chaque colonne compte aussi les clics et les conversions.",
     "perLink": "Par lien",
-    "ledgerTitle": "Grand livre des commissions"
+    "ledgerTitle": "Commissions à reverser"
   }
 }

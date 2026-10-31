@@ -1,5 +1,6 @@
 "use client";
 
+import { useMoney } from "@/lib/visitor-currency";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
@@ -7,7 +8,6 @@ import { CreditCard, LoaderCircle, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
 import { apiErrorText } from "@/lib/api-error";
-import { brl } from "@/lib/gateway";
 import { publishPaymentConfirmed } from "@/components/pending-expay-toast";
 import { PixPaidState, PixWaitingNotice } from "@/components/pix-waiting-notice";
 import { pixPollDelay } from "@/lib/pix-poll";
@@ -48,6 +48,8 @@ export function StripeCheckoutModal({
   const closeLabel = useTranslations("dialog")("close");
   const [clientSecret, setClientSecret] = useState("");
   const [chargedCents, setChargedCents] = useState<number | null>(null);
+  const [chargedCurrency, setChargedCurrency] = useState<"BRL" | "USD">("USD");
+  const money = useMoney();
   const [error, setError] = useState("");
   const confirmedRef = useRef(false);
   const onPaidRef = useRef(onPaid);
@@ -80,13 +82,14 @@ export function StripeCheckoutModal({
             idempotencyKey,
           }),
         });
-        const payload = (await response.json().catch(() => ({}))) as { clientSecret?: string | null; amountCents?: number; code?: unknown; message?: unknown };
+        const payload = (await response.json().catch(() => ({}))) as { clientSecret?: string | null; amountCents?: number; currency?: unknown; code?: unknown; message?: unknown };
         if (!response.ok || !payload.clientSecret || typeof payload.amountCents !== "number") {
           if (!stop) setError(apiErrorText(payload, errors, t("cardStartFailed")));
           return;
         }
         if (!stop) {
           setChargedCents(payload.amountCents);
+          setChargedCurrency(payload.currency === "BRL" ? "BRL" : "USD");
           onAmount?.(payload.amountCents);
           setClientSecret(payload.clientSecret);
         }
@@ -127,7 +130,7 @@ export function StripeCheckoutModal({
         </div>
         <h2 id="stripe-title" className="text-2xl font-extrabold tracking-[-.04em]">{t("payWithCardTitle")}</h2>
         <p className="mt-2 text-sm leading-6 text-muted">{title}</p>
-        {chargedCents != null && <p data-testid="stripe-amount" className="mt-3 text-lg font-black">{brl(chargedCents)}</p>}
+        {chargedCents != null && <p data-testid="stripe-amount" className="mt-3 text-lg font-black">{money(chargedCents, chargedCurrency)}</p>}
 
         {!publishableKey && (
           <p className="mt-5 rounded-2xl bg-accent/15 px-4 py-3 text-sm text-accent-strong">
