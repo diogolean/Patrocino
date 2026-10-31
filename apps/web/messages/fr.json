@@ -108,6 +108,8 @@
     "subscribeCard": "S'abonner par carte",
     "extend": "Prolonger l'abonnement",
     "pricesUnavailable": "Prix indisponibles pour le moment.",
+    "packCardBody": "Vidéos et photos exclusives, paiement unique",
+    "packCta": "Acheter",
     "packName": "Pack Coulisses",
     "yourRequests": "Vos demandes spéciales",
     "counteroffer": "Contre-proposition : {price}",
@@ -944,6 +946,10 @@
     "demoAlt": "Contenu démo de {name}"
   },
   "feed": {
+    "packsTitle": "Packs exclusifs",
+    "packsBody": "Vidéos et photos exclusives des créatrices, en un seul paiement.",
+    "packItems": "{count} éléments",
+    "packBuy": "Acheter",
     "forYou": "Pour vous",
     "title": "Votre fil",
     "body": "Les nouveautés en haut, puis le catalogue de démonstration.",

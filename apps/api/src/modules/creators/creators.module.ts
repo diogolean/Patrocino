@@ -1,7 +1,7 @@
 import { apiError } from "../../http/api-error";
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Module, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { currencyForVisitor } from "@mimelux/core/currency";
+import { centsForCurrency, currencyForVisitor } from "@mimelux/core/currency";
 import { planChargeCents } from "@mimelux/core/monetization";
 import { Prisma, database } from "@mimelux/db/runtime";
 import { z } from "zod";
@@ -133,6 +133,36 @@ class CreatorsController {
   @ApiOperation({ summary: "List ranked creators" })
   async ranking() {
     return this.list({});
+  }
+
+  @Get("packs/featured")
+  @ApiOperation({ summary: "List active content packs for the home page" })
+  async featuredPacks(
+    @Headers("cf-ipcountry") country?: string,
+    @Headers("x-patrocino-locale") locale?: string,
+    @Headers("accept-language") acceptLanguage?: string,
+  ) {
+    const currency = currencyForVisitor({ country, locale, acceptLanguage });
+    const packs = await database.contentPack.findMany({
+      where: { active: true, isDemo: false, creator: { status: "ACTIVE" } },
+      include: { creator: { include: { user: { include: { profile: true } } } }, _count: { select: { items: true } } },
+      orderBy: { createdAt: "asc" },
+      take: 24,
+    });
+    return {
+      currency,
+      items: packs
+        .filter((pack) => pack.creator.user.profile?.username)
+        .map((pack) => ({
+          id: pack.id,
+          name: pack.name,
+          priceCents: centsForCurrency(currency, pack.priceCents, pack.priceCentsUsd),
+          itemCount: pack._count.items,
+          username: pack.creator.user.profile!.username,
+          creatorName: pack.creator.user.profile!.name,
+          avatarUrl: pack.creator.user.profile!.avatarUrl ?? "",
+        })),
+    };
   }
 
   @Get(":id/profile")

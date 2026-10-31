@@ -108,6 +108,8 @@
     "subscribeCard": "Suscribirse con tarjeta",
     "extend": "Extender suscripción",
     "pricesUnavailable": "Precios no disponibles en este momento.",
+    "packCardBody": "Videos y fotos exclusivos, pago único",
+    "packCta": "Comprar",
     "packName": "Paquete Bastidores",
     "yourRequests": "Tus pedidos especiales",
     "counteroffer": "Contrapropuesta: {price}",
@@ -944,6 +946,10 @@
     "demoAlt": "Contenido demo de {name}"
   },
   "feed": {
+    "packsTitle": "Packs exclusivos",
+    "packsBody": "Videos y fotos exclusivos de las creadoras, en un solo pago.",
+    "packItems": "{count} elementos",
+    "packBuy": "Comprar",
     "forYou": "Para ti",
     "title": "Tu feed",
     "body": "Estrenos arriba y después el catálogo de demostración.",

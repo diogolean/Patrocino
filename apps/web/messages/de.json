@@ -108,6 +108,8 @@
     "subscribeCard": "Mit Karte abonnieren",
     "extend": "Abo verlängern",
     "pricesUnavailable": "Preise gerade nicht verfügbar.",
+    "packCardBody": "Exklusive Videos und Fotos, Einmalzahlung",
+    "packCta": "Kaufen",
     "packName": "Paket Hinter den Kulissen",
     "yourRequests": "Deine Sonderanfragen",
     "counteroffer": "Gegenangebot: {price}",
@@ -944,6 +946,10 @@
     "demoAlt": "Demo-Inhalt von {name}"
   },
   "feed": {
+    "packsTitle": "Exklusive Packs",
+    "packsBody": "Exklusive Videos und Fotos der Creatorinnen mit einer Einmalzahlung.",
+    "packItems": "{count} Inhalte",
+    "packBuy": "Kaufen",
     "forYou": "Für dich",
     "title": "Dein Feed",
     "body": "Premieren oben, danach der Demo-Katalog.",

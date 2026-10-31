@@ -1,7 +1,11 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { formatMoney } from "@mimelux/core/currency";
+import { apiBase } from "@/lib/api-auth";
+import { visitorForwardHeaders } from "@/lib/client-ip";
+import { packCheckoutHref, parseFeaturedPacks, type FeaturedPacks } from "@/lib/featured-packs";
 import { Sparkles } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { PostCard } from "@/components/post-card";
 import { exclusiveIndexes } from "@/lib/gallery";
 import { creators, posts, type Post } from "@/lib/gateway";
@@ -12,12 +16,26 @@ function forVisitor(post: Post, cover: string): Post {
   return { ...post, image: cover, poster: undefined, playback: undefined };
 }
 
+async function loadPacks(): Promise<FeaturedPacks | null> {
+  try {
+    const response = await fetch(`${apiBase()}/creators/packs/featured`, {
+      headers: visitorForwardHeaders(await headers()),
+      cache: "no-store",
+      signal: AbortSignal.timeout(2500),
+    });
+    return response.ok ? parseFeaturedPacks(await response.json()) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function FeedPage() {
   const jar = await cookies();
   const signedIn = Boolean(jar.get(ACCESS_COOKIE)?.value);
   const videoNumbers = exclusiveIndexes(posts, (post) => post.mediaType === "video");
   const t = await getTranslations("feed");
   const nav = await getTranslations("nav");
+  const [packs, locale] = await Promise.all([loadPacks(), getLocale()]);
 
   return (
     <div className="mx-auto grid w-full max-w-6xl gap-7 px-4 py-6 sm:px-8 lg:grid-cols-[minmax(0,640px)_300px] lg:py-9">
@@ -27,6 +45,33 @@ export default async function FeedPage() {
           <h1 className="mt-1 text-2xl font-extrabold tracking-[-.04em]">{t("title")}</h1>
           <p className="mt-2 text-xs text-muted">{t("body")}</p>
         </div>
+
+        {packs && packs.items.length > 0 && (
+          <section id="packs" data-testid="packs-strip" className="mb-6">
+            <h2 className="text-sm font-extrabold">{t("packsTitle")}</h2>
+            <p className="mt-1 text-xs text-muted">{t("packsBody")}</p>
+            <div className="-mx-4 mt-3 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
+              {packs.items.map((pack) => (
+                <Link key={pack.id} href={packCheckoutHref(pack)} data-testid="home-pack" className="flex w-60 shrink-0 snap-start items-center gap-3 rounded-[22px] border border-accent/50 bg-gradient-to-r from-accent/20 via-elevated to-primary/15 p-3">
+                  {pack.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={pack.avatarUrl} alt="" className="size-12 shrink-0 rounded-2xl object-cover" />
+                  ) : (
+                    <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-accent to-primary text-white"><Sparkles className="size-5" /></span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-extrabold">{pack.name}</span>
+                    <span className="block truncate text-[11px] text-muted">{pack.creatorName} · {t("packItems", { count: pack.itemCount })}</span>
+                    <span className="mt-0.5 flex items-center justify-between text-xs font-extrabold">
+                      <span data-testid="home-pack-price">{formatMoney(pack.priceCents, packs.currency, locale)}</span>
+                      <span className="text-primary-strong">{t("packBuy")}</span>
+                    </span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         <div data-testid="trending-strip" className="mb-6">
           <h2 className="text-sm font-extrabold">{nav("trending")}</h2>

@@ -108,6 +108,8 @@
     "subscribeCard": "Subscribe with card",
     "extend": "Extend subscription",
     "pricesUnavailable": "Prices are unavailable right now.",
+    "packCardBody": "Exclusive videos and photos, one-time payment",
+    "packCta": "Buy",
     "packName": "Behind-the-scenes pack",
     "yourRequests": "Your special requests",
     "counteroffer": "Counteroffer: {price}",
@@ -944,6 +946,10 @@
     "demoAlt": "Demo content from {name}"
   },
   "feed": {
+    "packsTitle": "Exclusive packs",
+    "packsBody": "Exclusive videos and photos from creators, in a single payment.",
+    "packItems": "{count} items",
+    "packBuy": "Buy",
     "forYou": "For you",
     "title": "Your feed",
     "body": "Premieres on top, then the demo catalog.",

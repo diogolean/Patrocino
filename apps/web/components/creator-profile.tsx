@@ -526,25 +526,19 @@ export function CreatorProfile({
                       <span data-testid="plan-price" data-months={months}>{creator.free ? t("free") : demoMoney(planTotal(months))}</span>
                     </Link>
                   ))}
-              {databasePlans
-                ? offers?.packs.map((pack) => (
-                    <Link key={pack.id} href={`/checkout?kind=pack&id=${pack.id}&creator=${creator.username}&return=/creator/${creator.username}`} className={`flex h-10 w-full items-center justify-between rounded-full border border-accent/40 bg-gradient-to-r from-accent/15 to-primary/10 px-5 text-sm font-semibold ${planGlow}`}>
-                      <span>{pack.name}</span>
-                      <span data-testid="pack-price">{money(pack.priceCents)}</span>
-                    </Link>
-                  ))
-                : (
-                    <Link href={`/checkout?kind=pack&id=summer-pack&creator=${creator.id}&return=/creator/${creator.username}`} className={`flex h-10 w-full items-center justify-between rounded-full border border-accent/40 bg-gradient-to-r from-accent/15 to-primary/10 px-5 text-sm font-semibold ${planGlow}`}>
-                      <span>{t("packName")}</span>
-                      <span>{demoMoney(4_990)}</span>
-                    </Link>
-                  )}
             </div>
           )}
-          {memberSubscribed && offers?.packs.map((pack) => (
-            <Link key={pack.id} href={`/checkout?kind=pack&id=${pack.id}&creator=${creator.username}&return=/creator/${creator.username}`} className={`mt-1.5 flex h-10 w-full items-center justify-between rounded-full border border-accent/40 bg-gradient-to-r from-accent/15 to-primary/10 px-5 text-sm font-semibold ${planGlow}`}>
-              <span>{pack.name}</span>
-              <span data-testid="pack-price">{money(pack.priceCents)}</span>
+          {offers?.packs.map((pack) => (
+            <Link key={pack.id} data-testid="pack-card" href={`/checkout?kind=pack&id=${pack.id}&creator=${creator.username}&return=/creator/${creator.username}`} className={`mt-2 flex w-full items-center gap-3 rounded-[22px] border border-accent/50 bg-gradient-to-r from-accent/25 via-elevated to-primary/20 p-3 ${planGlow}`}>
+              <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-accent to-primary text-white"><Sparkles className="size-5" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-extrabold">{pack.name}</span>
+                <span className="block text-[11px] leading-4 text-muted">{t("packCardBody")}</span>
+              </span>
+              <span className="shrink-0 text-right">
+                <span data-testid="pack-price" className="block text-sm font-extrabold">{money(pack.priceCents)}</span>
+                <span className="block text-[11px] font-bold text-primary-strong">{t("packCta")}</span>
+              </span>
             </Link>
           ))}
         </div>
