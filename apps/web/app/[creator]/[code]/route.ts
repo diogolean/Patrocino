@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { AFFILIATE_EVENT_COOKIE } from "@/lib/analytics";
 import { LINK_CODE_PATTERN } from "@mimelux/core/currency";
 import { publicOrigin, resolveAffiliateRedirect, type RecordedClick } from "@/lib/affiliate-redirect";
 import { apiBase } from "@/lib/api-auth";
@@ -62,5 +63,7 @@ export async function GET(request: Request, context: Context) {
     : result.location;
   const response = NextResponse.redirect(new URL(location, publicOrigin(request)));
   if (result.cookie) response.cookies.set(result.cookie.name, result.cookie.value, result.cookie.options);
+  // One-shot marker read by the GA client to send affiliate_click (creator + link code only, never the affiliate).
+  response.cookies.set(AFFILIATE_EVENT_COOKIE, `${creator}|${recorded.code}|${recorded.packId ? 1 : 0}`, { path: "/", maxAge: 600, sameSite: "lax", secure: url.protocol === "https:", httpOnly: false });
   return response;
 }

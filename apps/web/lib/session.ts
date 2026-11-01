@@ -1,4 +1,5 @@
 "use client";
+import { trackEvent } from "@/lib/analytics";
 
 import type { AccountRole } from "@mimelux/core";
 import type { SessionUser } from "./api-auth";
@@ -116,6 +117,7 @@ export async function registerAccount(input: {
   });
   const user = await readUser(response);
   if (!user) throw new SessionRequestError();
+  trackEvent("sign_up", { method: "email", role: input.role.toLowerCase() });
   return user;
 }
 

@@ -28,6 +28,7 @@ import { PushOptIn } from "@/components/push-opt-in";
 import { StripeCheckoutModal } from "@/components/stripe-checkout-modal";
 import { parseProfileOffers, type ProfileOffers } from "@/lib/creator-offers";
 import { authHref } from "@/lib/auth-return";
+import { trackEvent } from "@/lib/analytics";
 
 function DemoPaymentGraphic({ seed, label }: { seed: string; label: string }) {
   const cells = useMemo(() => {
@@ -257,9 +258,29 @@ function CheckoutContent() {
         ...commissionPatch,
       });
     }
+    if (via !== "demo") {
+      trackEvent("purchase", {
+        transaction_id: via === "pix" ? pixKey : cardKey,
+        value: (shownCents ?? amount) / 100,
+        currency: shownCurrency,
+        kind: transactionKind,
+        payment_type: via,
+        creator: creator.id,
+      });
+    }
     setPaidVia(via);
     setPaid(true);
     toast.success(kind === "subscription" ? t("subscriptionActivated") : t("contentUnlocked"));
+  }
+
+  function beginCheckout(paymentType: "pix" | "card") {
+    trackEvent("begin_checkout", {
+      value: shownCents != null ? shownCents / 100 : undefined,
+      currency: shownCurrency,
+      kind: kind === "subscription" ? "subscription" : kind === "pack" ? "pack" : kind === "special_request" ? "special_request" : "ppv",
+      payment_type: paymentType,
+      creator: creator.id,
+    });
   }
 
   async function simulate() {
@@ -358,12 +379,12 @@ function CheckoutContent() {
           {realCheckout ? (
             <div className="mt-5 grid w-full max-w-sm grid-cols-2 gap-3">
               {showPix && (
-                <Button size="lg" className={methods.stripe ? "w-full" : "col-span-2 w-full"} onClick={() => setPixOpen(true)} disabled={quotedCents == null}>
+                <Button size="lg" className={methods.stripe ? "w-full" : "col-span-2 w-full"} onClick={() => { beginCheckout("pix"); setPixOpen(true); }} disabled={quotedCents == null}>
                   {t("payPix")}
                 </Button>
               )}
               {methods.stripe && (
-                <Button size="lg" variant="outline" className={showPix ? "w-full" : "col-span-2 w-full"} onClick={() => setCardOpen(true)} disabled={quotedCents == null}>
+                <Button size="lg" variant="outline" className={showPix ? "w-full" : "col-span-2 w-full"} onClick={() => { beginCheckout("card"); setCardOpen(true); }} disabled={quotedCents == null}>
                   <CreditCard className="size-4" /> {t("card")}
                 </Button>
               )}

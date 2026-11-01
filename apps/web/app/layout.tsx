@@ -8,6 +8,10 @@ import { VisitorCurrencyProvider } from "@/lib/visitor-currency";
 import { PersistLocaleCookie } from "@/components/persist-locale";
 import { Providers } from "@/components/providers";
 import { SiteFooter } from "@/components/site-footer";
+import Script from "next/script";
+import { Suspense } from "react";
+import { GoogleAnalytics } from "@/components/google-analytics";
+import { GA_ID, gaBootstrap } from "@/lib/analytics";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -70,6 +74,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   });
   return (
     <html lang={locale} suppressHydrationWarning>
+      {GA_ID ? (
+        <head>
+          <script id="ga-consent-default" dangerouslySetInnerHTML={{ __html: gaBootstrap(GA_ID) }} />
+        </head>
+      ) : null}
       <body className={`${poppins.variable} min-h-full antialiased`}>
         <NextIntlClientProvider locale={locale} messages={messages}>
           <VisitorCurrencyProvider currency={currency}>
@@ -80,6 +89,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </Providers>
           </VisitorCurrencyProvider>
         </NextIntlClientProvider>
+        {GA_ID ? <Script id="ga-gtag" src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" /> : null}
+        {GA_ID ? (
+          <Suspense fallback={null}>
+            <GoogleAnalytics />
+          </Suspense>
+        ) : null}
       </body>
     </html>
   );
