@@ -23,9 +23,9 @@ export function updateAnalyticsConsent(choice: { analytics: boolean; marketing: 
   });
 }
 
-/** Inline bootstrap placed before gtag.js: queue, Consent Mode v2 defaults (denied), config without automatic page_view. */
+/** Inline bootstrap placed before gtag.js: queue, Consent Mode v2 defaults (denied), config (initial page_view; enhanced measurement covers navigations). */
 export function gaBootstrap(id: string) {
-  return `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}window.gtag=gtag;gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',analytics_storage:'denied',wait_for_update:500});gtag('js',new Date());gtag('config',${JSON.stringify(id)},{send_page_view:false});`;
+  return `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}window.gtag=gtag;gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',analytics_storage:'denied',wait_for_update:500});gtag('js',new Date());gtag('config',${JSON.stringify(id)});`;
 }
 
 export const AFFILIATE_EVENT_COOKIE = "patrocino_aff_evt";
