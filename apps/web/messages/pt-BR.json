@@ -1101,7 +1101,21 @@
     "markPaid": "Marcar como repassada",
     "chartHint": "As barras mostram a comissão. Cada coluna também conta cliques e conversões.",
     "perLink": "Por link",
-    "ledgerTitle": "Comissões a repassar"
+    "ledgerTitle": "Comissões a repassar",
+    "newLink": "Novo link para este afiliado",
+    "linkCreator": "Criadora do link",
+    "linkPack": "Pacote do link",
+    "linkNoPack": "Sem pacote (perfil da criadora)",
+    "linkLabel": "Apelido (opcional)",
+    "createLink": "Criar link",
+    "linksTitle": "Links ativos",
+    "noLinks": "Nenhum link ativo.",
+    "deactivate": "Desativar",
+    "confirmDeactivate": "Desativar este link? Ele deixará de funcionar.",
+    "linkDeactivated": "Link desativado.",
+    "packTag": "Pacote:",
+    "sales": "Vendas",
+    "commissionShort": "comissão"
   },
   "adminOverview": {
     "title": "Visão geral",

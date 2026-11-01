@@ -38,6 +38,8 @@ const assignmentSchema = z.object({
 
 const linkSchema = z.object({
   creatorId: z.string().min(1),
+  packId: z.string().min(1).optional(),
+  label: z.string().trim().max(60).optional(),
 });
 
 const packSchema = z.object({
@@ -320,17 +322,30 @@ export class AdminCommerceController {
       include: { user: { include: { profile: true } } },
     });
     if (!affiliate || !creator) throw apiError(404, "NOT_FOUND", "Not found");
-    const assigned = await database.affiliateAssignment.findUnique({
+    if (creator.status !== "ACTIVE") throw apiError(400, "CREATOR_NOT_ACTIVE", "Creator is not active");
+    if (creator.userId === affiliate.userId) throw apiError(400, "SELF_REFERRAL", "Affiliate cannot refer own creator profile");
+    const packId = parsed.data.packId ?? null;
+    const label = parsed.data.label ? parsed.data.label : null;
+    if (packId) {
+      const pack = await database.contentPack.findFirst({ where: { id: packId, creatorId: creator.id, active: true } });
+      if (!pack) throw apiError(400, "PACK_NOT_FOUND", "Pack does not belong to this creator");
+    }
+    // Admins can link any active creator; the assignment is created on demand and keeps the affiliate's own rate.
+    await database.affiliateAssignment.upsert({
       where: { affiliateId_creatorId: { affiliateId: id, creatorId: creator.id } },
+      create: { affiliateId: id, creatorId: creator.id },
+      update: {},
     });
-    if (!assigned) throw apiError(400, "CREATOR_IS_NOT_ASSIGNED", "Creator is not assigned");
-    const existing = await database.affiliateLink.findFirst({
-      where: { affiliateId: id, creatorId: creator.id, packId: null },
-      orderBy: { createdAt: "asc" },
-    });
-    if (existing) {
-      const saved = existing.active ? existing : await database.affiliateLink.update({ where: { id: existing.id }, data: { active: true } });
-      return { code: saved.code, path: affiliateLinkPath(creator.user.profile?.username ?? creator.id, saved.code) };
+    const username = creator.user.profile?.username ?? creator.id;
+    if (!packId && !label) {
+      const existing = await database.affiliateLink.findFirst({
+        where: { affiliateId: id, creatorId: creator.id, packId: null, label: null },
+        orderBy: { createdAt: "asc" },
+      });
+      if (existing) {
+        const saved = existing.active ? existing : await database.affiliateLink.update({ where: { id: existing.id }, data: { active: true } });
+        return { code: saved.code, path: affiliateLinkPath(username, saved.code), packId: null };
+      }
     }
     let code = linkCode();
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -338,12 +353,20 @@ export class AdminCommerceController {
       if (!clash) break;
       code = linkCode();
     }
-    const username = creator.user.profile?.username ?? creator.id;
     const created = await database.affiliateLink.create({
-      data: { affiliateId: id, creatorId: creator.id, slug: username, code },
+      data: { affiliateId: id, creatorId: creator.id, slug: username, code, packId, label },
     });
-    await audit(actorId, "affiliate.link", "affiliate", id, { creatorId: creator.id, code });
-    return { code: created.code, path: affiliateLinkPath(username, created.code) };
+    await audit(actorId, "affiliate.link", "affiliate", id, { creatorId: creator.id, code, packId });
+    return { code: created.code, path: affiliateLinkPath(username, created.code), packId };
+  }
+
+  @Delete("admin/affiliates/:id/links/:code")
+  async deactivateLink(@Param("id") id: string, @Param("code") code: string, @Headers("authorization") authorization?: string) {
+    const actorId = requireAdmin(authorization);
+    const result = await database.affiliateLink.updateMany({ where: { affiliateId: id, code, active: true }, data: { active: false } });
+    if (result.count === 0) throw apiError(404, "LINK_NOT_FOUND", "Link not found");
+    await audit(actorId, "affiliate.link.deactivate", "affiliate", id, { code });
+    return { removed: true };
   }
 
   @Get("admin/packs")

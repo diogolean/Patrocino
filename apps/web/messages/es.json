@@ -1101,7 +1101,21 @@
     "markPaid": "Marcar como transferida",
     "chartHint": "Las barras muestran la comisión. Cada columna también cuenta clics y conversiones.",
     "perLink": "Por enlace",
-    "ledgerTitle": "Comisiones por transferir"
+    "ledgerTitle": "Comisiones por transferir",
+    "newLink": "Nuevo enlace para este afiliado",
+    "linkCreator": "Creadora del enlace",
+    "linkPack": "Paquete del enlace",
+    "linkNoPack": "Sin paquete (perfil de la creadora)",
+    "linkLabel": "Apodo (opcional)",
+    "createLink": "Crear enlace",
+    "linksTitle": "Enlaces activos",
+    "noLinks": "Ningún enlace activo.",
+    "deactivate": "Desactivar",
+    "confirmDeactivate": "¿Desactivar este enlace? Dejará de funcionar.",
+    "linkDeactivated": "Enlace desactivado.",
+    "packTag": "Paquete:",
+    "sales": "Ventas",
+    "commissionShort": "comisión"
   },
   "adminOverview": {
     "title": "Resumen",

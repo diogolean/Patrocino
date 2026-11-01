@@ -187,7 +187,7 @@ export async function affiliateSummary(affiliateId: string) {
 
 export async function affiliateDashboard(affiliateId: string, now = new Date()) {
   const summary = await affiliateSummary(affiliateId);
-  const [clicks, commissions, links] = await Promise.all([
+  const [clicks, commissions, links, signupRows] = await Promise.all([
     database.click.findMany({
       where: { link: { affiliateId } },
       select: { createdAt: true, linkId: true },
@@ -207,6 +207,10 @@ export async function affiliateDashboard(affiliateId: string, now = new Date()) 
         clicks: { select: { id: true } },
       },
       orderBy: { createdAt: "desc" },
+    }),
+    database.attribution.findMany({
+      where: { fanId: { not: null }, click: { link: { affiliateId } } },
+      select: { click: { select: { linkId: true } } },
     }),
   ]);
   const ledger = commissions.map((row) => ({
@@ -242,6 +246,7 @@ export async function affiliateDashboard(affiliateId: string, now = new Date()) 
       username: link.creator.user.profile?.username ?? "",
       name: link.creator.user.profile?.name ?? "",
       clicks: link.clicks.length,
+      signups: signupRows.filter((row) => row.click.linkId === link.id).length,
       conversions,
       conversionRate: conversionRate(link.clicks.length, conversions),
     };

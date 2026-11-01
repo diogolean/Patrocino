@@ -19,6 +19,18 @@ type AffiliateRow = {
   assignments: { creatorId: string; name: string; username: string; commissionPercent: number | null }[];
   links: { code: string; path: string; creatorId: string; username: string }[];
 };
+type LinkMoney = { currency: string; salesCents: number; commissionCents: number };
+type AdminLink = {
+  code: string;
+  path: string;
+  name: string;
+  label: string | null;
+  pack: { id: string; name: string } | null;
+  clicks: number;
+  signups: number;
+  conversions: number;
+  money: LinkMoney[];
+};
 type PackRow = {
   id: string;
   creatorId: string;
@@ -68,26 +80,35 @@ export function AdminCommerce() {
   const [defaultUsd, setDefaultUsd] = useState("49");
   const [ledger, setLedger] = useState<{ id: string; amountCents: number; currency: string; status: string; linkCode: string }[]>([]);
 
+  const [detailLinks, setDetailLinks] = useState<AdminLink[]>([]);
+  const [detailVersion, setDetailVersion] = useState(0);
+  const [linkCreatorId, setLinkCreatorId] = useState("");
+  const [linkPackId, setLinkPackId] = useState("");
+  const [linkLabel, setLinkLabel] = useState("");
+  const [linkBusy, setLinkBusy] = useState(false);
+
   const selected = affiliates.find((item) => item.id === selectedId) ?? null;
+  const linkPacks = packs.filter((pack) => pack.active && pack.creatorId === linkCreatorId);
 
   useEffect(() => {
-    if (!selectedId) {
-      setLedger([]);
-      return;
-    }
+    if (!selectedId) return;
     let cancel = false;
     fetch(`/api/admin/affiliates/${selectedId}`, { cache: "no-store" })
       .then(async (response) => (response.ok ? response.json() : null))
-      .then((payload: { ledger?: { id: string; amountCents: number; currency: string; status: string; linkCode: string }[] } | null) => {
-        if (!cancel) setLedger(payload?.ledger ?? []);
+      .then((payload: { ledger?: { id: string; amountCents: number; currency: string; status: string; linkCode: string }[]; links?: AdminLink[] } | null) => {
+        if (cancel) return;
+        setLedger(payload?.ledger ?? []);
+        setDetailLinks(payload?.links ?? []);
       })
       .catch(() => {
-        if (!cancel) setLedger([]);
+        if (cancel) return;
+        setLedger([]);
+        setDetailLinks([]);
       });
     return () => {
       cancel = true;
     };
-  }, [selectedId]);
+  }, [selectedId, detailVersion]);
 
   async function refresh() {
     const data = await loadJson<{ affiliates: AffiliateRow[]; creators: CreatorOption[] }>("/api/admin/affiliates", errors, t("loadFailed"));
@@ -174,6 +195,41 @@ export function AdminCommerce() {
     });
     setNotice(`${t("linkReady")} ${link.path}`);
     await refresh();
+    setDetailVersion((value) => value + 1);
+  }
+
+  async function createLink() {
+    if (!selected || !linkCreatorId || linkBusy) return;
+    setError("");
+    setLinkBusy(true);
+    try {
+      const link = await loadJson<{ path: string }>(`/api/admin/affiliates/${selected.id}/links`, errors, t("saveFailed"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ creatorId: linkCreatorId, ...(linkPackId ? { packId: linkPackId } : {}), ...(linkLabel.trim() ? { label: linkLabel.trim() } : {}) }),
+      });
+      setNotice(`${t("linkReady")} ${link.path}`);
+      setLinkLabel("");
+      await refresh();
+      setDetailVersion((value) => value + 1);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("saveFailed"));
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
+  async function deactivateLink(code: string) {
+    if (!selected || !window.confirm(t("confirmDeactivate"))) return;
+    setError("");
+    try {
+      await loadJson(`/api/admin/affiliates/${selected.id}/links/${encodeURIComponent(code)}`, errors, t("saveFailed"), { method: "DELETE" });
+      setNotice(t("linkDeactivated"));
+      await refresh();
+      setDetailVersion((value) => value + 1);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("saveFailed"));
+    }
   }
 
   async function createPack(event: FormEvent) {
@@ -312,9 +368,50 @@ export function AdminCommerce() {
                   <button type="button" className="font-bold text-primary-strong" onClick={() => void makeLink(item.creatorId)}>{t("generateLink")}</button>
                 </div>
               ))}
-              {selected.links.map((link) => (
-                <p key={link.code} className="text-xs text-muted">{link.username} · {link.path}</p>
-              ))}
+            </div>
+            <div className="mt-5 rounded-2xl border border-border bg-background/60 p-3" data-testid="admin-link-builder">
+              <p className="text-sm font-extrabold">{t("newLink")}</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <select aria-label={t("linkCreator")} value={linkCreatorId} onChange={(event) => { setLinkCreatorId(event.target.value); setLinkPackId(""); }} className="h-11 rounded-full border border-border bg-background px-4 text-sm">
+                  <option value="">{t("chooseCreator")}</option>
+                  {creators.map((creator) => (
+                    <option key={creator.id} value={creator.id}>{creator.name}</option>
+                  ))}
+                </select>
+                <select aria-label={t("linkPack")} value={linkPackId} disabled={!linkCreatorId || linkPacks.length === 0} onChange={(event) => setLinkPackId(event.target.value)} className="h-11 rounded-full border border-border bg-background px-4 text-sm disabled:opacity-60">
+                  <option value="">{t("linkNoPack")}</option>
+                  {linkPacks.map((pack) => (
+                    <option key={pack.id} value={pack.id}>{pack.name}</option>
+                  ))}
+                </select>
+                <input aria-label={t("linkLabel")} placeholder={t("linkLabel")} value={linkLabel} maxLength={60} onChange={(event) => setLinkLabel(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void createLink(); } }} className="h-11 rounded-full border border-border bg-background px-4 text-sm" />
+              </div>
+              <Button type="button" className="mt-3" disabled={!linkCreatorId || linkBusy} onClick={() => void createLink()}>{t("createLink")}</Button>
+            </div>
+            <div className="mt-5" data-testid="admin-affiliate-links">
+              <p className="text-sm font-extrabold">{t("linksTitle")}</p>
+              {detailLinks.length === 0 && <p className="mt-2 text-xs text-muted">{t("noLinks")}</p>}
+              <ul className="mt-2 space-y-2">
+                {detailLinks.map((link) => (
+                  <li key={link.code} data-testid="admin-affiliate-link" data-code={link.code} className="rounded-2xl border border-border px-3 py-3 text-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="break-all font-bold">patrocino.com{link.path}</p>
+                        <p className="mt-1 text-xs text-muted">
+                          {link.name}
+                          {link.pack ? ` · ${t("packTag")} ${link.pack.name}` : ""}
+                          {link.label ? ` · ${link.label}` : ""}
+                        </p>
+                      </div>
+                      <button type="button" className="shrink-0 text-xs font-bold text-primary-strong" onClick={() => void deactivateLink(link.code)}>{t("deactivate")}</button>
+                    </div>
+                    <p className="mt-2 text-xs text-muted">
+                      {t("clicks")} {link.clicks} · {t("signups")} {link.signups} · {t("purchases")} {link.conversions}
+                      {link.money.map((row) => ` · ${t("sales")} ${formatMoney(row.salesCents, row.currency === "USD" ? "USD" : "BRL", locale)} (${t("commissionShort")} ${formatMoney(row.commissionCents, row.currency === "USD" ? "USD" : "BRL", locale)})`).join("")}
+                    </p>
+                  </li>
+                ))}
+              </ul>
             </div>
             <ul className="mt-4 space-y-2 text-sm">
               {ledger.map((row) => (

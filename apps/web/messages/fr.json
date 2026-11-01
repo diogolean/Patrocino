@@ -1101,7 +1101,21 @@
     "markPaid": "Marquer comme reversée",
     "chartHint": "Les barres montrent la commission. Chaque colonne compte aussi les clics et les conversions.",
     "perLink": "Par lien",
-    "ledgerTitle": "Commissions à reverser"
+    "ledgerTitle": "Commissions à reverser",
+    "newLink": "Nouveau lien pour cet affilié",
+    "linkCreator": "Créatrice du lien",
+    "linkPack": "Pack du lien",
+    "linkNoPack": "Sans pack (profil de la créatrice)",
+    "linkLabel": "Libellé (facultatif)",
+    "createLink": "Créer le lien",
+    "linksTitle": "Liens actifs",
+    "noLinks": "Aucun lien actif.",
+    "deactivate": "Désactiver",
+    "confirmDeactivate": "Désactiver ce lien ? Il cessera de fonctionner.",
+    "linkDeactivated": "Lien désactivé.",
+    "packTag": "Pack :",
+    "sales": "Ventes",
+    "commissionShort": "commission"
   },
   "adminOverview": {
     "title": "Vue d’ensemble",

@@ -1101,7 +1101,21 @@
     "markPaid": "Als ausgezahlt markieren",
     "chartHint": "Die Balken zeigen die Provision. Jede Spalte zählt auch Klicks und Conversions.",
     "perLink": "Pro Link",
-    "ledgerTitle": "Auszuzahlende Provisionen"
+    "ledgerTitle": "Auszuzahlende Provisionen",
+    "newLink": "Neuer Link für diesen Affiliate",
+    "linkCreator": "Creatorin des Links",
+    "linkPack": "Paket des Links",
+    "linkNoPack": "Kein Paket (Creator-Profil)",
+    "linkLabel": "Bezeichnung (optional)",
+    "createLink": "Link erstellen",
+    "linksTitle": "Aktive Links",
+    "noLinks": "Keine aktiven Links.",
+    "deactivate": "Deaktivieren",
+    "confirmDeactivate": "Diesen Link deaktivieren? Er funktioniert dann nicht mehr.",
+    "linkDeactivated": "Link deaktiviert.",
+    "packTag": "Paket:",
+    "sales": "Umsatz",
+    "commissionShort": "Provision"
   },
   "adminOverview": {
     "title": "Übersicht",

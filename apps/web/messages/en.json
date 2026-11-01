@@ -1101,7 +1101,21 @@
     "markPaid": "Mark as paid out",
     "chartHint": "Bars show commission. Each column also counts clicks and conversions.",
     "perLink": "Per link",
-    "ledgerTitle": "Commissions to be paid out"
+    "ledgerTitle": "Commissions to be paid out",
+    "newLink": "New link for this affiliate",
+    "linkCreator": "Link creator",
+    "linkPack": "Link pack",
+    "linkNoPack": "No pack (creator profile)",
+    "linkLabel": "Label (optional)",
+    "createLink": "Create link",
+    "linksTitle": "Active links",
+    "noLinks": "No active links.",
+    "deactivate": "Deactivate",
+    "confirmDeactivate": "Deactivate this link? It will stop working.",
+    "linkDeactivated": "Link deactivated.",
+    "packTag": "Pack:",
+    "sales": "Sales",
+    "commissionShort": "commission"
   },
   "adminOverview": {
     "title": "Overview",
