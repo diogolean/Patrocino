@@ -5,6 +5,8 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { AFFILIATE_EVENT_COOKIE, GA_ID, trackEvent, updateAnalyticsConsent } from "@/lib/analytics";
 import { readConsent, subscribeConsent } from "@/lib/consent";
 
+let lastHref = "";
+
 /** Sends consent updates, a page_view on every app-router navigation, and the one-shot affiliate click event. */
 export function GoogleAnalytics() {
   const pathname = usePathname();
@@ -19,7 +21,11 @@ export function GoogleAnalytics() {
 
   useEffect(() => {
     if (!GA_ID) return;
-    trackEvent("page_view", { page_location: window.location.href, page_path: pathname + (query ? `?${query}` : ""), page_title: document.title });
+    // App-router can update pathname and search params in separate renders; send one page_view per URL.
+    const href = window.location.href;
+    if (lastHref === href) return;
+    lastHref = href;
+    trackEvent("page_view", { page_location: href, page_path: pathname + (query ? `?${query}` : ""), page_title: document.title });
   }, [pathname, query]);
 
   useEffect(() => {
