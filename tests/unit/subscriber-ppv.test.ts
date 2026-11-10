@@ -422,6 +422,7 @@ describe("subscriber pay-per-view videos", () => {
     expect(imported.visibility).toBe("SUBSCRIBER_PPV");
     expect(imported.media[0]?.posterKey).toContain("/private/posters/");
     expect(imported.media[0]?.previewKey).toContain("/previews/");
+    expect(imported.media[0]?.previewKey).not.toContain("/private/");
     const poster = await readFile(path.join(mediaRoot, imported.media[0]?.posterKey ?? ""));
     expect(poster[0]).toBe(0xff);
     expect(poster[1]).toBe(0xd8);

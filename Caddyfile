@@ -8,9 +8,16 @@
 			header_up X-Forwarded-For {remote_host}
 		}
 	}
-	@private path /media/uploads/*/private /media/uploads/*/private/* /media/uploads/*/tmp /media/uploads/*/tmp/*
+	# A path pattern with more than one * does not cross "/". The old matcher
+	# therefore missed private/posters and private/previews, and /media/uploads/*
+	# (a prefix match) served them. Block every private and tmp subpath.
+	@private path_regexp (?i)^/media/uploads/[^/]+/(private|tmp)(/|$)
 	handle @private {
-		respond 404
+		route {
+			header Cache-Control "private, no-store"
+			header CDN-Cache-Control "no-store"
+			respond 404
+		}
 	}
 	@disk path /media/models/* /media/uploads/*
 	handle @disk {

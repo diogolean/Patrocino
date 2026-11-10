@@ -4,6 +4,7 @@ import { mkdir, open, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { database } from "@mimelux/db/runtime";
+import { posterKeyFor, previewKeyFor } from "./modules/media/derivative-access";
 import { writePosterAndPreview } from "./modules/media/derivatives";
 import { resolveVideoPrice } from "./modules/media/entitlement";
 import { detectFile } from "./modules/media/sniff";
@@ -108,11 +109,13 @@ export async function importCreatorMedia(options: ImportOptions) {
     });
     const folder = locked ? "private" : "public";
     const storageKey = `uploads/${creator.id}/${folder}/${media.id}.${detected.extension}`;
-    const posterKey =
-      visibility === "SUBSCRIBER_PPV"
-        ? `uploads/${creator.id}/private/posters/${media.id}.jpg`
-        : `uploads/${creator.id}/posters/${media.id}.jpg`;
-    const previewKey = `uploads/${creator.id}/previews/${media.id}.jpg`;
+    const posterKey = posterKeyFor({
+      creatorId: creator.id,
+      mediaId: media.id,
+      visibility,
+      creatorStatus: creator.status,
+    });
+    const previewKey = previewKeyFor({ creatorId: creator.id, mediaId: media.id, creatorStatus: creator.status });
     const destination = storage.resolve(storageKey);
     await mkdir(path.dirname(destination), { recursive: true });
     await pipeline(createReadStream(file), createWriteStream(destination));

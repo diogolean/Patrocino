@@ -39,5 +39,9 @@ describe("poster grants", () => {
     expect(readMediaGrant(poster, now, key, "poster")?.kind).toBe("poster");
     expect(readMediaGrant(poster, now, key)).toBeNull();
     expect(readMediaGrant(file, now, key, "poster")).toBeNull();
+    const preview = signMediaGrant({ mediaId: "m", userId: "fan", exp, kind: "preview" }, key);
+    expect(readMediaGrant(preview, now, key, "preview")?.kind).toBe("preview");
+    expect(readMediaGrant(preview, now, key, "poster")).toBeNull();
+    expect(readMediaGrant(poster, now, key, "preview")).toBeNull();
   });
 });

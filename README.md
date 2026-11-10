@@ -93,14 +93,17 @@ pnpm --filter api media:import -- --creator <slug> --dir <path> --access subscri
 Files go through `DiskStorage` (`apps/api/src/modules/media/storage.ts`). The default root is `/opt/patrocino/media` (`MEDIA_ROOT`). Layout:
 
 ```text
-uploads/<creatorId>/public/<mediaId>.<ext>          free original
-uploads/<creatorId>/private/<mediaId>.<ext>         locked original
-uploads/<creatorId>/posters/<mediaId>.jpg           public poster
-uploads/<creatorId>/private/posters/<mediaId>.jpg   subscriber pay-per-view poster
-uploads/<creatorId>/previews/<mediaId>.jpg          blurred preview
+uploads/<creatorId>/public/<mediaId>.<ext>                 free original
+uploads/<creatorId>/private/<mediaId>.<ext>                locked original
+uploads/<creatorId>/posters/<mediaId>.jpg                  poster while the creator is ACTIVE (not subscriber pay-per-view)
+uploads/<creatorId>/private/posters/<mediaId>.jpg          clear poster (subscriber pay-per-view, or any poster while the creator is not ACTIVE)
+uploads/<creatorId>/previews/<mediaId>.jpg                 blurred public teaser while the creator is ACTIVE
+uploads/<creatorId>/private/previews/<mediaId>.jpg         blurred preview while the creator is DRAFT, PENDING, or SUSPENDED
 ```
 
-Caddy's `(app)` snippet serves `/media/*` from `/srv/media` before the web catch-all, except `uploads/*/private` and `uploads/*/tmp`, which return 404. Locked bytes are only returned by `GET /v1/media/:id/file` after the API checks the owner, an admin, an active subscription (photos and subscribers-only video), or a paid purchase (pay-per-view and subscriber pay-per-view). A subscription does not unlock a subscriber pay-per-view file. Blurred previews stay public. Clear posters for subscriber pay-per-view live under `private/` with the original. `Dockerfile.prod` installs ffmpeg for those derivatives.
+Caddy's `(app)` snippet serves `/media/models/*` and `/media/uploads/*` from `/srv/media` before the web catch-all. `path /media/uploads/*` is a prefix match, and a matcher with more than one `*` does not cross `/`, so `private/posters/` and `private/previews/` used to fall through to the disk. Every `uploads/<id>/private/**` and `uploads/<id>/tmp/**` path now matches a regexp and returns 404 with `Cache-Control: private, no-store`. On startup the API moves derivatives of DRAFT, PENDING, and SUSPENDED creators under `private/` so those bytes leave the static tree. Activating a creator publishes the blurred preview again the next time the catalog or studio loads it. The clear subscriber pay-per-view poster never leaves `private/posters/`.
+
+Locked originals are only returned by `GET /v1/media/:id/file`. Clear posters are only returned by `GET /v1/media/:id/poster`, and hidden previews by `GET /v1/media/:id/preview`, both with a signed grant. Those responses send `Cache-Control: private, no-store` and `CDN-Cache-Control: no-store`. For an ACTIVE creator the grant requires the owner, an admin, or the same entitlement as the original (a subscription does not unlock a subscriber pay-per-view poster). For a DRAFT, PENDING, or SUSPENDED creator only an admin or the creator owner can read the derivatives. There is no separate super-admin role; `ADMIN` covers both. Blurred teasers of ACTIVE creators stay on the public disk. `Dockerfile.prod` installs ffmpeg for those derivatives.
 
 Production is `docker compose -f docker-compose.prod.yml up -d --build`. The `migrate` service runs `prisma migrate deploy` and `prisma/seed.ts`. API and web mount `/opt/patrocino/media` read-write (`MEDIA_ROOT`). Caddy mounts it read-only at `/srv/media`. `DATABASE_URL` stays in `.env`. `POSTGRES_PASSWORD` in `.env` must be the password already used by the Postgres volume. `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` is a build arg from `.env`, empty in git. Swap the storage class later (Bunny Storage or Stream) without changing the upload routes.
 

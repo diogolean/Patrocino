@@ -158,8 +158,11 @@ describe("profile gallery and subscription copy", () => {
   it("refuses permanent original folders on the public media route", () => {
     expect(publicMediaAllowed(["generated", "creator-sarah-avatar.jpg"])).toBe(true);
     expect(publicMediaAllowed(["uploads", "creator", "previews", "sample.jpg"])).toBe(true);
+    expect(publicMediaAllowed(["uploads", "creator", "posters", "sample.jpg"])).toBe(true);
     expect(publicMediaAllowed(["uploads", "creator", "public", "original.jpg"])).toBe(false);
     expect(publicMediaAllowed(["uploads", "creator", "private", "original.mp4"])).toBe(false);
+    expect(publicMediaAllowed(["uploads", "creator", "private", "posters", "sample.jpg"])).toBe(false);
+    expect(publicMediaAllowed(["uploads", "creator", "private", "previews", "sample.jpg"])).toBe(false);
     expect(publicMediaAllowed(["..", "etc", "passwd"])).toBe(false);
   });
 });

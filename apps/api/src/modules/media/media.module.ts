@@ -29,6 +29,14 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { optionalUser, requireUser } from "../auth/require-user";
 import { ensureBlurredPreview, writePosterAndPreview } from "./derivatives";
+import {
+  alignMediaDerivatives,
+  canReadDerivative,
+  isPrivateMediaKey,
+  posterKeyFor,
+  previewKeyFor,
+  staticMediaUrl,
+} from "./derivative-access";
 import { centsForCurrency, currencyForVisitor, ppvQuote, type ChargeCurrency } from "@mimelux/core/currency";
 import { fanSubscribed, paidPostPurchase, resolveVideoPrice, viewerCanReadPost } from "./entitlement";
 import { MEDIA_GRANT_TTL_SECONDS, readMediaGrant, signMediaGrant } from "./signed-url";
@@ -75,7 +83,7 @@ const videoPriceSchema = z.object({
 
 type Manager = {
   user: { id: string; role: string };
-  creator: { id: string; userId: string; defaultVideoPriceCents: number };
+  creator: { id: string; userId: string; defaultVideoPriceCents: number; status: string };
   admin: boolean;
 };
 
@@ -99,6 +107,11 @@ function fromVisibility(value: string) {
 
 function isLocked(visibility: string) {
   return visibility !== "FREE";
+}
+
+function setPrivateCache(response: Response) {
+  response.setHeader("Cache-Control", "private, no-store");
+  response.setHeader("CDN-Cache-Control", "no-store");
 }
 
 function pipeStream(stream: ReadStream, response: Response) {
@@ -181,9 +194,24 @@ export class MediaController {
       include: { media: { orderBy: { createdAt: "asc" } } },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     });
+    const storage = await this.storage();
+    for (const post of posts) {
+      for (const item of post.media) {
+        const aligned = await alignMediaDerivatives(storage, {
+          mediaId: item.id,
+          creatorId: actor.creator.id,
+          creatorStatus: actor.creator.status,
+          visibility: post.visibility,
+          posterKey: item.posterKey,
+          previewKey: item.previewKey,
+        });
+        item.posterKey = aligned.posterKey;
+        item.previewKey = aligned.previewKey;
+      }
+    }
     const ordinals = await videoOrdinalIds(actor.creator.id);
     return {
-      items: posts.map((post) => this.present(post, ordinals, actor.admin)),
+      items: posts.map((post) => this.present(post, ordinals, actor.admin, actor.user.id, actor.creator.status)),
       defaultVideoPriceCents: actor.creator.defaultVideoPriceCents,
     };
   }
@@ -247,27 +275,41 @@ export class MediaController {
       const media = post.media.find((item) => item.kind === "VIDEO") ?? post.media[0];
       if (!media || media.storageKey === "pending") continue;
       const purchased = viewer ? await paidPostPurchase(viewer.id, post.id) : false;
-      const posterUrl = viewer && purchased && media.posterKey ? this.posterUrl(media.id, viewer.id) : null;
+      const storage = await this.storage();
+      const aligned = await alignMediaDerivatives(storage, {
+        mediaId: media.id,
+        creatorId: creator.id,
+        creatorStatus: creator.status,
+        visibility: post.visibility,
+        posterKey: media.posterKey,
+        previewKey: media.previewKey,
+      });
+      media.posterKey = aligned.posterKey;
+      media.previewKey = aligned.previewKey;
+      const posterUrl = viewer && purchased && media.posterKey ? this.signedDerivativeUrl(media.id, viewer.id, "poster") : null;
       let previewKey = media.previewKey;
-      if (media.kind === "VIDEO") {
-        const storage = await this.storage();
-        if (await storage.exists(media.storageKey)) {
-          const nextPreview = previewKey ?? `uploads/${post.creatorId}/previews/${media.id}.jpg`;
-          const nextPoster = media.posterKey ?? `uploads/${post.creatorId}/private/posters/${media.id}.jpg`;
-          await ensureBlurredPreview(storage.resolve(media.storageKey), storage.resolve(nextPoster), storage.resolve(nextPreview));
-          if (nextPreview !== media.previewKey || nextPoster !== media.posterKey) {
-            await database.media.update({
-              where: { id: media.id },
-              data: { previewKey: nextPreview, posterKey: nextPoster },
-            });
-          }
-          previewKey = nextPreview;
+      if (media.kind === "VIDEO" && (await storage.exists(media.storageKey))) {
+        const nextPreview = previewKey ?? previewKeyFor({ creatorId: post.creatorId, mediaId: media.id, creatorStatus: creator.status });
+        const nextPoster =
+          media.posterKey ??
+          posterKeyFor({
+            creatorId: post.creatorId,
+            mediaId: media.id,
+            visibility: post.visibility,
+            creatorStatus: creator.status,
+          });
+        await ensureBlurredPreview(storage.resolve(media.storageKey), storage.resolve(nextPoster), storage.resolve(nextPreview));
+        if (nextPreview !== media.previewKey || nextPoster !== media.posterKey) {
+          await database.media.update({
+            where: { id: media.id },
+            data: { previewKey: nextPreview, posterKey: nextPoster },
+          });
         }
+        previewKey = nextPreview;
       }
       let previewVersion = "";
-      if (previewKey) {
+      if (previewKey && !isPrivateMediaKey(previewKey)) {
         try {
-          const storage = await this.storage();
           previewVersion = String(Math.floor((await stat(storage.resolve(previewKey))).mtimeMs));
         } catch {
           previewVersion = "";
@@ -296,7 +338,7 @@ export class MediaController {
             currency,
           };
         })(),
-        previewUrl: previewKey ? `/media/${previewKey}${previewVersion ? `?v=${previewVersion}` : ""}` : null,
+        previewUrl: staticMediaUrl(previewKey, previewVersion),
         posterUrl,
         fileUrl: null,
         durationMs: media.durationMs,
@@ -446,11 +488,13 @@ export class MediaController {
     });
     const folder = locked ? "private" : "public";
     const storageKey = `uploads/${upload.creatorId}/${folder}/${media.id}.${detected.extension}`;
-    const posterKey =
-      visibility === "SUBSCRIBER_PPV"
-        ? `uploads/${upload.creatorId}/private/posters/${media.id}.jpg`
-        : `uploads/${upload.creatorId}/posters/${media.id}.jpg`;
-    const previewKey = `uploads/${upload.creatorId}/previews/${media.id}.jpg`;
+    const posterKey = posterKeyFor({
+      creatorId: upload.creatorId,
+      mediaId: media.id,
+      visibility,
+      creatorStatus: creator.status,
+    });
+    const previewKey = previewKeyFor({ creatorId: upload.creatorId, mediaId: media.id, creatorStatus: creator.status });
     const destination = storage.resolve(storageKey);
     await mkdir(path.dirname(destination), { recursive: true });
     await rename(assembled, destination);
@@ -467,7 +511,7 @@ export class MediaController {
       await audit(uploader.id, "media.upload", post.id, { creatorId: upload.creatorId, mediaId: saved.id, visibility });
     }
     const ordinals = await videoOrdinalIds(upload.creatorId);
-    return { item: this.present(full, ordinals, uploader?.role === "ADMIN") };
+    return { item: this.present(full, ordinals, uploader?.role === "ADMIN", upload.actorId, creator.status) };
   }
 
   @Patch("media/items/order")
@@ -544,8 +588,21 @@ export class MediaController {
       await audit(actor.user.id, "media.update", post.id, { creatorId: post.creatorId, visibility });
     }
     const full = await database.post.findUniqueOrThrow({ where: { id: post.id }, include: { media: true } });
+    const storageAfter = await this.storage();
+    for (const item of full.media) {
+      const aligned = await alignMediaDerivatives(storageAfter, {
+        mediaId: item.id,
+        creatorId: full.creatorId,
+        creatorStatus: creator.status,
+        visibility: full.visibility,
+        posterKey: item.posterKey,
+        previewKey: item.previewKey,
+      });
+      item.posterKey = aligned.posterKey;
+      item.previewKey = aligned.previewKey;
+    }
     const ordinals = await videoOrdinalIds(post.creatorId);
-    return { item: this.present(full, ordinals, actor.admin) };
+    return { item: this.present(full, ordinals, actor.admin, actor.user.id, creator.status) };
   }
 
   @Delete("media/items/:id")
@@ -577,31 +634,62 @@ export class MediaController {
     };
   }
 
-  /** Unblurred cover for a fan who can read the post, e.g. a paid PPV video. */
-  private posterUrl(mediaId: string, userId: string) {
+  /** Signed cover or blurred frame. Twelve hours, and the response itself is not cacheable. */
+  private signedDerivativeUrl(mediaId: string, userId: string, kind: "poster" | "preview") {
     const exp = Math.floor(Date.now() / 1000) + 12 * 60 * 60;
-    return `/v1/media/${mediaId}/poster?token=${encodeURIComponent(signMediaGrant({ mediaId, userId, exp, kind: "poster" }))}`;
+    return `/v1/media/${mediaId}/${kind}?token=${encodeURIComponent(signMediaGrant({ mediaId, userId, exp, kind }))}`;
+  }
+
+  private linkedDerivative(
+    key: string,
+    mediaId: string,
+    userId: string,
+    kind: "poster" | "preview",
+    creatorStatus: string,
+  ) {
+    if (creatorStatus === "ACTIVE" && !isPrivateMediaKey(key)) return `/media/${key}`;
+    return this.signedDerivativeUrl(mediaId, userId, kind);
   }
 
   @Get("media/:id/poster")
   async poster(@Param("id") id: string, @Res() response: Response, @Query("token") token?: string) {
-    const grant = token ? readMediaGrant(token, Date.now(), undefined, "poster") : null;
+    await this.derivative(id, "poster", response, token);
+  }
+
+  @Get("media/:id/preview")
+  async preview(@Param("id") id: string, @Res() response: Response, @Query("token") token?: string) {
+    await this.derivative(id, "preview", response, token);
+  }
+
+  private async derivative(id: string, kind: "poster" | "preview", response: Response, token?: string) {
+    setPrivateCache(response);
+    const grant = token ? readMediaGrant(token, Date.now(), undefined, kind) : null;
     if (!grant || grant.mediaId !== id) throw apiError(401, "MEDIA_LINK_EXPIRED", "Media link expired");
-    const media = await database.media.findUnique({ where: { id }, include: { post: true } });
-    if (!media?.post || media.post.deletedAt || !media.posterKey) throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
+    const media = await database.media.findUnique({
+      where: { id },
+      include: { post: { include: { creator: { select: { status: true, userId: true } } } } },
+    });
+    const key = kind === "poster" ? media?.posterKey : media?.previewKey;
+    if (!media?.post || media.post.deletedAt || !key) throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
     const user = await database.user.findUnique({ where: { id: grant.userId } });
     if (!user || user.deletedAt || user.suspendedAt) throw apiError(401, "MEDIA_LINK_EXPIRED", "Media link expired");
-    const owner = await database.creator.findUnique({ where: { userId: user.id } });
-    if (!(await viewerCanReadPost({ user, owns: owner?.id === media.post.creatorId, post: media.post }))) {
-      throw apiError(403, "PURCHASE_REQUIRED", "Purchase required");
+    const allowed = await canReadDerivative({
+      user,
+      owns: media.post.creator.userId === user.id,
+      creatorStatus: media.post.creator.status,
+      post: media.post,
+    });
+    if (!allowed) {
+      if (media.post.creator.status !== "ACTIVE") throw apiError(403, "MEDIA_LOCKED", "Media is locked");
+      const purchase = media.post.visibility === "SUBSCRIBER_PPV" || media.post.visibility === "PPV";
+      throw apiError(403, purchase ? "PURCHASE_REQUIRED" : "SUBSCRIPTION_REQUIRED", purchase ? "Purchase required" : "Subscription required");
     }
     const storage = await this.storage();
-    if (!(await storage.exists(media.posterKey))) throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
+    if (!(await storage.exists(key))) throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
     response.setHeader("Content-Type", "image/jpeg");
     response.setHeader("X-Content-Type-Options", "nosniff");
-    response.setHeader("Cache-Control", "private, max-age=3600");
-    response.setHeader("Content-Length", String(await storage.size(media.posterKey)));
-    await pipeStream(createReadStream(storage.resolve(media.posterKey)), response);
+    response.setHeader("Content-Length", String(await storage.size(key)));
+    await pipeStream(createReadStream(storage.resolve(key)), response);
   }
 
   @Get("media/:id/file")
@@ -612,6 +700,7 @@ export class MediaController {
     @Res() response: Response,
     @Query("token") token?: string,
   ) {
+    setPrivateCache(response);
     const media = await database.media.findUnique({ where: { id }, include: { post: true } });
     if (!media?.post || media.post.deletedAt || media.storageKey === "pending") throw apiError(404, "MEDIA_NOT_FOUND", "Media not found");
     if (token) {
@@ -647,7 +736,7 @@ export class MediaController {
     response.setHeader("Content-Type", servedMimeType(media.mimeType));
     response.setHeader("Content-Disposition", "inline");
     response.setHeader("X-Content-Type-Options", "nosniff");
-    response.setHeader("Cache-Control", token || media.private ? "private, no-store" : "private, max-age=3600");
+    if (!(token || media.private)) response.setHeader("Cache-Control", "private, max-age=3600");
     response.setHeader("Accept-Ranges", "bytes");
     const match = range?.match(/bytes=(\d+)-(\d*)/);
     if (!match) {
@@ -735,6 +824,8 @@ export class MediaController {
     },
     ordinals: string[],
     revealCaption: boolean,
+    viewerId: string,
+    creatorStatus: string,
     manager = true,
   ) {
     const media = post.media[0];
@@ -758,8 +849,10 @@ export class MediaController {
       byteSize: media?.byteSize ?? null,
       durationMs: media?.durationMs ?? null,
       posterUrl:
-        post.visibility === "SUBSCRIBER_PPV" || !media?.posterKey ? null : `/media/${media.posterKey}`,
-      previewUrl: media?.previewKey ? `/media/${media.previewKey}` : null,
+        post.visibility === "SUBSCRIBER_PPV" || !media?.posterKey
+          ? null
+          : this.linkedDerivative(media.posterKey, media.id, viewerId, "poster", creatorStatus),
+      previewUrl: media?.previewKey ? this.linkedDerivative(media.previewKey, media.id, viewerId, "preview", creatorStatus) : null,
       fileUrl: manager || !locked ? (media ? `/v1/media/${media.id}/file` : null) : null,
     };
   }

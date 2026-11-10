@@ -4,7 +4,7 @@ export type MediaGrant = {
   mediaId: string;
   userId: string;
   exp: number;
-  kind: "file" | "poster";
+  kind: "file" | "poster" | "preview";
 };
 
 export const MEDIA_GRANT_TTL_SECONDS = 8 * 60;
