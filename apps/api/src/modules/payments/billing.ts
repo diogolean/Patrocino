@@ -1,7 +1,7 @@
 import { apiError } from "../../http/api-error";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Prisma, database } from "@mimelux/db/runtime";
-import { planChargeCents, reverseLedger, splitRevenue, subscriptionGrantsAccess } from "@mimelux/core/monetization";
+import { planChargeCents, resolveAffiliateRateBps, reverseLedger, splitRevenue, subscriptionGrantsAccess } from "@mimelux/core/monetization";
 import { centsForCurrency, type ChargeCurrency } from "@mimelux/core/currency";
 import { randomBytes } from "node:crypto";
 import Stripe from "stripe";
@@ -125,8 +125,14 @@ export async function settlePurchase(tx: Tx, purchaseId: string, reference: stri
         where: { affiliateId_creatorId: { affiliateId: affiliate.id, creatorId: purchase.creatorId } },
       })
     : null;
-  const rateBps = assignment?.commissionBps ?? affiliate?.commissionBps ?? shares.affiliateCommissionBps;
+  let rateBps = resolveAffiliateRateBps({
+    assignmentBps: assignment?.commissionBps,
+    creatorBps: purchase.creator.affiliateCommissionBps,
+    affiliateBps: affiliate?.commissionBps,
+    platformBps: settings.affiliateCommissionBps,
+  });
   const referred = Boolean(referral) && creatorPaysAffiliate(purchase.creator, purchase.kind);
+  if (referred && shares.ownership === "INDEPENDENT") rateBps = Math.min(rateBps, shares.creatorShareBps);
   const entries = splitRevenue({
     grossCents: purchase.amountCents,
     ownership: shares.ownership,

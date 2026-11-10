@@ -25,8 +25,11 @@ export type Creator = {
   price: number;
   subscribers: number;
   posts: number;
-  fictitious: true;
-  aiGenerated: true;
+  fictitious: boolean;
+  aiGenerated: boolean;
+  likeCount?: number;
+  /** Set when the price is already in the visitor currency, not a BRL demo amount. */
+  priceCurrency?: "BRL" | "USD";
   createdAt: string;
 };
 
@@ -43,7 +46,7 @@ export type Post = {
   price?: number;
   likes: number;
   time: string;
-  demo: true;
+  demo: boolean;
   publishedAt: string;
 };
 

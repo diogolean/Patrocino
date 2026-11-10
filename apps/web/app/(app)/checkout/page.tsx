@@ -27,6 +27,7 @@ import { ExpayCheckoutModal } from "@/components/expay-checkout-modal";
 import { PushOptIn } from "@/components/push-opt-in";
 import { StripeCheckoutModal } from "@/components/stripe-checkout-modal";
 import { parseProfileOffers, type ProfileOffers } from "@/lib/creator-offers";
+import { databaseCreatorCard } from "@/lib/public-catalog";
 import { authHref } from "@/lib/auth-return";
 import { trackEvent } from "@/lib/analytics";
 
@@ -67,7 +68,26 @@ function CheckoutContent() {
   const kind = search.get("kind") || "subscription";
   const id = search.get("id") || "luna-ferraz";
   const creatorId = kind === "subscription" ? id : search.get("creator") || "luna-ferraz";
-  const creator = creators.find((item) => item.id === creatorId || item.username === creatorId) || creators[0]!;
+  const fixture = creators.find((item) => item.id === creatorId || item.username === creatorId) ?? null;
+  const [identity, setIdentity] = useState<ReturnType<typeof databaseCreatorCard>>(null);
+  const creator = fixture ?? identity ?? {
+    id: creatorId,
+    name: creatorId,
+    username: creatorId,
+    avatar: "",
+    cover: "",
+    category: "",
+    bio: "",
+    city: "",
+    verified: false,
+    free: false,
+    price: 0,
+    subscribers: 0,
+    posts: 0,
+    fictitious: false,
+    aiGenerated: false,
+    createdAt: new Date(0).toISOString(),
+  };
   const quoteCreatorId = creatorId;
   const post = posts.find((item) => item.id === id);
   const message = kind === "message";
@@ -121,9 +141,11 @@ function CheckoutContent() {
   useEffect(() => {
     let cancel = false;
     fetch(`/api/creators/${encodeURIComponent(quoteCreatorId)}`, { cache: "no-store" })
-      .then(async (response) => (response.ok ? parseProfileOffers(await response.json()) : null))
-      .then((parsed) => {
-        if (!cancel) setCatalog(parsed);
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (cancel) return;
+        setCatalog(parseProfileOffers(payload));
+        if (!fixture) setIdentity(databaseCreatorCard(payload));
       })
       .catch(() => {
         if (!cancel) setCatalog(null);
@@ -131,7 +153,7 @@ function CheckoutContent() {
     return () => {
       cancel = true;
     };
-  }, [quoteCreatorId]);
+  }, [quoteCreatorId, fixture]);
 
   const realCheckout = methods.expay || methods.stripe;
   const subjectId = kind === "subscription" ? planParam : id;
@@ -324,7 +346,12 @@ function CheckoutContent() {
 
         <div className="mt-7 flex items-center gap-4 rounded-[24px] border border-black/5 bg-white/60 p-4 dark:bg-white/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={creator.avatar} alt={creator.name} className="size-16 rounded-[20px] object-cover" />
+          {creator.avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={creator.avatar} alt={creator.name} className="size-16 rounded-[20px] object-cover" />
+          ) : (
+            <span className="grid size-16 place-items-center rounded-[20px] bg-primary/20 text-sm font-black">{creator.name.slice(0, 1)}</span>
+          )}
           <div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{kind === "subscription" ? t("subscriptionOf", { name: creator.name }) : specialRequest ? t("requestFor", { name: creator.name }) : t("contentOf", { name: creator.name })}</p><p data-testid="checkout-plan" className="mt-1 text-[9px] text-muted">{kind === "subscription" ? `${catalogPlan?.name ?? plan.name}` : message ? t("exclusiveMessage") : pack ? (catalogPack?.name ?? t("packFallback")) : specialRequest ? t("agreedAmount") : t("exclusivePost")}</p></div>
           <p data-testid="checkout-amount" className="text-sm font-black">{shownCents == null ? "…" : priceLabel(shownCents)}</p>
         </div>

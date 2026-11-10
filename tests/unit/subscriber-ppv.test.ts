@@ -267,7 +267,7 @@ describe("subscriber pay-per-view videos", () => {
     expect(await viewerCanReadPost({ user: viewer, owns: false, post })).toBe(false);
 
     const list = new MediaController();
-    const hidden = await list.subscriberVideos(ids.username, token(ids.fanId));
+    const hidden = await list.subscriberVideos(ids.username, token(ids.fanId), "BR");
     const locked = hidden.items.find((item) => item.id === ids.postId);
     expect(hidden.subscribed).toBe(true);
     expect(locked?.priceCents).toBe(100);

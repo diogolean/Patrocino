@@ -6,6 +6,7 @@ import {
   canTransitionSpecialRequest,
   createDoubleEntryLedger,
   ledgerBalances,
+  resolveAffiliateRateBps,
   reverseLedger,
   splitRevenue,
   subscriptionGrantsAccess,
@@ -127,6 +128,26 @@ describe("monetization rules", () => {
       { direction: "CREDIT", account: "platform_revenue", amountCents: 2_000 },
     ]);
     expect(ledgerBalances(reverseLedger(entries))).toBe(0);
+  });
+
+  it("clamps an independent affiliate commission that would exceed the creator share", () => {
+    const entries = splitRevenue({
+      grossCents: 10_000,
+      ownership: "INDEPENDENT",
+      creatorShareBps: 3_000,
+      affiliateCommissionBps: 5_000,
+      referred: true,
+    });
+    expect(ledgerBalances(entries)).toBe(0);
+    expect(entries.find((entry) => entry.account === "affiliate_payable")?.amountCents).toBe(3_000);
+    expect(entries.find((entry) => entry.account === "creator_payable")).toBeUndefined();
+  });
+
+  it("lets a creator rate override the affiliate rate unless an assignment is set", () => {
+    expect(resolveAffiliateRateBps({ creatorBps: null, affiliateBps: 2_000, platformBps: 2_000 })).toBe(2_000);
+    expect(resolveAffiliateRateBps({ creatorBps: 5_000, affiliateBps: 2_000, platformBps: 2_000 })).toBe(5_000);
+    expect(resolveAffiliateRateBps({ assignmentBps: 1_000, creatorBps: 5_000, affiliateBps: 2_000, platformBps: 2_000 })).toBe(1_000);
+    expect(resolveAffiliateRateBps({ platformBps: 2_000 })).toBe(2_000);
   });
 
   it("grants access only through the paid period", () => {

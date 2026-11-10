@@ -8,7 +8,8 @@ import { Sparkles } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { PostCard } from "@/components/post-card";
 import { exclusiveIndexes } from "@/lib/gallery";
-import { creators, posts, type Post } from "@/lib/gateway";
+import { type Post } from "@/lib/gateway";
+import { loadMergedCreators } from "@/lib/load-public-catalog";
 import { ACCESS_COOKIE } from "@/lib/session-cookies";
 
 function forVisitor(post: Post, cover: string): Post {
@@ -32,10 +33,12 @@ async function loadPacks(): Promise<FeaturedPacks | null> {
 export default async function FeedPage() {
   const jar = await cookies();
   const signedIn = Boolean(jar.get(ACCESS_COOKIE)?.value);
-  const videoNumbers = exclusiveIndexes(posts, (post) => post.mediaType === "video");
   const t = await getTranslations("feed");
   const nav = await getTranslations("nav");
-  const [packs, locale] = await Promise.all([loadPacks(), getLocale()]);
+  const [packs, locale, directory] = await Promise.all([loadPacks(), getLocale(), loadMergedCreators()]);
+  const creators = directory.creators;
+  const posts = directory.posts;
+  const videoNumbers = exclusiveIndexes(posts, (post) => post.mediaType === "video");
 
   return (
     <div className="mx-auto grid w-full max-w-6xl gap-7 px-4 py-6 sm:px-8 lg:grid-cols-[minmax(0,640px)_300px] lg:py-9">

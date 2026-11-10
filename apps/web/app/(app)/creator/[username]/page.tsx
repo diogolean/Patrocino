@@ -5,6 +5,7 @@ import { apiBase } from "@/lib/api-auth";
 import { visitorForwardHeaders } from "@/lib/client-ip";
 import { parseProfileOffers, type ProfileOffers } from "@/lib/creator-offers";
 import { creators, posts, postsForCreator } from "@/lib/gateway";
+import { loadDatabaseProfile } from "@/lib/load-public-catalog";
 
 async function loadOffers(username: string): Promise<ProfileOffers | null> {
   try {
@@ -29,7 +30,21 @@ export default async function CreatorPage(props: {
   const initialTab = query.tab === "media" || query.tab === "videos" ? query.tab : "posts";
   const creator = creators.find((item) => item.username === username);
   const offers = await loadOffers(username);
-  if (!creator) notFound();
+  if (!creator) {
+    const profile = await loadDatabaseProfile(username);
+    if (!profile) notFound();
+    const gallerySession = (await headers()).get("x-gallery-session") ?? "";
+    return (
+      <CreatorProfile
+        creator={profile.creator}
+        posts={profile.posts}
+        offers={profile.offers}
+        gallerySession={gallerySession}
+        initialTab={initialTab}
+        openSpecial={query.pedido === "especial"}
+      />
+    );
+  }
 
   const creatorPosts = postsForCreator(creator.id);
   const fallbackPosts = posts

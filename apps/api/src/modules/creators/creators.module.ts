@@ -7,7 +7,7 @@ import { Prisma, database } from "@mimelux/db/runtime";
 import { z } from "zod";
 import { assertOwnsCreator } from "../access/creator-scope";
 import { requireUser } from "../auth/require-user";
-import { loadCreatorOffers } from "./catalog";
+import { listActiveCreators, loadCreatorOffers } from "./catalog";
 
 const discoveryQuerySchema = z.object({
   search: z.string().max(80).optional(),
@@ -97,42 +97,34 @@ class CreatorsController {
 
   @Get()
   @ApiOperation({ summary: "List creators" })
-  async list(@Query() query: unknown) {
+  async list(
+    @Query() query: unknown,
+    @Headers("cf-ipcountry") country?: string,
+    @Headers("x-patrocino-locale") locale?: string,
+    @Headers("accept-language") acceptLanguage?: string,
+  ) {
     const parsed = discoveryQuerySchema.parse(query);
-    const creators = await database.creator.findMany({
-      where: {
-        ...(this.includeDemo ? {} : { isDemo: false }),
-        status: "ACTIVE",
-        ...(parsed.category ? { category: { equals: parsed.category, mode: "insensitive" } } : {}),
-        user: parsed.search
-          ? {
-              deletedAt: null,
-              profile: {
-                is: {
-                  OR: [
-                    { name: { contains: parsed.search, mode: "insensitive" } },
-                    { username: { contains: parsed.search, mode: "insensitive" } },
-                  ],
-                },
-              },
-            }
-          : { deletedAt: null },
-      },
-      include: {
-        user: { include: { profile: true } },
-        plans: { where: { active: true } },
-        posts: { where: { deletedAt: null }, select: { likeCount: true } },
-      },
-      take: 50,
-      orderBy: { createdAt: "desc" },
+    const items = await listActiveCreators({
+      search: parsed.search,
+      category: parsed.category,
+      currency: currencyForVisitor({ country, locale, acceptLanguage }),
+      includeDemo: this.includeDemo,
     });
-    return { items: creators.map(this.present), nextCursor: null, source: "postgres" };
+    return { items, nextCursor: null, source: "postgres" as const };
   }
 
   @Get("ranking")
   @ApiOperation({ summary: "List ranked creators" })
-  async ranking() {
-    return this.list({});
+  async ranking(
+    @Headers("cf-ipcountry") country?: string,
+    @Headers("x-patrocino-locale") locale?: string,
+    @Headers("accept-language") acceptLanguage?: string,
+  ) {
+    const items = await listActiveCreators({
+      currency: currencyForVisitor({ country, locale, acceptLanguage }),
+      includeDemo: this.includeDemo,
+    });
+    return { items, nextCursor: null, source: "postgres" as const };
   }
 
   @Get("packs/featured")

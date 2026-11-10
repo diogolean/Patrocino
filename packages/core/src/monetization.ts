@@ -131,9 +131,7 @@ export function splitRevenue(input: RevenueSplitInput): LedgerDraft[] {
   } else {
     creator = Math.round((grossCents * input.creatorShareBps) / 10_000);
     affiliate = referred ? Math.round((grossCents * input.affiliateCommissionBps) / 10_000) : 0;
-    if (affiliate > creator) {
-      throw new Error("Affiliate commission cannot exceed the creator share.");
-    }
+    if (affiliate > creator) affiliate = creator;
     creator -= affiliate;
   }
   const platform = grossCents - creator - affiliate;
@@ -144,6 +142,22 @@ export function splitRevenue(input: RevenueSplitInput): LedgerDraft[] {
   if (affiliate > 0) entries.push({ direction: "CREDIT", account: "affiliate_payable", amountCents: affiliate });
   if (platform > 0) entries.push({ direction: "CREDIT", account: "platform_revenue", amountCents: platform });
   return entries;
+}
+
+/**
+ * Assignment wins, then the creator's own affiliate rate, then the affiliate's rate, then the platform default.
+ * A null creator rate does not change affiliates who already settle at their own rate.
+ */
+export function resolveAffiliateRateBps(input: {
+  assignmentBps?: number | null;
+  creatorBps?: number | null;
+  affiliateBps?: number | null;
+  platformBps: number;
+}) {
+  const picked = [input.assignmentBps, input.creatorBps, input.affiliateBps, input.platformBps].find(
+    (value) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10_000,
+  );
+  return picked ?? 0;
 }
 
 export function reverseLedger(entries: LedgerDraft[]): LedgerDraft[] {

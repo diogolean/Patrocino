@@ -17,7 +17,7 @@ export async function findTrackingLink(code: string) {
   const key = code.trim();
   if (!key) return null;
   return database.affiliateLink.findFirst({
-    where: { active: true, OR: [{ code: key }, { slug: key }] },
+    where: { active: true, creator: { status: "ACTIVE" }, OR: [{ code: key }, { slug: key }] },
     include: {
       affiliate: true,
       creator: { include: { user: { include: { profile: true } } } },
@@ -72,7 +72,8 @@ export async function exactTrackingLink(code: string, creator: string | null | u
       creator: { include: { user: { include: { profile: true } } } },
     },
   });
-  return link && link.creator.user.profile?.username === username ? link : null;
+  const profileName = link?.creator.user.profile?.username ?? "";
+  return link && link.creator.status === "ACTIVE" && profileName.toLowerCase() === username.toLowerCase() ? link : null;
 }
 
 async function createClick(

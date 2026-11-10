@@ -14,10 +14,12 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@mimelux/ui";
-import { compact, creatorLikeTotal, creators } from "@/lib/gateway";
+import { compact, creatorLikeTotal } from "@/lib/gateway";
+import { usePublicCreators } from "@/lib/use-public-creators";
 import { readDemo, writeDemo } from "@/lib/demo-store";
 
 function TopCreatorsContent() {
+  const creators = usePublicCreators();
   const t = useTranslations("trending");
   const nav = useTranslations("nav");
   const router = useRouter();
@@ -92,7 +94,7 @@ function TopCreatorsContent() {
                   <div className="pb-0.5 text-right">
                     <p className="text-sm font-extrabold">{compact(creator.subscribers)}</p>
                     <p className="text-[11px] text-muted">{t("members")}</p>
-                    <p data-testid="ranking-likes" className="mt-1 text-sm font-extrabold">{compact(creatorLikeTotal(creator.id))}</p>
+                    <p data-testid="ranking-likes" className="mt-1 text-sm font-extrabold">{compact(creator.likeCount ?? creatorLikeTotal(creator.id))}</p>
                     <p className="text-[11px] text-muted">{t("likes")}</p>
                   </div>
                 </div>
@@ -101,7 +103,7 @@ function TopCreatorsContent() {
           ))}
         </section>
       ) : (
-        <Highlights />
+        <Highlights creators={creators} />
       )}
 
       {tour > 0 && (
@@ -130,7 +132,7 @@ function TopCreatorsContent() {
   );
 }
 
-function Highlights() {
+function Highlights({ creators }: { creators: ReturnType<typeof usePublicCreators> }) {
   const demoMoney = useDemoMoney();
   const t = useTranslations("trending");
   const free = creators.filter((creator) => creator.free);

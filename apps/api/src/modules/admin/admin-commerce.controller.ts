@@ -289,6 +289,13 @@ export class AdminCommerceController {
     const creator = await database.creator.findUnique({ where: { id: parsed.data.creatorId } });
     if (!affiliate || !creator) throw apiError(404, "NOT_FOUND", "Not found");
     const commissionBps = parsed.data.commissionPercent == null ? null : bps(parsed.data.commissionPercent);
+    if (commissionBps != null && creator.ownership === "INDEPENDENT") {
+      const settings = await database.platformSettings.findUnique({ where: { id: "default" } });
+      const creatorShare = creator.creatorShareBps ?? settings?.creatorShareBps ?? 8000;
+      if (commissionBps > creatorShare) {
+        throw apiError(400, "AFFILIATE_COMMISSION_CANNOT_EXCEED_THE_CREATOR_SHARE", "Affiliate commission cannot exceed the creator share");
+      }
+    }
     await database.affiliateAssignment.upsert({
       where: { affiliateId_creatorId: { affiliateId: id, creatorId: creator.id } },
       create: { affiliateId: id, creatorId: creator.id, commissionBps },
