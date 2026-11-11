@@ -6,8 +6,9 @@ import { planChargeCents } from "@mimelux/core/monetization";
 import { Prisma, database } from "@mimelux/db/runtime";
 import { z } from "zod";
 import { assertOwnsCreator } from "../access/creator-scope";
-import { requireUser } from "../auth/require-user";
+import { optionalUser, requireUser } from "../auth/require-user";
 import { listActiveCreators, loadCreatorOffers } from "./catalog";
+import { galleryQuery, loadCreatorGallery } from "./gallery";
 
 const discoveryQuerySchema = z.object({
   search: z.string().max(80).optional(),
@@ -306,6 +307,30 @@ class CreatorsController {
       active: plan.active,
     });
     return { plan: presentPlan(plan) };
+  }
+
+  @Get(":username/gallery")
+  async gallery(
+    @Param("username") username: string,
+    @Query("tab") tab?: string,
+    @Query("offset") offset?: string,
+    @Query("limit") limit?: string,
+    @Query("seed") seed?: string,
+    @Headers("authorization") authorization?: string,
+    @Headers("cf-ipcountry") country?: string,
+    @Headers("x-patrocino-locale") locale?: string,
+    @Headers("accept-language") acceptLanguage?: string,
+  ) {
+    const viewer = await optionalUser(authorization);
+    const query = galleryQuery({ tab, offset, limit, seed });
+    const page = await loadCreatorGallery({
+      key: username,
+      ...query,
+      currency: currencyForVisitor({ country, locale, acceptLanguage }),
+      viewerId: viewer?.id,
+    });
+    if (!page) throw apiError(404, "CREATOR_NOT_FOUND", "Creator not found");
+    return page;
   }
 
   @Get(":username")

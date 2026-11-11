@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { database } from "../../packages/db/src/index";
 import { listActiveCreators, loadCreatorOffers } from "../../apps/api/src/modules/creators/catalog";
+import { loadCreatorGallery } from "../../apps/api/src/modules/creators/gallery";
 import { quoteCharge } from "../../apps/api/src/modules/payments/quote-charge";
 import { settlePurchase } from "../../apps/api/src/modules/payments/billing";
 import { exactTrackingLink, recordAffiliateClick, rememberReferral } from "../../apps/api/src/modules/affiliates/tracking";
@@ -272,11 +273,16 @@ describe("database-only creator", () => {
     expect(usd?.plans[0]?.chargeCents).toBe(800);
     expect(brl?.packs[0]?.priceCents).toBe(14900);
     expect(usd?.packs[0]?.priceCents).toBe(4900);
+    expect(brl?.photoCount).toBe(0);
+    expect(brl?.videoCount).toBe(2);
     expect(JSON.stringify(brl)).not.toContain("secret-clip.mp4");
     expect(JSON.stringify(brl)).not.toContain("/private/");
-    const video = brl?.posts.find((post) => post.mediaType === "video");
-    expect(video?.caption).toBe("Vídeo exclusivo #1");
-    expect(video?.image).toContain("/previews/");
+    const gallery = await loadCreatorGallery({ key: "sophie-bennet", tab: "posts", offset: 0, limit: 24, seed: "profile", currency: "BRL" });
+    expect(gallery?.videos).toBe(2);
+    expect(JSON.stringify(gallery)).not.toContain("secret-clip.mp4");
+    expect(JSON.stringify(gallery)).not.toContain("/private/");
+    const labeled = gallery?.items.find((item) => item.kind === "video" && item.video.caption === "Vídeo exclusivo #1");
+    expect(labeled && labeled.kind === "video" ? labeled.video.previewUrl : "").toContain("/previews/");
     expect(await listActiveCreators({ currency: "USD", includeDemo: true })).toEqual(
       expect.arrayContaining([expect.objectContaining({ username: "sophie-bennet", monthlyPriceCents: 800 })]),
     );

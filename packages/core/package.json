@@ -35,6 +35,10 @@
     "./currency": {
       "types": "./dist/currency.d.ts",
       "default": "./dist/currency.js"
+    },
+    "./profile-gallery": {
+      "types": "./dist/profile-gallery.d.ts",
+      "default": "./dist/profile-gallery.js"
     }
   },
   "dependencies": {

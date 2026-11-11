@@ -27,7 +27,8 @@ import { PostVisual } from "@/components/post-visual";
 import { loadSubscriberCatalog, SubscriberPpvCard, type SubscriberVideo } from "@/components/subscriber-videos";
 import { MediaViewer, type ViewerSlide } from "@/components/media-viewer";
 import type { ProfileOffers } from "@/lib/creator-offers";
-import { PROFILE_GALLERY_COLUMNS, buildProfileGallery, formatActiveUntil, formatDuration, profileVideoCount, renewPlan } from "@/lib/gallery";
+import { PROFILE_GALLERY_COLUMNS, buildProfileGallery, formatActiveUntil, formatDuration, profileVideoCount, renewPlan, type GalleryEntry } from "@/lib/gallery";
+import { parseGalleryPage, type GalleryPage } from "@/lib/public-catalog";
 import { readDemo, writeDemo, type DemoReview, type DemoSpecialRequest } from "@/lib/demo-store";
 import { toast } from "sonner";
 import { apiErrorText } from "@/lib/api-error";
@@ -52,6 +53,7 @@ export function CreatorProfile({
   gallerySession = "",
   initialTab = "posts",
   openSpecial = false,
+  galleryPage = null,
 }: {
   creator: Creator;
   posts: Post[];
@@ -59,6 +61,7 @@ export function CreatorProfile({
   gallerySession?: string;
   initialTab?: "posts" | "media" | "videos";
   openSpecial?: boolean;
+  galleryPage?: GalleryPage | null;
 }) {
   const router = useRouter();
   const locale = useLocale();
@@ -92,6 +95,9 @@ export function CreatorProfile({
   const [viewer, setViewer] = useState<{ slides: ViewerSlide[]; index: number } | null>(null);
   const [purchase, setPurchase] = useState<SubscriberVideo | null>(null);
   const [subscribePrompt, setSubscribePrompt] = useState(false);
+  const [pageItems, setPageItems] = useState<GalleryEntry<Post>[]>(galleryPage?.items ?? []);
+  const [nextOffset, setNextOffset] = useState<number | null>(galleryPage?.nextOffset ?? null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     const sync = () => {
@@ -137,6 +143,11 @@ export function CreatorProfile({
     loadSubscription();
     window.addEventListener(PAYMENT_CONFIRMED_EVENT, loadSubscription);
     window.addEventListener(PAYMENT_CONFIRMED_EVENT, reloadCatalog);
+    if (galleryPage) return () => {
+      cancel = true;
+      window.removeEventListener(PAYMENT_CONFIRMED_EVENT, loadSubscription);
+      window.removeEventListener(PAYMENT_CONFIRMED_EVENT, reloadCatalog);
+    };
     void loadSubscriberCatalog(creator.username).then((catalog) => {
       if (cancel) return;
       setVideos(catalog);
@@ -154,29 +165,43 @@ export function CreatorProfile({
       window.removeEventListener(PAYMENT_CONFIRMED_EVENT, loadSubscription);
       window.removeEventListener(PAYMENT_CONFIRMED_EVENT, reloadCatalog);
     };
-  }, [creator.id, creator.username]);
+  }, [creator.id, creator.username, galleryPage, media]);
 
   // Every grid (posts, media, videos) reads the same catalog. Refetch it when the tab changes or the page
   // comes back into view, so a purchase made elsewhere and the short-lived cover grant are never stale.
-  const firstTab = useRef(true);
+  const previousTab = useRef(tab);
   useEffect(() => {
     let cancel = false;
     const reload = () => {
+      if (galleryPage) {
+        const params = new URLSearchParams({ tab, offset: "0", limit: "24", seed: galleryPage.seed });
+        void fetch(`/api/creators/${encodeURIComponent(creator.username)}/gallery?${params}`, { cache: "no-store" })
+          .then(async (response) => (response.ok ? response.json() : null))
+          .then((payload) => {
+            const parsed = parseGalleryPage(payload);
+            if (cancel || !parsed) return;
+            setPageItems(parsed.items);
+            setNextOffset(parsed.nextOffset);
+          })
+          .catch(() => undefined);
+        return;
+      }
       void loadSubscriberCatalog(creator.username).then((catalog) => {
         if (!cancel) setVideos(catalog);
       });
     };
-    if (firstTab.current) firstTab.current = false;
-    else reload();
+    const tabChanged = previousTab.current !== tab;
+    previousTab.current = tab;
+    if (tabChanged) reload();
     const onVisible = () => {
-      if (document.visibilityState === "visible") reload();
+      if (document.visibilityState === "visible" && !galleryPage) reload();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancel = true;
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [tab, creator.username]);
+  }, [tab, creator.username, galleryPage]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -256,9 +281,9 @@ export function CreatorProfile({
     posts.reduce((total, post) => total + post.likes, 0) +
     likedIds.filter((id) => posts.some((post) => post.id === id)).length;
 
-  const photoCount = posts.filter((post) => post.mediaType === "image").length;
-  const videoCount = profileVideoCount(posts, videos);
-  const lockedCount = posts.filter((post) => post.visibility !== "free").length;
+  const photoCount = galleryPage ? galleryPage.photos : posts.filter((post) => post.mediaType === "image").length;
+  const videoCount = galleryPage ? galleryPage.videos : profileVideoCount(posts, videos);
+  const lockedCount = galleryPage ? galleryPage.locked : posts.filter((post) => post.visibility !== "free").length;
 
   const databasePlans = offers?.source === "database" ? offers.plans : null;
   const primaryPlan = databasePlans?.find((plan) => plan.months === 1) ?? databasePlans?.[0] ?? null;
@@ -309,7 +334,22 @@ export function CreatorProfile({
   }
 
   const gallerySeed = gallerySession ? `${creator.id}:${gallerySession}` : creator.id;
-  const gallery = buildProfileGallery(tab, posts, videos, gallerySeed);
+  const gallery = galleryPage ? pageItems : buildProfileGallery(tab, posts, videos, gallerySeed);
+
+  async function loadMore() {
+    if (!galleryPage || nextOffset == null || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const params = new URLSearchParams({ tab, offset: String(nextOffset), limit: "24", seed: galleryPage.seed });
+      const response = await fetch(`/api/creators/${encodeURIComponent(creator.username)}/gallery?${params}`, { cache: "no-store" });
+      const parsed = parseGalleryPage(response.ok ? await response.json() : null);
+      if (!parsed) return;
+      setPageItems((current) => [...current, ...parsed.items]);
+      setNextOffset(parsed.nextOffset);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   function openSlides(id: string) {
     const slides: ViewerSlide[] = [];
@@ -393,7 +433,7 @@ export function CreatorProfile({
             ).map(({ value, label, Icon, ...rest }) => (
               <div key={label} className="min-w-0">
                 <Icon className="ml-auto size-3.5 opacity-80" />
-                <b data-testid={"testId" in rest ? rest.testId : undefined} className="mt-1 block text-sm font-semibold leading-none">{value}</b>
+                <b data-testid={"testId" in rest ? rest.testId : label === t("photos") ? "profile-photo-count" : label === t("videos") ? "profile-video-count" : undefined} className="mt-1 block text-sm font-semibold leading-none">{value}</b>
                 <span className="mt-1 block text-[9px] uppercase tracking-wide text-white/80">{label}</span>
               </div>
             ))}
@@ -565,7 +605,7 @@ export function CreatorProfile({
 
       <div className="mt-2 grid grid-cols-3 border-b border-border">
         <button type="button" onClick={() => setTab("posts")} className={`flex h-9 min-w-0 items-center justify-center gap-1 px-1 text-xs sm:gap-1.5 sm:text-sm ${tab === "posts" ? "border-b-2 border-primary-strong font-semibold" : "text-muted"}`}>
-          <ImageIcon className="size-3.5 shrink-0" /> <span className="truncate">{posts.length + videos.length} {t("posts")}</span>
+          <ImageIcon className="size-3.5 shrink-0" /> <span className="truncate">{photoCount + videoCount} {t("posts")}</span>
         </button>
         <button type="button" onClick={() => setTab("media")} className={`flex h-9 min-w-0 items-center justify-center gap-1 px-1 text-xs sm:gap-1.5 sm:text-sm ${tab === "media" ? "border-b-2 border-primary-strong font-semibold" : "text-muted"}`}>
           <Video className="size-3.5 shrink-0" /> <span className="truncate">{photoCount + videoCount} {t("media")}</span>
@@ -611,6 +651,11 @@ export function CreatorProfile({
           );
         })}
       </div>
+      {galleryPage && nextOffset != null && (
+        <button type="button" data-testid="gallery-more" onClick={() => void loadMore()} disabled={loadingMore} className="mx-auto mt-4 block rounded-full border border-border px-5 py-2 text-xs font-bold">
+          {loadingMore ? "…" : t("more")}
+        </button>
+      )}
 
       <section data-testid="profile-reviews" className="mt-8 rounded-[28px] border border-border bg-elevated p-5">
         <div className="flex items-end justify-between gap-3">

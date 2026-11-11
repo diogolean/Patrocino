@@ -73,12 +73,6 @@ export async function loadCreatorOffers(key: string, currency: ChargeCurrency = 
       plans: { where: { active: true }, orderBy: { durationMonths: "asc" } },
       promotions: { where: { active: true } },
       contentPacks: { where: { active: true }, orderBy: { createdAt: "asc" } },
-      posts: {
-        where: { deletedAt: null, publishedAt: { lte: new Date() } },
-        include: { media: { orderBy: { createdAt: "asc" } } },
-        orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
-        take: 60,
-      },
     },
   });
   if (!creator) return null;
@@ -111,6 +105,12 @@ export async function loadCreatorOffers(key: string, currency: ChargeCurrency = 
     .sort((left, right) => right.discountPercent - left.discountPercent)[0];
   const profile = creator.user.profile;
   const monthly = plans.find((plan) => plan.months === 1) ?? plans[0];
+  const published = { creatorId: creator.id, deletedAt: null, publishedAt: { lte: new Date() } };
+  const [photoCount, videoCount, likes] = await Promise.all([
+    database.post.count({ where: { ...published, media: { none: { kind: "VIDEO" } } } }),
+    database.post.count({ where: { ...published, media: { some: { kind: "VIDEO" } } } }),
+    database.post.aggregate({ where: published, _sum: { likeCount: true } }),
+  ]);
   return {
     id: creator.id,
     name: profile?.name ?? "Creator",
@@ -124,9 +124,11 @@ export async function loadCreatorOffers(key: string, currency: ChargeCurrency = 
     isFree: (monthly?.chargeCents ?? 0) === 0,
     monthlyPriceCents: monthly?.chargeCents ?? 0,
     subscriberCount: 0,
-    postCount: creator.posts.length,
-    likeCount: creator.posts.reduce((total, post) => total + post.likeCount, 0),
-    posts: publicPosts(creator.posts),
+    postCount: photoCount + videoCount,
+    photoCount,
+    videoCount,
+    likeCount: likes._sum.likeCount ?? 0,
+    posts: [] as ReturnType<typeof publicPosts>,
     aiGenerated: creator.aiGenerated,
     fictitious: creator.fictitious,
     currency,

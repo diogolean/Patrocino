@@ -19,6 +19,7 @@
       "@mimelux/core/stripe": ["../../packages/core/dist/stripe.d.ts"],
       "@mimelux/core/return-path": ["../../packages/core/dist/return-path.d.ts"],
       "@mimelux/core/currency": ["../../packages/core/dist/currency.d.ts"],
+      "@mimelux/core/profile-gallery": ["../../packages/core/dist/profile-gallery.d.ts"],
       "@mimelux/db/runtime": ["../../packages/db/dist/index.d.ts"]
     },
     "incremental": true,

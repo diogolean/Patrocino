@@ -1,6 +1,7 @@
 import type { Creator, Post } from "./fixtures";
 import type { ProfileOffers } from "./creator-offers";
 import { parseProfileOffers } from "./creator-offers";
+import type { GalleryEntry, SubscriberVideo } from "./gallery";
 
 export function mergePublicCreators<T extends { username: string }>(fixtures: readonly T[], extra: readonly T[]) {
   const seen = new Set(fixtures.map((item) => item.username.toLowerCase()));
@@ -111,11 +112,79 @@ export function parseDatabaseCreators(payload: unknown): { creators: Creator[]; 
   return { creators, posts };
 }
 
-export function parseDatabaseProfile(payload: unknown): { creator: Creator; posts: Post[]; offers: ProfileOffers } | null {
+export function parseDatabaseProfile(payload: unknown): { creator: Creator; posts: Post[]; offers: ProfileOffers; photos: number; videos: number } | null {
   if (!payload || typeof payload !== "object") return null;
   const creator = databaseCreatorCard(payload);
   const offers = parseProfileOffers(payload);
   if (!creator || !offers) return null;
-  const rows = Array.isArray((payload as { posts?: unknown }).posts) ? (payload as { posts: unknown[] }).posts : [];
-  return { creator, posts: rows.map((row) => databasePost(row, creator.id)).filter((post): post is Post => Boolean(post)), offers };
+  const body = payload as { posts?: unknown; photoCount?: unknown; videoCount?: unknown };
+  const rows = Array.isArray(body.posts) ? body.posts : [];
+  return {
+    creator,
+    posts: rows.map((row) => databasePost(row, creator.id)).filter((post): post is Post => Boolean(post)),
+    offers,
+    photos: cents(body.photoCount),
+    videos: cents(body.videoCount),
+  };
+}
+
+export type GalleryPage = {
+  photos: number;
+  videos: number;
+  locked: number;
+  nextOffset: number | null;
+  seed: string;
+  items: GalleryEntry<Post>[];
+};
+
+function parseVideo(value: unknown): SubscriberVideo | null {
+  if (!value || typeof value !== "object") return null;
+  const video = value as Partial<SubscriberVideo> & { caption?: unknown };
+  if (typeof video.id !== "string" || typeof video.mediaId !== "string") return null;
+  const preview = typeof video.previewUrl === "string" && !video.previewUrl.includes("/private/") ? video.previewUrl : null;
+  const poster = typeof video.posterUrl === "string" && !video.posterUrl.includes("/private/") ? video.posterUrl : null;
+  return {
+    id: video.id,
+    mediaId: video.mediaId,
+    exclusiveIndex: typeof video.exclusiveIndex === "number" ? video.exclusiveIndex : 1,
+    priceCents: cents(video.priceCents),
+    subscriberCents: typeof video.subscriberCents === "number" ? video.subscriberCents : undefined,
+    currency: video.currency === "BRL" || video.currency === "USD" ? video.currency : undefined,
+    previewUrl: preview,
+    posterUrl: poster,
+    purchased: video.purchased === true,
+    subscribed: video.subscribed === true,
+    durationMs: typeof video.durationMs === "number" ? video.durationMs : null,
+    publishedAt: typeof video.publishedAt === "string" ? video.publishedAt : null,
+  };
+}
+
+export function parseGalleryPage(payload: unknown): GalleryPage | null {
+  if (!payload || typeof payload !== "object") return null;
+  const body = payload as { photos?: unknown; videos?: unknown; locked?: unknown; nextOffset?: unknown; seed?: unknown; items?: unknown };
+  if (!Array.isArray(body.items)) return null;
+  const items: GalleryEntry<Post>[] = [];
+  for (const item of body.items) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as { kind?: unknown; post?: unknown; video?: unknown };
+    if (row.kind === "video") {
+      const video = parseVideo(row.video);
+      if (video) items.push({ kind: "video", video, publishedAt: video.publishedAt ?? "" });
+      continue;
+    }
+    const post = databasePost(row.post, "");
+    if (!post) continue;
+    const creatorId = row.post && typeof row.post === "object" && typeof (row.post as { creatorId?: unknown }).creatorId === "string"
+      ? (row.post as { creatorId: string }).creatorId
+      : post.creatorId;
+    items.push({ kind: "post", post: { ...post, creatorId }, publishedAt: post.publishedAt });
+  }
+  return {
+    photos: cents(body.photos),
+    videos: cents(body.videos),
+    locked: cents(body.locked),
+    nextOffset: typeof body.nextOffset === "number" ? body.nextOffset : null,
+    seed: typeof body.seed === "string" ? body.seed : "profile",
+    items,
+  };
 }
