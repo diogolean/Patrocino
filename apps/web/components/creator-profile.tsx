@@ -3,7 +3,7 @@
 import { useDemoMoney, useVisitorCurrency } from "@/lib/visitor-currency";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   BadgeCheck,
   ChevronDown,
@@ -35,6 +35,7 @@ import { apiErrorText } from "@/lib/api-error";
 import { PAYMENT_CONFIRMED_EVENT } from "@/components/pending-expay-toast";
 import { demoAffiliate, recordClick } from "@/lib/affiliates";
 import { shownCaption } from "@/lib/public-caption";
+import { getServerSessionSnapshot, getSessionSnapshot, subscribeSession } from "@/lib/session";
 
 const requestStatusKey = {
   requested: "statusRequested",
@@ -64,6 +65,8 @@ export function CreatorProfile({
   galleryPage?: GalleryPage | null;
 }) {
   const router = useRouter();
+  const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
+  const signedIn = session.status === "ready" && Boolean(session.user);
   const locale = useLocale();
   const visitorCurrency = useVisitorCurrency();
   const money = (cents: number) => formatMoney(cents, offers?.currency ?? visitorCurrency, locale);
@@ -167,9 +170,10 @@ export function CreatorProfile({
     };
   }, [creator.id, creator.username, galleryPage, media]);
 
-  // Every grid (posts, media, videos) reads the same catalog. Refetch it when the tab changes or the page
-  // comes back into view, so a purchase made elsewhere and the short-lived cover grant are never stale.
+  // The first HTML is the guest catalog, so a logged-out visitor only receives blurred previews.
+  // Once a session is known, refetch so a subscriber's clear cover is the signed media URL.
   const previousTab = useRef(tab);
+  const galleryLoaded = useRef<string | null>(null);
   useEffect(() => {
     let cancel = false;
     const reload = () => {
@@ -192,16 +196,31 @@ export function CreatorProfile({
     };
     const tabChanged = previousTab.current !== tab;
     previousTab.current = tab;
-    if (tabChanged) reload();
+    if (galleryPage) {
+      if (tabChanged) {
+        galleryLoaded.current = `${signedIn}:${tab}`;
+        reload();
+      } else if (signedIn && galleryLoaded.current !== `true:${tab}`) {
+        galleryLoaded.current = `true:${tab}`;
+        reload();
+      }
+    } else if (tabChanged) {
+      reload();
+    }
     const onVisible = () => {
       if (document.visibilityState === "visible" && !galleryPage) reload();
     };
+    const onPaid = () => {
+      if (galleryPage) reload();
+    };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener(PAYMENT_CONFIRMED_EVENT, onPaid);
     return () => {
       cancel = true;
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(PAYMENT_CONFIRMED_EVENT, onPaid);
     };
-  }, [tab, creator.username, galleryPage]);
+  }, [tab, creator.username, galleryPage, signedIn]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

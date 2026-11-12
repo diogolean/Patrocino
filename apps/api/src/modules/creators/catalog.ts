@@ -6,9 +6,9 @@ import { chargeForPlan, type PromotionInput } from "../payments/plan-price";
 
 type PublicMedia = { kind: string; posterKey: string | null; previewKey: string | null };
 
+/** Public card image. Paid photos and videos use the blurred preview. FREE posts use the clear poster. */
 export function publicMediaUrl(media: PublicMedia, visibility: string) {
-  const lockedVideo = media.kind === "VIDEO" && visibility !== "FREE";
-  if (lockedVideo) return staticMediaUrl(media.previewKey);
+  if (visibility !== "FREE") return staticMediaUrl(media.previewKey);
   return staticMediaUrl(media.posterKey) ?? staticMediaUrl(media.previewKey);
 }
 

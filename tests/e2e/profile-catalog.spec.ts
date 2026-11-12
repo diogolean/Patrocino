@@ -33,7 +33,7 @@ test.beforeAll(async () => {
         caption: `Foto ${index}`,
         visibility: "SUBSCRIBERS",
         publishedAt: new Date(base + index * 1000),
-        media: { create: { kind: "IMAGE", storageKey: `uploads/${creatorId}/private/p${index}.jpg`, posterKey: `uploads/${creatorId}/posters/p${index}.jpg`, mimeType: "image/jpeg", private: true } },
+        media: { create: { kind: "IMAGE", storageKey: `uploads/${creatorId}/private/p${index}.jpg`, posterKey: `uploads/${creatorId}/posters/p${index}.jpg`, previewKey: `uploads/${creatorId}/previews/p${index}.jpg`, mimeType: "image/jpeg", private: true } },
       },
     });
   }
@@ -138,6 +138,9 @@ test("an active database creator pages the full catalog at /username", async ({ 
   await page.getByRole("button", { name: "Aceitar todos" }).click().catch(() => undefined);
   await expect(page.getByRole("heading", { name: "Page Creator" })).toBeVisible();
   await expect(page.getByTestId("profile-photo-count")).toHaveText("30");
+  const photo = page.getByTestId("profile-post").locator("img").first();
+  await expect(photo).toHaveAttribute("src", /\/previews\//);
+  await expect(photo).not.toHaveAttribute("src", /\/posters\//);
   await expect(page.getByTestId("profile-video-count")).toHaveText("4");
   await expect(page.getByTestId("gallery-ppv").first()).toBeVisible();
   const before = await page.getByTestId("profile-post").count();

@@ -32,7 +32,7 @@ export function isPlaceholderPreview(bytes: Buffer) {
   return bytes.length === tinyJpeg.length && bytes.subarray(0, 8).equals(tinyJpeg.subarray(0, 8));
 }
 
-async function isRealPreview(file: string) {
+export async function isRealPreviewFile(file: string) {
   try {
     const info = await stat(file);
     if (!info.isFile() || info.size <= tinyJpeg.length) return false;
@@ -76,9 +76,9 @@ export async function writePosterAndPreview(input: string, poster: string, previ
 
 /** Builds a poster and a blurred frame when either file is missing or still the blank placeholder. */
 export async function ensureBlurredPreview(videoPath: string, posterPath: string, previewPath: string) {
-  if ((await isRealPreview(previewPath)) && (await isRealPreview(posterPath))) return;
+  if ((await isRealPreviewFile(previewPath)) && (await isRealPreviewFile(posterPath))) return;
   if (attempted.has(previewPath)) return;
   attempted.add(previewPath);
   await writePosterAndPreview(videoPath, posterPath, previewPath, true);
-  if ((await isRealPreview(previewPath)) && (await isRealPreview(posterPath))) attempted.delete(previewPath);
+  if ((await isRealPreviewFile(previewPath)) && (await isRealPreviewFile(posterPath))) attempted.delete(previewPath);
 }

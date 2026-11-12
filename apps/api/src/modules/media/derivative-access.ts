@@ -15,14 +15,14 @@ export function isPrivateMediaKey(key: string | null | undefined) {
   return bare.split(/[/\\]/).some((part) => part === "private" || part === "tmp");
 }
 
-/** Clear poster. Subscriber pay-per-view stays under private/ for every creator status. */
+/** Clear poster. Paid posts, and every post of a creator who is not live, stay under private/. */
 export function posterKeyFor(input: {
   creatorId: string;
   mediaId: string;
   visibility: string;
   creatorStatus: string;
 }) {
-  if (input.visibility === "SUBSCRIBER_PPV" || creatorHidesDerivatives(input.creatorStatus)) {
+  if (input.visibility !== "FREE" || creatorHidesDerivatives(input.creatorStatus)) {
     return `uploads/${input.creatorId}/private/posters/${input.mediaId}.jpg`;
   }
   return `uploads/${input.creatorId}/posters/${input.mediaId}.jpg`;

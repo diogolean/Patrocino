@@ -50,6 +50,7 @@ describe("paged creator gallery", () => {
               kind: "IMAGE",
               storageKey: `uploads/${ids.creatorId}/private/photo-${index}.jpg`,
               posterKey: `uploads/${ids.creatorId}/posters/photo-${index}.jpg`,
+              previewKey: `uploads/${ids.creatorId}/previews/photo-${index}.jpg`,
               mimeType: "image/jpeg",
               private: true,
             },
@@ -105,6 +106,9 @@ describe("paged creator gallery", () => {
     expect(first?.items.some((item) => item.kind === "video")).toBe(true);
     const dumped = JSON.stringify([first, second]);
     expect(dumped).not.toContain("/private/");
+    expect(dumped).not.toContain("/posters/");
+    const photo = first?.items.find((item) => item.kind === "post");
+    expect(photo && photo.kind === "post" ? photo.post.image : "").toContain("/previews/photo-");
     expect(dumped).not.toContain("clip-0.mp4");
     expect(dumped).toContain("Vídeo exclusivo #");
     const videos = await loadCreatorGallery({ key: `gallery${suffix}`, tab: "videos", offset: 0, limit: 24, seed: "s", currency: "BRL" });

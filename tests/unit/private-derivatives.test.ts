@@ -7,6 +7,7 @@ import { Writable } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { database } from "../../packages/db/src/index";
 import { MediaController } from "../../apps/api/src/modules/media/media.module";
+import { publicMediaUrl } from "../../apps/api/src/modules/creators/catalog";
 import {
   posterKeyFor,
   previewKeyFor,
@@ -130,8 +131,21 @@ describe("private derivative paths", () => {
     expect(posterKeyFor({ creatorId: "c", mediaId: "m", visibility: "SUBSCRIBER_PPV", creatorStatus: "ACTIVE" })).toBe(
       "uploads/c/private/posters/m.jpg",
     );
+    expect(posterKeyFor({ creatorId: "c", mediaId: "m", visibility: "SUBSCRIBERS", creatorStatus: "ACTIVE" })).toBe(
+      "uploads/c/private/posters/m.jpg",
+    );
+    expect(posterKeyFor({ creatorId: "c", mediaId: "m", visibility: "PPV", creatorStatus: "ACTIVE" })).toBe(
+      "uploads/c/private/posters/m.jpg",
+    );
     expect(posterKeyFor({ creatorId: "c", mediaId: "m", visibility: "FREE", creatorStatus: "ACTIVE" })).toBe(
       "uploads/c/posters/m.jpg",
+    );
+    const locked = { kind: "IMAGE", posterKey: "uploads/c/posters/m.jpg", previewKey: "uploads/c/previews/m.jpg" };
+    expect(publicMediaUrl(locked, "SUBSCRIBERS")).toBe("/media/uploads/c/previews/m.jpg");
+    expect(publicMediaUrl(locked, "PPV")).toBe("/media/uploads/c/previews/m.jpg");
+    expect(publicMediaUrl(locked, "FREE")).toBe("/media/uploads/c/posters/m.jpg");
+    expect(publicMediaUrl({ kind: "VIDEO", posterKey: "uploads/c/private/posters/m.jpg", previewKey: "uploads/c/previews/m.jpg" }, "SUBSCRIBER_PPV")).toBe(
+      "/media/uploads/c/previews/m.jpg",
     );
     expect(posterKeyFor({ creatorId: "c", mediaId: "m", visibility: "FREE", creatorStatus: "SUSPENDED" })).toBe(
       "uploads/c/private/posters/m.jpg",

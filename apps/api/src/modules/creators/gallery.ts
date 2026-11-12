@@ -31,6 +31,36 @@ function posterLink(mediaId: string, userId: string) {
   return `/v1/media/${mediaId}/poster?token=${encodeURIComponent(signMediaGrant({ mediaId, userId, exp, kind: "poster" }))}`;
 }
 
+async function activeViewer(userId?: string | null) {
+  if (!userId) return null;
+  const user = await database.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, deletedAt: true, suspendedAt: true },
+  });
+  if (!user || user.deletedAt || user.suspendedAt) return null;
+  return { id: user.id, role: user.role };
+}
+
+/** Clear paid photo for a subscriber, purchaser, owner, or admin. Everyone else stays on the blurred preview. */
+async function photoIsOpen(input: {
+  viewer: { id: string; role: string } | null;
+  owns: boolean;
+  subscribed: boolean;
+  bought: Set<string>;
+  postId: string;
+  visibility: string;
+}) {
+  if (input.visibility === "FREE") return true;
+  if (!input.viewer) return false;
+  if (input.viewer.role === "ADMIN" || input.owns) return true;
+  if (input.visibility === "SUBSCRIBERS") return input.subscribed;
+  if (input.visibility === "PPV" || input.visibility === "SUBSCRIBER_PPV") {
+    if (input.bought.has(input.postId)) return true;
+    return paidPostPurchase(input.viewer.id, input.postId);
+  }
+  return false;
+}
+
 export async function loadCreatorGallery(input: {
   key: string;
   tab: "posts" | "media" | "videos";
@@ -49,6 +79,7 @@ export async function loadCreatorGallery(input: {
     },
   });
   if (!creator) return null;
+  const actor = await activeViewer(input.viewerId);
   const rows = await database.post.findMany({
     where: { creatorId: creator.id, deletedAt: null, publishedAt: { lte: new Date() } },
     select: {
@@ -74,11 +105,11 @@ export async function loadCreatorGallery(input: {
     (left, right) => (left.publishedAt?.getTime() ?? 0) - (right.publishedAt?.getTime() ?? 0) || left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id),
   );
   const ordinals = chronological.map((row) => row.id);
-  const subscribed = input.viewerId ? await fanSubscribed(input.viewerId, creator.id) : false;
+  const subscribed = actor ? await fanSubscribed(actor.id, creator.id) : false;
   const bought = new Set<string>();
-  if (input.viewerId) {
+  if (actor) {
     const purchases = await database.purchase.findMany({
-      where: { buyerId: input.viewerId, creatorId: creator.id, status: "PAID", postId: { not: null } },
+      where: { buyerId: actor.id, creatorId: creator.id, status: "PAID", postId: { not: null } },
       select: { postId: true },
     });
     for (const purchase of purchases) if (purchase.postId) bought.add(purchase.postId);
@@ -120,7 +151,7 @@ export async function loadCreatorGallery(input: {
         defaultGuestBrl: creator.guestVideoPriceCents,
         defaultGuestUsd: creator.guestVideoPriceCentsUsd,
       });
-      const purchased = bought.has(row.id) || (input.viewerId ? await paidPostPurchase(input.viewerId, row.id) : false);
+      const purchased = bought.has(row.id) || (actor ? await paidPostPurchase(actor.id, row.id) : false);
       items.push({
         kind: "video" as const,
         video: {
@@ -131,7 +162,7 @@ export async function loadCreatorGallery(input: {
           subscriberCents: priced.subscriberCents,
           currency: input.currency,
           previewUrl: publicMediaUrl(media, row.visibility),
-          posterUrl: purchased && input.viewerId ? posterLink(media.id, input.viewerId) : null,
+          posterUrl: purchased && actor ? posterLink(media.id, actor.id) : null,
           purchased,
           subscribed,
           durationMs: media.durationMs,
@@ -141,7 +172,15 @@ export async function loadCreatorGallery(input: {
       });
       continue;
     }
-    const image = publicMediaUrl(media, row.visibility);
+    const open = await photoIsOpen({
+      viewer: actor,
+      owns: Boolean(actor && creator.userId === actor.id),
+      subscribed,
+      bought,
+      postId: row.id,
+      visibility: row.visibility,
+    });
+    const image = open && row.visibility !== "FREE" && actor ? posterLink(media.id, actor.id) : publicMediaUrl(media, row.visibility);
     if (!image) continue;
     items.push({
       kind: "post" as const,
