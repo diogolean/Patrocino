@@ -13,7 +13,12 @@ export async function GET(request: Request, context: { params: Promise<{ usernam
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) return NextResponse.json(null, { status: response.status });
-    return NextResponse.json(data);
+    return NextResponse.json(data, {
+      headers: {
+        "cache-control": "private, no-store",
+        vary: "cf-ipcountry, accept-language, cookie",
+      },
+    });
   } catch {
     return NextResponse.json(null, { status: 503 });
   }

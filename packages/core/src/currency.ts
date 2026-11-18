@@ -40,7 +40,11 @@ export function currencyForVisitor(input: {
   country?: string | null;
   locale?: string | null;
   acceptLanguage?: string | null;
+  /** Explicit USD or BRL chosen by the visitor. Wins over country. */
+  choice?: string | null;
 }): ChargeCurrency {
+  const choice = (input.choice ?? "").trim().toUpperCase();
+  if (choice === "USD" || choice === "BRL") return choice;
   const country = normalizeCountry(input.country);
   if (country) return country === "BR" ? "BRL" : "USD";
   const explicit = (input.locale ?? "").trim().toLowerCase();
