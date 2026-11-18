@@ -557,7 +557,21 @@
     "pixOnlyBrl": "Pix solo para pagos en reales.",
     "subscriberDiscount": "Los suscriptores tienen descuento",
     "subscriberPays": "Los suscriptores pagan {price}",
-    "subscribeInstead": "Suscríbete y paga menos"
+    "subscribeInstead": "Suscríbete y paga menos",
+    "guestTitle": "Crea tu cuenta para pagar",
+    "guestBody": "Tarda un minuto. El enlace de quien te invitó se mantiene.",
+    "guestName": "Nombre",
+    "guestEmail": "Correo",
+    "guestPassword": "Contraseña",
+    "guestContinue": "Continuar al pago",
+    "guestGoogle": "Continuar con Google",
+    "guestCreating": "Creando la cuenta...",
+    "guestFailed": "No se pudo entrar.",
+    "guestInvalid": "Revisa nombre, correo y contraseña.",
+    "guestHaveAccount": "Ya tengo cuenta",
+    "guestNeedAccount": "Crear una cuenta",
+    "guestSignIn": "Entrar y pagar",
+    "guestSignInTitle": "Entra para pagar"
   },
   "billing": {
     "canceledTitle": "Pago cancelado",
@@ -643,7 +657,9 @@
     "save": "Guardar",
     "moveUp": "Subir",
     "moveDown": "Bajar",
-    "remove": "Eliminar"
+    "remove": "Eliminar",
+    "featuredRank": "Destacado",
+    "featuredRankHint": "Vacío mantiene el orden. 1 aparece primero."
   },
   "studio": {
     "defaultPlanName": "Mensual",
@@ -1214,5 +1230,10 @@
     "failed": "No se pudo guardar. Inténtalo de nuevo.",
     "tooShort": "La contraseña necesita al menos 8 caracteres.",
     "mismatch": "Las contraseñas no coinciden."
+  },
+  "funnel": {
+    "subscribe": "Suscribirme",
+    "videos": "Ver videos",
+    "profile": "Abrir el perfil completo"
   }
 }

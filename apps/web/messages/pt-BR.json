@@ -557,7 +557,21 @@
     "pixOnlyBrl": "Pix só para pagamentos em real.",
     "subscriberDiscount": "Assinantes têm desconto",
     "subscriberPays": "Assinantes pagam {price}",
-    "subscribeInstead": "Assinar e pagar menos"
+    "subscribeInstead": "Assinar e pagar menos",
+    "guestTitle": "Crie sua conta para pagar",
+    "guestBody": "Leva um minuto. O link de quem indicou continua valendo.",
+    "guestName": "Nome",
+    "guestEmail": "E-mail",
+    "guestPassword": "Senha",
+    "guestContinue": "Continuar para o pagamento",
+    "guestGoogle": "Continuar com Google",
+    "guestCreating": "Criando a conta...",
+    "guestFailed": "Não foi possível entrar.",
+    "guestInvalid": "Confira nome, e-mail e senha.",
+    "guestHaveAccount": "Já tenho conta",
+    "guestNeedAccount": "Criar uma conta",
+    "guestSignIn": "Entrar e pagar",
+    "guestSignInTitle": "Entre para pagar"
   },
   "billing": {
     "canceledTitle": "Pagamento cancelado",
@@ -643,7 +657,9 @@
     "save": "Salvar",
     "moveUp": "Subir",
     "moveDown": "Descer",
-    "remove": "Excluir"
+    "remove": "Excluir",
+    "featuredRank": "Destaque",
+    "featuredRankHint": "Vazio mantém a ordem. 1 aparece primeiro."
   },
   "studio": {
     "defaultPlanName": "Mensal",
@@ -1214,5 +1230,10 @@
     "failed": "Não foi possível salvar. Tente de novo.",
     "tooShort": "A senha precisa de pelo menos 8 caracteres.",
     "mismatch": "As senhas não conferem."
+  },
+  "funnel": {
+    "subscribe": "Assinar",
+    "videos": "Ver vídeos",
+    "profile": "Abrir perfil completo"
   }
 }

@@ -15,6 +15,13 @@ import { backfillPaidPreviews } from "../apps/api/src/modules/media/paid-preview
  *   pnpm exec tsx scripts/backfill-paid-previews.ts
  *   pnpm exec tsx scripts/backfill-paid-previews.ts --creator sophie-bennet
  *   pnpm exec tsx scripts/backfill-paid-previews.ts --apply
+ *   pnpm exec tsx scripts/backfill-paid-previews.ts --regenerate-previews
+ *   pnpm exec tsx scripts/backfill-paid-previews.ts --regenerate-previews --apply
+ *   pnpm exec tsx scripts/backfill-paid-previews.ts --regenerate-previews --force --apply
+ *
+ * --regenerate-previews rebuilds the blur from the clear source (PREVIEW_BLUR_SIGMA,
+ * default 8) and writes previews/<id>.v2.jpg. A second run is a no-op. --force writes
+ * the next version. Old preview files are left on disk so their URLs do not 404.
  *
  * Deploy order:
  * 1. Deploy this code first, so public galleries point at blurred previews.
@@ -41,11 +48,13 @@ async function creatorIdFrom(key: string) {
 
 async function main() {
   const apply = process.argv.includes("--apply");
+  const regeneratePreviews = process.argv.includes("--regenerate-previews") || process.argv.includes("--force");
+  const force = process.argv.includes("--force");
   const creatorFlag = process.argv.indexOf("--creator");
   const creatorKey = creatorFlag >= 0 ? process.argv[creatorFlag + 1] : undefined;
   if (creatorFlag >= 0 && !creatorKey) throw new Error("--creator needs a username or id");
   const creatorId = creatorKey ? await creatorIdFrom(creatorKey) : undefined;
-  const report = await backfillPaidPreviews({ apply, creatorId });
+  const report = await backfillPaidPreviews({ apply, creatorId, regeneratePreviews, force });
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }
 

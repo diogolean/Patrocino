@@ -69,6 +69,7 @@ const patchSchema = z.object({
   guestPriceCents: z.number().int().positive().nullable().optional(),
   guestPriceCentsUsd: z.number().int().positive().nullable().optional(),
   publishedAt: z.string().datetime().nullable().optional(),
+  featuredRank: z.number().int().min(1).max(999).nullable().optional(),
 });
 
 const orderSchema = z.object({
@@ -582,6 +583,7 @@ export class MediaController {
             : parsed.data.publishedAt
               ? new Date(parsed.data.publishedAt)
               : null,
+        ...(parsed.data.featuredRank !== undefined ? { featuredRank: parsed.data.featuredRank } : {}),
       },
     });
     if (actor.admin) {
@@ -811,6 +813,7 @@ export class MediaController {
       guestPriceCentsUsd?: number | null;
       publishedAt: Date | null;
       sortOrder: number;
+      featuredRank?: number | null;
       media: {
         id: string;
         kind: string;
@@ -843,6 +846,7 @@ export class MediaController {
       guestPriceCentsUsd: post.guestPriceCentsUsd ?? null,
       publishedAt: post.publishedAt?.toISOString() ?? null,
       sortOrder: post.sortOrder,
+      featuredRank: post.featuredRank ?? null,
       locked,
       kind: media?.kind ?? "IMAGE",
       mimeType: media?.mimeType ?? "",

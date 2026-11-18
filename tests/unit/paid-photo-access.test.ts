@@ -413,7 +413,7 @@ describe("paid photo paywall", () => {
     expect(report.apply).toBe(false);
     expect(report.failed).toEqual([]);
     expect(report.previewsWritten).toBe(1);
-    expect(report.postersMoved).toBe(2);
+    expect(report.postersMoved).toBe(3);
     expect(await readFile(path.join(ids.root, `uploads/${ids.creatorA}/posters/${ids.subMedia}.jpg`))).toEqual(clearA);
   });
 
@@ -443,8 +443,9 @@ describe("paid photo paywall", () => {
     await expect(readFile(path.join(ids.root, `uploads/${ids.draftId}/previews/${ids.draftMedia}.jpg`))).rejects.toThrow();
 
     const free = await database.media.findUniqueOrThrow({ where: { id: ids.freeMedia } });
-    expect(free.posterKey).toBe(`uploads/${ids.creatorA}/posters/${ids.freeMedia}.jpg`);
+    expect(free.posterKey).toBe(`uploads/${ids.creatorA}/posters/${ids.freeMedia}.v2.jpg`);
     expect(await readFile(path.join(ids.root, free.posterKey!))).toEqual(clearFree);
+    await expect(readFile(path.join(ids.root, `uploads/${ids.creatorA}/posters/${ids.freeMedia}.jpg`))).rejects.toThrow();
 
     const ppv = await database.media.findUniqueOrThrow({ where: { id: ids.ppvMedia } });
     expect(ppv.posterKey).toBe(`uploads/${ids.creatorA}/private/posters/${ids.ppvMedia}.jpg`);
@@ -479,7 +480,10 @@ describe("paid photo paywall", () => {
     expect(otherPreview.body).toEqual(blurB);
     const otherPoster = await fetchPublic(["uploads", ids.creatorB, "posters", `${ids.otherMedia}.jpg`]);
     expect(otherPoster.status).toBe(404);
-    const freeFetch = await fetchPublic(["uploads", ids.creatorA, "posters", `${ids.freeMedia}.jpg`]);
+    const legacyFree = await fetchPublic(["uploads", ids.creatorA, "posters", `${ids.freeMedia}.jpg`]);
+    expect(legacyFree.status).toBe(404);
+    expect(legacyFree.cache).toBe("no-store");
+    const freeFetch = await fetchPublic(["uploads", ids.creatorA, "posters", `${ids.freeMedia}.v2.jpg`]);
     expect(freeFetch.status).toBe(200);
     expect(freeFetch.type).toBe("image/jpeg");
     expect(freeFetch.body).toEqual(clearFree);
@@ -493,7 +497,7 @@ describe("paid photo paywall", () => {
 
     const guest = await loadCreatorGallery({ key: ids.usernameA, tab: "media", offset: 0, limit: 36, seed: "paywall", currency: "BRL" });
     expect(imageOf(guest, ids.subPost)).toBe(`/media/uploads/${ids.creatorA}/previews/${ids.subMedia}.jpg`);
-    expect(imageOf(guest, ids.freePost)).toBe(`/media/uploads/${ids.creatorA}/posters/${ids.freeMedia}.jpg`);
+    expect(imageOf(guest, ids.freePost)).toBe(`/media/uploads/${ids.creatorA}/posters/${ids.freeMedia}.v2.jpg`);
     expect(imageOf(guest, ids.ppvPost)).toBe(`/media/uploads/${ids.creatorA}/previews/${ids.ppvMedia}.jpg`);
     expect(JSON.stringify(guest)).not.toContain("/posters/" + ids.subMedia);
     expect(JSON.stringify(guest)).not.toContain("/private/");
@@ -510,7 +514,7 @@ describe("paid photo paywall", () => {
     const memberImage = imageOf(member, ids.subPost);
     expect(memberImage.startsWith(`/v1/media/${ids.subMedia}/poster?token=`)).toBe(true);
     expect(imageOf(member, ids.ppvPost)).toContain(`/previews/${ids.ppvMedia}.jpg`);
-    expect(imageOf(member, ids.freePost)).toContain(`/posters/${ids.freeMedia}.jpg`);
+    expect(imageOf(member, ids.freePost)).toContain(`/posters/${ids.freeMedia}.v2.jpg`);
     expect(JSON.stringify(member)).not.toContain("/private/");
 
     const memberPoster = memoryResponse();
@@ -579,13 +583,23 @@ describe("paid photo paywall", () => {
     expect(unlocked.failed).toEqual([]);
     expect(unlocked.postersMoved).toBe(1);
     const teaser = await database.media.findUniqueOrThrow({ where: { id: ids.subMedia } });
-    expect(teaser.posterKey).toBe(`uploads/${ids.creatorA}/posters/${ids.subMedia}.jpg`);
+    expect(teaser.posterKey).toBe(`uploads/${ids.creatorA}/posters/${ids.subMedia}.v2.jpg`);
     expect(await readFile(path.join(ids.root, teaser.posterKey!))).toEqual(clearA);
-    const teaserFetch = await fetchPublic(["uploads", ids.creatorA, "posters", `${ids.subMedia}.jpg`]);
+    const legacyTeaser = await fetchPublic(["uploads", ids.creatorA, "posters", `${ids.subMedia}.jpg`]);
+    expect(legacyTeaser.status).toBe(404);
+    expect(legacyTeaser.cache).toBe("no-store");
+    const teaserFetch = await fetchPublic(["uploads", ids.creatorA, "posters", `${ids.subMedia}.v2.jpg`]);
     expect(teaserFetch.status).toBe(200);
     expect(teaserFetch.body).toEqual(clearA);
     const teaserPage = await loadCreatorGallery({ key: ids.usernameA, tab: "media", offset: 0, limit: 36, seed: "paywall", currency: "BRL" });
-    expect(imageOf(teaserPage, ids.subPost)).toBe(`/media/uploads/${ids.creatorA}/posters/${ids.subMedia}.jpg`);
+    expect(imageOf(teaserPage, ids.subPost)).toBe(`/media/uploads/${ids.creatorA}/posters/${ids.subMedia}.v2.jpg`);
+    const firstBlur = await backfillPaidPreviews({ apply: true, creatorId: ids.creatorA, regeneratePreviews: true });
+    expect(firstBlur.previewsWritten).toBeGreaterThan(0);
+    const rebuilt = await database.media.findUniqueOrThrow({ where: { id: ids.ppvMedia } });
+    expect(rebuilt.previewKey).toBe(`uploads/${ids.creatorA}/previews/${ids.ppvMedia}.v2.jpg`);
+    expect(await readFile(path.join(ids.root, `uploads/${ids.creatorA}/previews/${ids.ppvMedia}.jpg`))).toBeTruthy();
+    const secondBlur = await backfillPaidPreviews({ apply: true, creatorId: ids.creatorA, regeneratePreviews: true });
+    expect(secondBlur.previewsWritten).toBe(0);
     const stillPaid = await fetchPublic(["uploads", ids.creatorA, "posters", `${ids.ppvMedia}.jpg`]);
     expect(stillPaid.status).toBe(404);
   });

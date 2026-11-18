@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { apiErrorText } from "@/lib/api-error";
 import { PAYMENT_CONFIRMED_EVENT } from "@/components/pending-expay-toast";
 import { demoAffiliate, recordClick } from "@/lib/affiliates";
+import { authHref } from "@/lib/auth-return";
 import { shownCaption } from "@/lib/public-caption";
 import { getServerSessionSnapshot, getSessionSnapshot, subscribeSession } from "@/lib/session";
 
@@ -69,7 +70,7 @@ export function CreatorProfile({
   const signedIn = session.status === "ready" && Boolean(session.user);
   const locale = useLocale();
   const visitorCurrency = useVisitorCurrency();
-  const money = (cents: number) => formatMoney(cents, offers?.currency ?? visitorCurrency, locale);
+  const money = (cents: number, currency?: "BRL" | "USD") => formatMoney(cents, currency ?? offers?.currency ?? visitorCurrency, locale);
   const demoMoney = useDemoMoney();
   const t = useTranslations("profile");
   const media = useTranslations("media");
@@ -480,22 +481,27 @@ export function CreatorProfile({
           {bioOpen ? t("readLess") : t("readMore")}
         </button>
         <div className="mt-1.5 flex items-center gap-1.5">
-          {[
-            ["instagram", t("socialInstagram")],
-            ["x", t("socialX")],
-            ["tiktok", t("socialTikTok")],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              aria-label={label}
-              onClick={() => toast.info(label)}
-              className="grid size-7 place-items-center rounded-full border border-border bg-elevated text-[10px] font-bold"
-            >
-              {id === "instagram" ? "IG" : id === "x" ? "X" : "♪"}
-            </button>
-          ))}
-          <Link href={`/chat/${creator.id}`} aria-label={t("chat")} className="grid size-7 place-items-center rounded-full border border-border bg-elevated">
+          {(
+            [
+              ["instagram", creator.socials?.instagram, t("socialInstagram"), "IG"],
+              ["x", creator.socials?.x, t("socialX"), "X"],
+              ["tiktok", creator.socials?.tiktok, t("socialTikTok"), "♪"],
+            ] as const
+          )
+            .filter(([, href]) => Boolean(href))
+            .map(([id, href, label, mark]) => (
+              <a
+                key={id}
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={label}
+                className="grid size-7 place-items-center rounded-full border border-border bg-elevated text-[10px] font-bold"
+              >
+                {mark}
+              </a>
+            ))}
+          <Link href={signedIn ? `/chat/${creator.username}` : authHref("sign-in", `/chat/${creator.username}`)} aria-label={t("chat")} className="grid size-7 place-items-center rounded-full border border-border bg-elevated">
             <MessageCircle className="size-3.5" />
           </Link>
         </div>
@@ -541,7 +547,7 @@ export function CreatorProfile({
           ) : primaryPlan ? (
             <Link href={databaseHref(primaryPlan.id)} className={`flex h-11 w-full items-center justify-between rounded-full bg-gradient-to-r from-primary to-primary-strong/90 px-5 text-sm font-semibold text-ink ${planGlow}`}>
               <span>{primaryPlan.months === 1 ? `1 ${t("month")}` : primaryPlan.name}</span>
-              <span data-testid="plan-price" data-months={primaryPlan.months}>{money(primaryPlan.chargeCents)}</span>
+              <span data-testid="plan-price" data-months={primaryPlan.months}>{money(primaryPlan.chargeCents, primaryPlan.currency)}</span>
             </Link>
           ) : (
             <Link href={planHref(1)} className={`flex h-11 w-full items-center justify-between rounded-full bg-gradient-to-r from-primary to-primary-strong/90 px-5 text-sm font-semibold text-ink ${planGlow}`}>
@@ -557,7 +563,7 @@ export function CreatorProfile({
                 <span className="block text-[11px] leading-4 text-muted">{t("packCardBody")}</span>
               </span>
               <span className="shrink-0 text-right">
-                <span data-testid="pack-price" className="block text-sm font-extrabold">{money(pack.priceCents)}</span>
+                <span data-testid="pack-price" className="block text-sm font-extrabold">{money(pack.priceCents, pack.currency)}</span>
                 <span className="block text-[11px] font-bold text-primary-strong">{t("packCta")}</span>
               </span>
             </Link>
@@ -589,7 +595,7 @@ export function CreatorProfile({
                 ? extraPlans.map((plan) => (
                     <Link key={plan.id} href={databaseHref(plan.id)} className={`flex h-11 w-full items-center justify-between rounded-full border border-primary/35 bg-gradient-to-r from-primary/20 via-elevated to-accent/20 px-5 text-sm font-semibold ${planGlow}`}>
                       <span>{plan.name}</span>
-                      <span data-testid="plan-price" data-months={plan.months}>{money(plan.chargeCents)}</span>
+                      <span data-testid="plan-price" data-months={plan.months}>{money(plan.chargeCents, plan.currency)}</span>
                     </Link>
                   ))
                 : ([3, 6, 12] as const).map((months) => (
@@ -646,7 +652,7 @@ export function CreatorProfile({
           const locked = postLocked(post);
           return (
             <div key={post.id} data-testid="profile-post" data-locked={locked} onContextMenu={(event) => event.preventDefault()} className={`clickable media-shield group relative aspect-[3/4] overflow-hidden rounded-[16px] ${post.playback ? "bg-black" : "bg-surface"}`}>
-              <PostVisual post={post} locked={locked} testId={post.playback ? "profile-video" : undefined} autoPlay />
+              <PostVisual post={post} locked={locked} testId={post.playback ? "profile-video" : undefined} autoPlay lockedClassName={post.image.includes("/previews/") ? "scale-[1.01]" : undefined} />
               {!locked && !post.playback && (
                 <button type="button" aria-label={t("openPhoto")} className="absolute inset-0 z-[2]" onClick={() => openSlides(post.id)} />
               )}
@@ -658,7 +664,7 @@ export function CreatorProfile({
               {locked && (
                 <Link
                   href={post.visibility === "subscriber" ? planHref(1) : `/checkout?kind=post&id=${post.id}&creator=${creator.id}&return=/creator/${creator.username}`}
-                  className="absolute inset-0 z-[3] grid place-items-center bg-ink/25 p-2 text-center text-white"
+                  className="absolute inset-0 z-[3] grid place-items-center bg-black/15 p-2 text-center text-white"
                 >
                   <span>
                     <span className="mx-auto grid size-8 place-items-center rounded-full bg-black/40"><LockKeyhole className="size-3.5" /></span>

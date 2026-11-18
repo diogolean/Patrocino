@@ -18,6 +18,7 @@ export type MediaLibraryItem = {
   guestPriceCentsUsd?: number | null;
   publishedAt: string | null;
   sortOrder: number;
+  featuredRank?: number | null;
   locked: boolean;
   kind: "IMAGE" | "VIDEO";
   mimeType: string;
@@ -34,6 +35,7 @@ type Draft = {
   guestBrl: string;
   guestUsd: string;
   publishedAt: string;
+  featuredRank: string;
 };
 
 type Job = {
@@ -214,6 +216,7 @@ function draftFor(item: MediaLibraryItem): Draft {
     guestBrl: reais(item.guestPriceCents ?? null),
     guestUsd: reais(item.guestPriceCentsUsd ?? null),
     publishedAt: toLocalInput(item.publishedAt),
+    featuredRank: item.featuredRank ? String(item.featuredRank) : "",
   };
 }
 
@@ -344,6 +347,7 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
         visibility: draft.visibility,
         priceCents: nextPrice,
         publishedAt: fromLocalInput(draft.publishedAt),
+        featuredRank: Number(draft.featuredRank) >= 1 ? Number(draft.featuredRank) : null,
       }),
     });
     const data = (await response.json().catch(() => ({}))) as { item?: MediaLibraryItem; code?: unknown; message?: unknown };
@@ -637,6 +641,16 @@ export function MediaManager({ creatorId }: { creatorId?: string }) {
                         </label>
                       </>
                     )}
+                    <label className="block text-xs font-bold uppercase tracking-wide text-muted">
+                      {t("featuredRank")}
+                      <input
+                        inputMode="numeric"
+                        value={draft.featuredRank}
+                        placeholder={t("featuredRankHint")}
+                        onChange={(event) => updateDraft(item.id, { featuredRank: event.target.value.replace(/\D/g, "").slice(0, 3) })}
+                        className="mt-2 h-11 w-full rounded-full border border-border bg-elevated px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-primary"
+                      />
+                    </label>
                     <label className="block text-xs font-bold uppercase tracking-wide text-muted">
                       {t("publishAt")}
                       <input

@@ -117,14 +117,14 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
             alt=""
             loading="lazy"
             decoding="async"
-            className="h-full w-full scale-105 object-cover blur-[18px]"
+            className="h-full w-full scale-105 object-cover blur-sm"
           />
         ) : (
           <PostVisual
             post={post}
             locked={locked}
             testId={post.playback ? "feed-video" : undefined}
-            lockedClassName="scale-105 blur-[15px]"
+            lockedClassName={post.image.includes("/previews/") ? "scale-[1.01]" : "scale-105 blur-sm"}
           />
         )}
         {visitorLocked && (

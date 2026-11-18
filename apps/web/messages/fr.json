@@ -557,7 +557,21 @@
     "pixOnlyBrl": "Pix uniquement pour les paiements en réaux.",
     "subscriberDiscount": "Les abonnés ont une réduction",
     "subscriberPays": "Les abonnés paient {price}",
-    "subscribeInstead": "S'abonner et payer moins"
+    "subscribeInstead": "S'abonner et payer moins",
+    "guestTitle": "Créez un compte pour payer",
+    "guestBody": "Cela prend une minute. Le lien de parrainage reste attaché.",
+    "guestName": "Nom",
+    "guestEmail": "E-mail",
+    "guestPassword": "Mot de passe",
+    "guestContinue": "Continuer vers le paiement",
+    "guestGoogle": "Continuer avec Google",
+    "guestCreating": "Création du compte...",
+    "guestFailed": "Connexion impossible.",
+    "guestInvalid": "Vérifiez le nom, l'e-mail et le mot de passe.",
+    "guestHaveAccount": "J'ai déjà un compte",
+    "guestNeedAccount": "Créer un compte",
+    "guestSignIn": "Se connecter et payer",
+    "guestSignInTitle": "Connectez-vous pour payer"
   },
   "billing": {
     "canceledTitle": "Paiement annulé",
@@ -643,7 +657,9 @@
     "save": "Enregistrer",
     "moveUp": "Monter",
     "moveDown": "Descendre",
-    "remove": "Supprimer"
+    "remove": "Supprimer",
+    "featuredRank": "À la une",
+    "featuredRankHint": "Vide garde l'ordre actuel. 1 s'affiche en premier."
   },
   "studio": {
     "defaultPlanName": "Mensuel",
@@ -1214,5 +1230,10 @@
     "failed": "Enregistrement impossible. Réessayez.",
     "tooShort": "Le mot de passe doit contenir au moins 8 caractères.",
     "mismatch": "Les mots de passe ne correspondent pas."
+  },
+  "funnel": {
+    "subscribe": "S'abonner",
+    "videos": "Voir les vidéos",
+    "profile": "Ouvrir le profil complet"
   }
 }

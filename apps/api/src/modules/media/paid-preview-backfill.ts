@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { copyFile, mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { database } from "@mimelux/db/runtime";
-import { alignMediaDerivatives, posterKeyFor, previewKeyFor } from "./derivative-access";
+import { alignMediaDerivatives, posterKeyFor, previewKeyFor, regeneratedPreviewKey } from "./derivative-access";
 import { isRealPreviewFile, writePosterAndPreview } from "./derivatives";
 import { openStorage, type DiskStorage } from "./storage";
 
@@ -10,6 +10,10 @@ export type PaidPreviewBackfillOptions = {
   /** Writes files and database keys. Omit it to report what would change. */
   apply?: boolean;
   creatorId?: string;
+  /** Rebuild blurred previews from the clear source onto a new versioned key. */
+  regeneratePreviews?: boolean;
+  /** With regeneratePreviews, bump the version even when a v2 preview already exists. */
+  force?: boolean;
 };
 
 export type PaidPreviewBackfillReport = {
@@ -36,7 +40,7 @@ async function sourceKey(storage: DiskStorage, storageKey: string, posterKey: st
 async function writeDerivatives(
   storage: DiskStorage,
   source: string,
-  posterTarget: string,
+  posterTarget: string | null,
   previewTarget: string,
   video: boolean,
 ) {
@@ -48,13 +52,15 @@ async function writeDerivatives(
   try {
     await copyFile(storage.resolve(source), sourceCopy);
     await writePosterAndPreview(sourceCopy, posterOut, previewOut, video);
-    if (!(await isRealPreviewFile(posterOut)) || !(await isRealPreviewFile(previewOut))) {
+    if (!(await isRealPreviewFile(previewOut)) || (posterTarget && !(await isRealPreviewFile(posterOut)))) {
       throw new Error("blurred preview was not created");
     }
-    await mkdir(path.dirname(storage.resolve(posterTarget)), { recursive: true });
     await mkdir(path.dirname(storage.resolve(previewTarget)), { recursive: true });
-    await rename(posterOut, storage.resolve(posterTarget));
     await rename(previewOut, storage.resolve(previewTarget));
+    if (posterTarget) {
+      await mkdir(path.dirname(storage.resolve(posterTarget)), { recursive: true });
+      await rename(posterOut, storage.resolve(posterTarget));
+    }
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
@@ -108,17 +114,28 @@ export async function backfillPaidPreviews(options: PaidPreviewBackfillOptions =
       mediaId: row.id,
       visibility: post.visibility,
       creatorStatus: post.creator.status,
+      currentKey: row.posterKey,
     });
-    const previewTarget = previewKeyFor({
+    const rebuiltPreview = options.regeneratePreviews
+      ? regeneratedPreviewKey({
+          creatorId: post.creatorId,
+          mediaId: row.id,
+          creatorStatus: post.creator.status,
+          currentKey: row.previewKey,
+          force: options.force,
+        })
+      : null;
+    const previewTarget = rebuiltPreview ?? previewKeyFor({
       creatorId: post.creatorId,
       mediaId: row.id,
       creatorStatus: post.creator.status,
+      currentKey: row.previewKey,
     });
     try {
       const posterMoves = Boolean(row.posterKey) && row.posterKey !== posterTarget;
       const previewMoves = Boolean(row.previewKey) && row.previewKey !== previewTarget;
-      const previewReady = (await fileReady(storage, previewTarget)) || (await fileReady(storage, row.previewKey));
-      const generate = post.visibility !== "FREE" && !previewReady;
+      const previewReady = rebuiltPreview ? false : (await fileReady(storage, previewTarget)) || (await fileReady(storage, row.previewKey));
+      const generate = Boolean(rebuiltPreview) || (post.visibility !== "FREE" && !previewReady);
       if (!generate && !posterMoves && !previewMoves) {
         report.unchanged += 1;
         continue;
@@ -131,19 +148,19 @@ export async function backfillPaidPreviews(options: PaidPreviewBackfillOptions =
       if (generate) {
         const source = await sourceKey(storage, row.storageKey, row.posterKey);
         if (!source) throw new Error("no source image");
-        await writeDerivatives(storage, source, posterTarget, previewTarget, row.kind === "VIDEO");
-        if (row.posterKey && row.posterKey !== posterTarget && (await storage.exists(row.posterKey))) {
+        const writePoster = !row.posterKey || row.posterKey !== posterTarget ? posterTarget : null;
+        await writeDerivatives(storage, source, writePoster, previewTarget, row.kind === "VIDEO");
+        if (writePoster && row.posterKey && row.posterKey !== writePoster && (await storage.exists(row.posterKey))) {
           await storage.remove(row.posterKey);
         }
-        if (row.previewKey && row.previewKey !== previewTarget && (await storage.exists(row.previewKey))) {
-          await storage.remove(row.previewKey);
-        }
+        // Leave the previous preview file in place. Galleries switch to the new key;
+        // deleting the old URL would turn a cached image into a long-lived 404.
         await database.media.update({
           where: { id: row.id },
-          data: { posterKey: posterTarget, previewKey: previewTarget },
+          data: { posterKey: writePoster ?? row.posterKey ?? posterTarget, previewKey: previewTarget },
         });
         report.previewsWritten += 1;
-        if (row.posterKey !== posterTarget) report.postersMoved += 1;
+        if (writePoster && row.posterKey !== writePoster) report.postersMoved += 1;
         continue;
       }
       await alignMediaDerivatives(storage, {

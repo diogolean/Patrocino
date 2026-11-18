@@ -66,7 +66,7 @@ export default async function FeedPage() {
                     <span className="block truncate text-sm font-extrabold">{pack.name}</span>
                     <span className="block truncate text-[11px] text-muted">{pack.creatorName} · {t("packItems", { count: pack.itemCount })}</span>
                     <span className="mt-0.5 flex items-center justify-between text-xs font-extrabold">
-                      <span data-testid="home-pack-price">{formatMoney(pack.priceCents, packs.currency, locale)}</span>
+                      <span data-testid="home-pack-price">{formatMoney(pack.priceCents, pack.currency ?? packs.currency, locale)}</span>
                       <span className="text-primary-strong">{t("packBuy")}</span>
                     </span>
                   </span>

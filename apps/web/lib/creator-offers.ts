@@ -4,12 +4,14 @@ export type ProfilePlan = {
   months: number;
   chargeCents: number;
   promotionPercent: number;
+  currency?: "BRL" | "USD";
 };
 
 export type ProfilePack = {
   id: string;
   name: string;
   priceCents: number;
+  currency?: "BRL" | "USD";
 };
 
 export type ProfilePromotion = {
@@ -36,7 +38,7 @@ export function parseProfileOffers(payload: unknown): ProfileOffers | null {
   const plans: ProfilePlan[] = [];
   for (const item of body.plans) {
     if (!item || typeof item !== "object") continue;
-    const plan = item as { id?: unknown; name?: unknown; months?: unknown; chargeCents?: unknown; promotionPercent?: unknown };
+    const plan = item as { id?: unknown; name?: unknown; months?: unknown; chargeCents?: unknown; promotionPercent?: unknown; currency?: unknown };
     const months = numberOrNull(plan.months);
     const chargeCents = numberOrNull(plan.chargeCents);
     if (typeof plan.id !== "string" || typeof plan.name !== "string" || months == null || chargeCents == null) continue;
@@ -46,16 +48,22 @@ export function parseProfileOffers(payload: unknown): ProfileOffers | null {
       months,
       chargeCents,
       promotionPercent: numberOrNull(plan.promotionPercent) ?? 0,
+      ...(plan.currency === "USD" || plan.currency === "BRL" ? { currency: plan.currency } : {}),
     });
   }
   const packs: ProfilePack[] = [];
   if (Array.isArray(body.packs)) {
     for (const item of body.packs) {
       if (!item || typeof item !== "object") continue;
-      const pack = item as { id?: unknown; name?: unknown; priceCents?: unknown };
+      const pack = item as { id?: unknown; name?: unknown; priceCents?: unknown; currency?: unknown };
       const priceCents = numberOrNull(pack.priceCents);
       if (typeof pack.id !== "string" || typeof pack.name !== "string" || priceCents == null) continue;
-      packs.push({ id: pack.id, name: pack.name, priceCents });
+      packs.push({
+        id: pack.id,
+        name: pack.name,
+        priceCents,
+        ...(pack.currency === "USD" || pack.currency === "BRL" ? { currency: pack.currency } : {}),
+      });
     }
   }
   let promotion: ProfilePromotion | null = null;

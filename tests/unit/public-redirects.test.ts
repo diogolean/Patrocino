@@ -51,6 +51,23 @@ describe("affiliate redirect", () => {
     expect(affiliateDestination({})).toBe("/topcreators?tab=top-creators");
   });
 
+  it("keeps utm params and sub on the redirect", async () => {
+    const result = await resolveAffiliateRedirect({
+      code: "ezequiel",
+      requestedCreator: "sophie-bennet",
+      subId: "story",
+      searchParams: new URLSearchParams("utm_source=ig&utm_campaign=launch&sub=story&fbclid=abc"),
+      secure: true,
+      record: async () => ({ clickId: "clk_2", code: "ezequiel", creatorUsername: "sophie-bennet" }),
+    });
+    const params = new URL(result.location, "https://patrocino.com").searchParams;
+    expect(params.get("utm_source")).toBe("ig");
+    expect(params.get("utm_campaign")).toBe("launch");
+    expect(params.get("fbclid")).toBe("abc");
+    expect(params.get("sub")).toBe("story");
+    expect(params.get("ref")).toBe("ezequiel");
+  });
+
   it("does not set a cookie when the click API misses", async () => {
     const result = await resolveAffiliateRedirect({
       code: "missing",

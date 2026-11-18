@@ -3,6 +3,7 @@ import {
   AFFILIATE_WINDOW_SECONDS,
   affiliateCookieValue,
   conversionRate,
+  amountInCurrency,
   currencyForVisitor,
   formatMoney,
   monthlyPriceAllowed,
@@ -29,6 +30,8 @@ describe("visitor currency", () => {
     expect(currencyForVisitor({ country: "US", locale: "pt-BR" })).toBe("USD");
     expect(currencyForVisitor({ country: "DE" })).toBe("USD");
     expect(currencyForVisitor({ locale: "en" })).toBe("USD");
+    expect(currencyForVisitor({ locale: "en", acceptLanguage: "pt-BR,en;q=0.8" })).toBe("USD");
+    expect(currencyForVisitor({ locale: "de", acceptLanguage: "pt-BR" })).toBe("USD");
     expect(currencyForVisitor({ acceptLanguage: "es-MX,pt-BR;q=0.2" })).toBe("USD");
   });
 
@@ -92,5 +95,15 @@ describe("visitor currency", () => {
     const cookie = parseAffiliateCookie(raw);
     expect(cookie).toMatchObject({ code: "ezequiel", clickId: "clk_1", slug: "lunaferraz", subId: "ig" });
     expect(readAffiliateCookieHeader(`other=1; mimelux_attr=${encodeURIComponent(raw)}`)?.clickId).toBe("clk_1");
+  });
+});
+
+describe("stored currency amounts", () => {
+  it("uses the USD column when it is set and falls back to BRL without inventing a price", () => {
+    expect(amountInCurrency("USD", 3900, 800)).toEqual({ amountCents: 800, currency: "USD" });
+    expect(amountInCurrency("BRL", 3900, 800)).toEqual({ amountCents: 3900, currency: "BRL" });
+    expect(amountInCurrency("USD", 3900, 0)).toEqual({ amountCents: 3900, currency: "BRL" });
+    expect(amountInCurrency("USD", 3900, null)).toEqual({ amountCents: 3900, currency: "BRL" });
+    expect(amountInCurrency("BRL", 0, 800)).toEqual({ amountCents: 800, currency: "USD" });
   });
 });

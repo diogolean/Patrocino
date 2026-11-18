@@ -101,6 +101,8 @@ describe("private derivative paths", () => {
     const caddy = readFileSyncCaddy();
     expect(caddy).not.toContain("@private path /media/uploads/*/private");
     expect(caddy).toContain('header Cache-Control "private, no-store"');
+    expect(caddy).toContain("@missing not file");
+    expect(caddy).toContain('header @missing Cache-Control "private, no-store"');
     for (const blocked of [
       "/media/uploads/creator/private/posters/frame.jpg",
       "/media/uploads/creator/private/previews/frame.jpg",
@@ -138,8 +140,35 @@ describe("private derivative paths", () => {
       "uploads/c/private/posters/m.jpg",
     );
     expect(posterKeyFor({ creatorId: "c", mediaId: "m", visibility: "FREE", creatorStatus: "ACTIVE" })).toBe(
-      "uploads/c/posters/m.jpg",
+      "uploads/c/posters/m.v2.jpg",
     );
+    expect(
+      posterKeyFor({
+        creatorId: "c",
+        mediaId: "m",
+        visibility: "FREE",
+        creatorStatus: "ACTIVE",
+        currentKey: "uploads/c/posters/m.v2.jpg",
+      }),
+    ).toBe("uploads/c/posters/m.v2.jpg");
+    expect(
+      posterKeyFor({
+        creatorId: "c",
+        mediaId: "m",
+        visibility: "FREE",
+        creatorStatus: "ACTIVE",
+        currentKey: "uploads/c/private/posters/m.v2.jpg",
+      }),
+    ).toBe("uploads/c/posters/m.v3.jpg");
+    expect(
+      posterKeyFor({
+        creatorId: "c",
+        mediaId: "m",
+        visibility: "PPV",
+        creatorStatus: "ACTIVE",
+        currentKey: "uploads/c/posters/m.v2.jpg",
+      }),
+    ).toBe("uploads/c/private/posters/m.v2.jpg");
     const locked = { kind: "IMAGE", posterKey: "uploads/c/posters/m.jpg", previewKey: "uploads/c/previews/m.jpg" };
     expect(publicMediaUrl(locked, "SUBSCRIBERS")).toBe("/media/uploads/c/previews/m.jpg");
     expect(publicMediaUrl(locked, "PPV")).toBe("/media/uploads/c/previews/m.jpg");

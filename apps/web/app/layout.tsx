@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { cookies, headers } from "next/headers";
 import { currencyForVisitor } from "@mimelux/core/currency";
+import { resolvedVisitorCountry } from "@/lib/client-ip";
 import { VisitorCurrencyProvider } from "@/lib/visitor-currency";
 import { PersistLocaleCookie } from "@/components/persist-locale";
 import { Providers } from "@/components/providers";
@@ -68,7 +69,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const messages = await getMessages();
   const header = await headers();
   const currency = currencyForVisitor({
-    country: header.get("cf-ipcountry") ?? header.get("x-country"),
+    country: resolvedVisitorCountry(header),
     locale: (await cookies()).get("mimelux-locale")?.value,
     acceptLanguage: header.get("accept-language"),
   });

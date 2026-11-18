@@ -1,5 +1,6 @@
 import { database } from "@mimelux/db/runtime";
-import { centsForCurrency, type ChargeCurrency } from "@mimelux/core/currency";
+import { amountInCurrency, type ChargeCurrency } from "@mimelux/core/currency";
+import { subscriberCounts } from "./subscribers";
 import { exclusiveVideoIndex, exclusiveVideoLabel, hideStoredCaption } from "@mimelux/core/exclusive-video";
 import { staticMediaUrl } from "../media/derivative-access";
 import { chargeForPlan, type PromotionInput } from "../payments/plan-price";
@@ -87,16 +88,17 @@ export async function loadCreatorOffers(key: string, currency: ChargeCurrency = 
     active: row.active,
   }));
   const pricedPlans = creator.plans.map((plan) => {
-    const sticker = centsForCurrency(currency, plan.priceCents, plan.priceCentsUsd);
-    return { plan, priced: chargeForPlan({ ...plan, priceCents: sticker }, promotions) };
+    const sticker = amountInCurrency(currency, plan.priceCents, plan.priceCentsUsd);
+    return { plan, sticker, priced: chargeForPlan({ ...plan, priceCents: sticker.amountCents }, promotions) };
   });
-  const plans = pricedPlans.map(({ plan, priced }) => ({
+  const plans = pricedPlans.map(({ plan, sticker, priced }) => ({
     id: plan.id,
     name: plan.name,
     months: plan.durationMonths,
     priceCents: priced.chargeCents,
     discountPercent: plan.discountPercent,
     chargeCents: priced.chargeCents,
+    currency: sticker.amountCents > 0 ? sticker.currency : currency,
     promotionPercent: priced.promotion?.discountPercent ?? 0,
   }));
   const banner = pricedPlans
@@ -106,10 +108,11 @@ export async function loadCreatorOffers(key: string, currency: ChargeCurrency = 
   const profile = creator.user.profile;
   const monthly = plans.find((plan) => plan.months === 1) ?? plans[0];
   const published = { creatorId: creator.id, deletedAt: null, publishedAt: { lte: new Date() } };
-  const [photoCount, videoCount, likes] = await Promise.all([
+  const [photoCount, videoCount, likes, subscribers] = await Promise.all([
     database.post.count({ where: { ...published, media: { none: { kind: "VIDEO" } } } }),
     database.post.count({ where: { ...published, media: { some: { kind: "VIDEO" } } } }),
     database.post.aggregate({ where: published, _sum: { likeCount: true } }),
+    subscriberCounts([creator.id]),
   ]);
   return {
     id: creator.id,
@@ -123,7 +126,7 @@ export async function loadCreatorOffers(key: string, currency: ChargeCurrency = 
     verified: true,
     isFree: (monthly?.chargeCents ?? 0) === 0,
     monthlyPriceCents: monthly?.chargeCents ?? 0,
-    subscriberCount: 0,
+    subscriberCount: subscribers.get(creator.id) ?? 0,
     postCount: photoCount + videoCount,
     photoCount,
     videoCount,
@@ -131,13 +134,13 @@ export async function loadCreatorOffers(key: string, currency: ChargeCurrency = 
     posts: [] as ReturnType<typeof publicPosts>,
     aiGenerated: creator.aiGenerated,
     fictitious: creator.fictitious,
-    currency,
+    currency: monthly?.currency ?? currency,
     plans,
-    packs: creator.contentPacks.map((pack) => ({
-      id: pack.id,
-      name: pack.name,
-      priceCents: centsForCurrency(currency, pack.priceCents, pack.priceCentsUsd),
-    })),
+    packs: creator.contentPacks.flatMap((pack) => {
+      const priced = amountInCurrency(currency, pack.priceCents, pack.priceCentsUsd);
+      if (priced.amountCents <= 0) return [];
+      return [{ id: pack.id, name: pack.name, priceCents: priced.amountCents, currency: priced.currency }];
+    }),
     promotion: banner
       ? {
           name: banner.name,
@@ -148,14 +151,13 @@ export async function loadCreatorOffers(key: string, currency: ChargeCurrency = 
   };
 }
 
-function monthlyCents(
+function monthlyPrice(
   plans: { durationMonths: number; priceCents: number; priceCentsUsd: number; discountPercent: number }[],
   currency: ChargeCurrency,
 ) {
   const plan = plans.find((item) => item.durationMonths === 1) ?? plans[0];
-  if (!plan) return 0;
-  const sticker = centsForCurrency(currency, plan.priceCents, plan.priceCentsUsd);
-  return sticker > 0 ? sticker : plan.priceCents;
+  if (!plan) return { amountCents: 0, currency };
+  return amountInCurrency(currency, plan.priceCents, plan.priceCentsUsd);
 }
 
 /** ACTIVE creators for public listings. DRAFT, PENDING, and SUSPENDED stay out. */
@@ -197,12 +199,13 @@ export async function listActiveCreators(input: {
     take: 80,
     orderBy: { createdAt: "desc" },
   });
+  const subscribers = await subscriberCounts(creators.map((creator) => creator.id));
   return creators.map((creator) => {
     const profile = creator.user.profile;
     const lead = creator.posts[0];
     const media = lead?.media[0];
     const image = lead && media ? publicMediaUrl(media, lead.visibility) : null;
-    const price = monthlyCents(creator.plans, input.currency);
+    const price = monthlyPrice(creator.plans, input.currency);
     return {
       id: creator.id,
       name: profile?.name ?? "Creator",
@@ -213,10 +216,10 @@ export async function listActiveCreators(input: {
       coverUrl: profile?.coverUrl ?? "",
       category: creator.category,
       verified: true,
-      isFree: price === 0,
-      monthlyPriceCents: price,
-      currency: input.currency,
-      subscriberCount: 0,
+      isFree: price.amountCents === 0,
+      monthlyPriceCents: price.amountCents,
+      currency: price.amountCents > 0 ? price.currency : input.currency,
+      subscriberCount: subscribers.get(creator.id) ?? 0,
       postCount: creator.posts.length,
       likeCount: creator.posts.reduce((total, post) => total + post.likeCount, 0),
       aiGenerated: creator.aiGenerated,

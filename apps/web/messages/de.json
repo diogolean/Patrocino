@@ -557,7 +557,21 @@
     "pixOnlyBrl": "Pix gibt es nur für Zahlungen in Real.",
     "subscriberDiscount": "Abonnenten bekommen einen Rabatt",
     "subscriberPays": "Abonnenten zahlen {price}",
-    "subscribeInstead": "Abonnieren und weniger zahlen"
+    "subscribeInstead": "Abonnieren und weniger zahlen",
+    "guestTitle": "Konto erstellen und zahlen",
+    "guestBody": "Das dauert eine Minute. Der Empfehlungslink bleibt erhalten.",
+    "guestName": "Name",
+    "guestEmail": "E-Mail",
+    "guestPassword": "Passwort",
+    "guestContinue": "Weiter zur Zahlung",
+    "guestGoogle": "Weiter mit Google",
+    "guestCreating": "Konto wird erstellt...",
+    "guestFailed": "Anmeldung fehlgeschlagen.",
+    "guestInvalid": "Name, E-Mail und Passwort prüfen.",
+    "guestHaveAccount": "Ich habe schon ein Konto",
+    "guestNeedAccount": "Konto erstellen",
+    "guestSignIn": "Anmelden und zahlen",
+    "guestSignInTitle": "Anmelden zum Zahlen"
   },
   "billing": {
     "canceledTitle": "Zahlung abgebrochen",
@@ -643,7 +657,9 @@
     "save": "Speichern",
     "moveUp": "Nach oben",
     "moveDown": "Nach unten",
-    "remove": "Löschen"
+    "remove": "Löschen",
+    "featuredRank": "Hervorgehoben",
+    "featuredRankHint": "Leer behält die Reihenfolge. 1 steht zuerst."
   },
   "studio": {
     "defaultPlanName": "Monatlich",
@@ -1214,5 +1230,10 @@
     "failed": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
     "tooShort": "Das Passwort braucht mindestens 8 Zeichen.",
     "mismatch": "Die Passwörter stimmen nicht überein."
+  },
+  "funnel": {
+    "subscribe": "Abonnieren",
+    "videos": "Videos ansehen",
+    "profile": "Ganzes Profil öffnen"
   }
 }

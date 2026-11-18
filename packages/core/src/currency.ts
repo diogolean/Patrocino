@@ -45,6 +45,9 @@ export function currencyForVisitor(input: {
   if (country) return country === "BR" ? "BRL" : "USD";
   const explicit = (input.locale ?? "").trim().toLowerCase();
   if (explicit === "pt" || explicit === "pt-br") return "BRL";
+  // A chosen site locale other than Portuguese is the visitor's currency signal.
+  // Do not let a pt-BR browser language override an English (or other) locale.
+  if (explicit) return "USD";
   const header = (input.acceptLanguage ?? "").split(",")[0]?.split(";")[0]?.trim().toLowerCase() ?? "";
   return header === "pt-br" ? "BRL" : "USD";
 }
@@ -108,6 +111,24 @@ export function centsForCurrency(
 ) {
   const amount = currency === "USD" ? usdCents : brlCents;
   return typeof amount === "number" && Number.isInteger(amount) ? amount : 0;
+}
+
+/**
+ * Charge the visitor currency when that column is a positive stored price.
+ * When it is missing or zero, keep the other currency's stored price and say so,
+ * instead of billing zero or labeling a real amount with the wrong currency.
+ */
+export function amountInCurrency(
+  currency: ChargeCurrency,
+  brlCents: number | null | undefined,
+  usdCents: number | null | undefined,
+): { amountCents: number; currency: ChargeCurrency } {
+  const preferred = centsForCurrency(currency, brlCents, usdCents);
+  if (preferred > 0) return { amountCents: preferred, currency };
+  const other: ChargeCurrency = currency === "USD" ? "BRL" : "USD";
+  const fallback = centsForCurrency(other, brlCents, usdCents);
+  if (fallback > 0) return { amountCents: fallback, currency: other };
+  return { amountCents: 0, currency };
 }
 
 export type AffiliateCookie = {

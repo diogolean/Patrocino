@@ -67,6 +67,46 @@ export function layoutGalleryRows<T>(photos: readonly T[], videos: readonly T[],
   return result;
 }
 
+export type GalleryOrderItem = {
+  id: string;
+  visibility: string;
+  featuredRank?: number | null;
+  publishedAt?: Date | string | null;
+};
+
+function publishedMs(value: Date | string | null | undefined) {
+  if (!value) return 0;
+  const date = value instanceof Date ? value : new Date(value);
+  const ms = date.getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/** Same tie-break the gallery already uses: newer publishedAt first, then id. */
+function byPublishedDesc<T extends GalleryOrderItem>(left: T, right: T) {
+  return publishedMs(right.publishedAt) - publishedMs(left.publishedAt) || right.id.localeCompare(left.id);
+}
+
+export function hasFeaturedRank<T extends GalleryOrderItem>(rows: readonly T[]) {
+  return rows.some((row) => typeof row.featuredRank === "number");
+}
+
+/**
+ * With no featuredRank set, the array is returned as given so a caller that
+ * already sorted by publishedAt keeps that exact order.
+ * With any rank set: FREE teasers (publishedAt desc), then ranked posts
+ * (lower rank first, photos and videos together), then the rest (publishedAt desc).
+ */
+export function orderFeaturedGallery<T extends GalleryOrderItem>(rows: readonly T[]): T[] {
+  if (!hasFeaturedRank(rows)) return [...rows];
+  const current = [...rows].sort(byPublishedDesc);
+  const free = current.filter((row) => row.visibility === "FREE");
+  const featured = current
+    .filter((row) => row.visibility !== "FREE" && typeof row.featuredRank === "number")
+    .sort((left, right) => (left.featuredRank ?? 0) - (right.featuredRank ?? 0) || byPublishedDesc(left, right));
+  const rest = current.filter((row) => row.visibility !== "FREE" && typeof row.featuredRank !== "number");
+  return [...free, ...featured, ...rest];
+}
+
 export type GallerySlot = { kind: "photo" | "video"; index: number };
 
 /** Same posts-tab order as the profile grid, as indexes into the photo and video lists. */

@@ -1,7 +1,7 @@
 import { apiError } from "../../http/api-error";
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Prisma, database } from "@mimelux/db/runtime";
-import { centsForCurrency, ppvQuote, type ChargeCurrency } from "@mimelux/core/currency";
+import { amountInCurrency, ppvQuote, type ChargeCurrency } from "@mimelux/core/currency";
 import { chargeForPlan } from "./plan-price";
 import type { ChargeDraft, PaymentPurpose } from "@mimelux/core/expay";
 import { z } from "zod";
@@ -105,15 +105,15 @@ export async function quoteCharge(
     const promotions = await database.promotion.findMany({
       where: { creatorId: creator.id, active: true, OR: [{ planId: plan.id }, { planId: null }] },
     });
-    const sticker = centsForCurrency(currency, plan.priceCents, plan.priceCentsUsd);
-    const priced = chargeForPlan({ ...plan, priceCents: sticker }, promotions);
+    const sticker = amountInCurrency(currency, plan.priceCents, plan.priceCentsUsd);
+    const priced = chargeForPlan({ ...plan, priceCents: sticker.amountCents }, promotions);
     return {
       buyerId: user.id,
       creatorId: creator.id,
       purpose: "subscription",
       subjectId: plan.id,
       amountCents: billable(priced.chargeCents),
-      currency,
+      currency: sticker.currency,
       description: clip(`${creatorName} · ${plan.name}`),
     };
   }
@@ -159,43 +159,34 @@ export async function quoteCharge(
 
   if (input.purpose === "message") {
     const message = await database.message.findFirst({
-      where: {
-        id: input.subjectId,
-        senderId: creator.userId,
-        OR: currency === "USD" ? [{ ppvPriceCentsUsd: { gt: 0 } }] : [{ ppvPriceCents: { gt: 0 } }],
-      },
+      where: { id: input.subjectId, senderId: creator.userId },
     });
-    const messageCents = message ? centsForCurrency(currency, message.ppvPriceCents, message.ppvPriceCentsUsd) : 0;
-    if (!message || messageCents <= 0) throw unavailable();
+    const messagePrice = message ? amountInCurrency(currency, message.ppvPriceCents, message.ppvPriceCentsUsd) : null;
+    if (!message || !messagePrice || messagePrice.amountCents <= 0) throw unavailable();
     return {
       buyerId: user.id,
       creatorId: creator.id,
       purpose: "message",
       subjectId: message.id,
-      amountCents: billable(messageCents),
-      currency,
+      amountCents: billable(messagePrice.amountCents),
+      currency: messagePrice.currency,
       description: clip(`Mensagem de ${creatorName}`),
     };
   }
 
   if (input.purpose === "pack") {
     const pack = await database.contentPack.findFirst({
-      where: {
-        id: input.subjectId,
-        creatorId: creator.id,
-        active: true,
-        OR: currency === "USD" ? [{ priceCentsUsd: { gt: 0 } }] : [{ priceCents: { gt: 0 } }],
-      },
+      where: { id: input.subjectId, creatorId: creator.id, active: true },
     });
-    const packCents = pack ? centsForCurrency(currency, pack.priceCents, pack.priceCentsUsd) : 0;
-    if (!pack || packCents <= 0) throw unavailable();
+    const packPrice = pack ? amountInCurrency(currency, pack.priceCents, pack.priceCentsUsd) : null;
+    if (!pack || !packPrice || packPrice.amountCents <= 0) throw unavailable();
     return {
       buyerId: user.id,
       creatorId: creator.id,
       purpose: "pack",
       subjectId: pack.id,
-      amountCents: billable(packCents),
-      currency,
+      amountCents: billable(packPrice.amountCents),
+      currency: packPrice.currency,
       description: clip(pack.name || `Pacote de ${creatorName}`),
     };
   }

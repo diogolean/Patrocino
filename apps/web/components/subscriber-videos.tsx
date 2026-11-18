@@ -24,7 +24,7 @@ function shield(event: { preventDefault: () => void }) {
 export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; onOpen: () => void }) {
   const locale = useLocale();
   const duration = formatDuration(video.durationMs);
-  const { locked, cover, blurred } = ppvCardView(video);
+  const { locked, cover } = ppvCardView(video);
   const price = formatMoney(video.priceCents, video.currency ?? "BRL", locale);
   return (
     <button
@@ -38,7 +38,7 @@ export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; o
     >
       <span
         aria-hidden
-        className={`absolute inset-0 scale-105 bg-cover bg-center ${blurred ? "blur-sm" : ""}`}
+        className="absolute inset-0 scale-105 bg-cover bg-center"
         style={cover ? { backgroundImage: `url("${cover.replace(/"/g, "")}")` } : undefined}
       />
       <span className={`absolute inset-0 ${locked ? "bg-black/25" : "bg-black/15"}`} />

@@ -30,6 +30,8 @@ import { parseProfileOffers, type ProfileOffers } from "@/lib/creator-offers";
 import { databaseCreatorCard } from "@/lib/public-catalog";
 import { authHref } from "@/lib/auth-return";
 import { trackEvent } from "@/lib/analytics";
+import { checkoutSurface } from "@/lib/payment-surface";
+import { GuestCheckout } from "@/components/guest-checkout";
 
 function DemoPaymentGraphic({ seed, label }: { seed: string; label: string }) {
   const cells = useMemo(() => {
@@ -114,7 +116,8 @@ function CheckoutContent() {
   const [paidVia, setPaidVia] = useState<"demo" | "pix" | "card">("demo");
   const [pixOpen, setPixOpen] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
-  const [methods, setMethods] = useState({ expay: false, stripe: false, stripePublishableKey: "" });
+  const [methods, setMethods] = useState<{ expay: boolean; stripe: boolean; stripePublishableKey: string } | null>(null);
+  const [authNonce, setAuthNonce] = useState(0);
   const [catalog, setCatalog] = useState<ProfileOffers | null>(null);
   const returnPath = search.get("return")?.startsWith("/") ? search.get("return")! : `/creator/${creator.username}`;
   const purpose: "subscription" | "post" | "message" | "pack" | "special_request" =
@@ -155,7 +158,8 @@ function CheckoutContent() {
     };
   }, [quoteCreatorId, fixture]);
 
-  const realCheckout = methods.expay || methods.stripe;
+  const surface = checkoutSurface(methods);
+  const realCheckout = surface === "live";
   const subjectId = kind === "subscription" ? planParam : id;
   const quoteKey = realCheckout ? `${quoteCreatorId}:${purpose}:${subjectId}` : "";
   const [quote, setQuote] = useState<{
@@ -186,10 +190,11 @@ function CheckoutContent() {
     catalog?.plans.find((item) => item.months === plan.months);
   const catalogPack = catalog?.packs.find((item) => item.id === id);
   const catalogCents = kind === "subscription" ? catalogPlan?.chargeCents : kind === "pack" ? catalogPack?.priceCents : undefined;
+  const catalogChargeCurrency = kind === "subscription" ? catalogPlan?.currency : kind === "pack" ? catalogPack?.currency : undefined;
   const fixturePrices = process.env.NODE_ENV !== "production";
   const shownCents = quotedCents ?? catalogCents ?? (fixturePrices ? amount : null);
-  const shownCurrency = quotedCents != null ? quote.currency : catalog?.currency ?? visitorCurrency;
-  const showPix = methods.expay && shownCurrency !== "USD";
+  const shownCurrency = quotedCents != null ? quote.currency : catalogChargeCurrency ?? catalog?.currency ?? visitorCurrency;
+  const showPix = Boolean(methods?.expay) && shownCurrency !== "USD";
   const priceLabel = (cents: number) => formatMoney(cents, shownCurrency, locale);
   const pixKey = useMemo(() => `pix-${purpose}-${creator.id}-${id}-${crypto.randomUUID()}`, [purpose, creator.id, id]);
   const cardKey = useMemo(() => `card-${purpose}-${creator.id}-${id}-${crypto.randomUUID()}`, [purpose, creator.id, id]);
@@ -243,7 +248,7 @@ function CheckoutContent() {
     return () => {
       cancel = true;
     };
-  }, [quoteKey, quoteCreatorId, purpose, subjectId, t, errors]);
+  }, [quoteKey, quoteCreatorId, purpose, subjectId, t, errors, authNonce]);
 
   function grantLocalAccess(via: "demo" | "pix" | "card" = "demo") {
     const state = readDemo();
@@ -342,24 +347,27 @@ function CheckoutContent() {
         <Logo compact />
         <p className="mt-10 text-[10px] font-black uppercase tracking-[.2em] text-primary-strong">{t("protected")}</p>
         <h1 className="mt-2 text-3xl font-extrabold tracking-[-.05em]">{kind === "subscription" ? t("almostThere") : t("justForYou")}</h1>
-        <p className="mt-4 max-w-md text-sm leading-6 text-muted">{checkoutLead(t, realCheckout, showPix, methods.stripe)}</p>
+        <p className="mt-4 max-w-md text-sm leading-6 text-muted">{checkoutLead(t, surface === "live", showPix, Boolean(methods?.stripe))}</p>
 
         <div className="mt-7 flex items-center gap-4 rounded-[24px] border border-black/5 bg-white/60 p-4 dark:bg-white/5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {creator.avatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={creator.avatar} alt={creator.name} className="size-16 rounded-[20px] object-cover" />
+          {identity || fixture ? (
+            creator.avatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={creator.avatar} alt={creator.name} className="size-16 rounded-[20px] object-cover" />
+            ) : (
+              <span className="grid size-16 place-items-center rounded-[20px] bg-primary/20 text-sm font-black">{creator.name.slice(0, 1)}</span>
+            )
           ) : (
-            <span className="grid size-16 place-items-center rounded-[20px] bg-primary/20 text-sm font-black">{creator.name.slice(0, 1)}</span>
+            <span className="size-16 rounded-[20px] skeleton" />
           )}
-          <div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{kind === "subscription" ? t("subscriptionOf", { name: creator.name }) : specialRequest ? t("requestFor", { name: creator.name }) : t("contentOf", { name: creator.name })}</p><p data-testid="checkout-plan" className="mt-1 text-[9px] text-muted">{kind === "subscription" ? `${catalogPlan?.name ?? plan.name}` : message ? t("exclusiveMessage") : pack ? (catalogPack?.name ?? t("packFallback")) : specialRequest ? t("agreedAmount") : t("exclusivePost")}</p></div>
+          <div className="min-w-0 flex-1"><p className="text-xs font-extrabold">{identity || fixture ? (kind === "subscription" ? t("subscriptionOf", { name: creator.name }) : specialRequest ? t("requestFor", { name: creator.name }) : t("contentOf", { name: creator.name })) : "…"}</p><p data-testid="checkout-plan" className="mt-1 text-[9px] text-muted">{kind === "subscription" ? `${catalogPlan?.name ?? plan.name}` : message ? t("exclusiveMessage") : pack ? (catalogPack?.name ?? t("packFallback")) : specialRequest ? t("agreedAmount") : t("exclusivePost")}</p></div>
           <p data-testid="checkout-amount" className="text-sm font-black">{shownCents == null ? "…" : priceLabel(shownCents)}</p>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
-          {realCheckout ? (
+          {surface === "pending" ? null : realCheckout ? (
             <>
               {showPix && <Pill><ShieldCheck className="mr-1 size-3" /> {t("pix")}</Pill>}
-              {methods.stripe && <Pill><CreditCard className="mr-1 size-3" /> {t("card")}</Pill>}
+              {methods?.stripe && <Pill><CreditCard className="mr-1 size-3" /> {t("card")}</Pill>}
             </>
           ) : (
             <>
@@ -372,11 +380,11 @@ function CheckoutContent() {
 
       <section className="overflow-hidden rounded-[34px] border border-black/5 bg-white/75 shadow-[0_30px_90px_rgba(32,32,39,.12)] dark:bg-white/5">
         <div className="flex items-center justify-between border-b border-black/5 p-5 sm:px-7">
-          <div><p className="text-xs font-extrabold">{realCheckout ? t("paymentMethod") : t("payWithPix")}</p><p className="mt-1 text-[9px] text-muted">{showPix && methods.stripe ? t("methodsBoth") : realCheckout ? t("methodsReal") : t("methodsInstant")}</p></div>
+          <div><p className="text-xs font-extrabold">{surface === "demo" ? t("payWithPix") : t("paymentMethod")}</p><p className="mt-1 text-[9px] text-muted">{showPix && methods?.stripe ? t("methodsBoth") : surface === "demo" ? t("methodsInstant") : t("methodsReal")}</p></div>
           <span className="grid size-10 place-items-center rounded-2xl bg-primary/20"><Sparkles className="size-5 text-primary-strong" /></span>
         </div>
         <div className="grid place-items-center p-6 sm:p-8">
-          {!realCheckout && (
+          {surface === "demo" && (
             <>
               <DemoPaymentGraphic seed={`${kind}-${id}-${amount}`} label={t("simulation")} />
               <div className="mt-5 flex items-center gap-2 text-[10px] font-semibold text-muted"><Clock3 className="size-3.5" /> {t("illustrative")}</div>
@@ -385,10 +393,13 @@ function CheckoutContent() {
               </div>
             </>
           )}
+          {surface === "pending" && <LoaderCircle className="size-8 animate-spin text-muted" />}
           {realCheckout && (
             <p className="mb-2 text-3xl font-black tracking-[-.04em]">{shownCents == null ? "…" : priceLabel(shownCents)}</p>
           )}
-          {quote.needsAuth ? (
+          {quote.needsAuth && realCheckout ? (
+            <GuestCheckout nextPath={search.toString() ? `${pathname}?${search.toString()}` : pathname} onSignedIn={() => setAuthNonce((value) => value + 1)} />
+          ) : quote.needsAuth ? (
             <Link href={signInHref} className="mb-4 block max-w-sm cursor-pointer text-center text-sm font-semibold text-accent-strong underline underline-offset-4 hover:opacity-80">
               {t("signInToPay")}
             </Link>
@@ -402,27 +413,27 @@ function CheckoutContent() {
               <Link href={`/creator/${creator.username}`} className="mt-2 inline-block font-bold text-primary-strong">{t("subscribeInstead")}</Link>
             </div>
           ) : null}
-          {realCheckout && !showPix && !methods.stripe ? <p className="mb-4 max-w-sm text-center text-sm">{t("pixOnlyBrl")}</p> : null}
-          {realCheckout ? (
+          {realCheckout && !showPix && !methods?.stripe ? <p className="mb-4 max-w-sm text-center text-sm">{t("pixOnlyBrl")}</p> : null}
+          {realCheckout && !quote.needsAuth ? (
             <div className="mt-5 grid w-full max-w-sm grid-cols-2 gap-3">
               {showPix && (
-                <Button size="lg" className={methods.stripe ? "w-full" : "col-span-2 w-full"} onClick={() => { beginCheckout("pix"); setPixOpen(true); }} disabled={quotedCents == null}>
+                <Button size="lg" className={methods?.stripe ? "w-full" : "col-span-2 w-full"} onClick={() => { beginCheckout("pix"); setPixOpen(true); }} disabled={quotedCents == null}>
                   {t("payPix")}
                 </Button>
               )}
-              {methods.stripe && (
+              {methods?.stripe && (
                 <Button size="lg" variant="outline" className={showPix ? "w-full" : "col-span-2 w-full"} onClick={() => { beginCheckout("card"); setCardOpen(true); }} disabled={quotedCents == null}>
                   <CreditCard className="size-4" /> {t("card")}
                 </Button>
               )}
             </div>
-          ) : (
+          ) : surface === "demo" ? (
             <Button size="lg" className="mt-5 w-full max-w-sm" onClick={simulate} disabled={paying}>
               {paying ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}
               {paying ? t("confirming") : t("simulate")}
             </Button>
-          )}
-          <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">{checkoutFoot(t, showPix, methods.stripe)}</p>
+          ) : null}
+          <p className="mt-4 max-w-xs text-center text-[9px] leading-4 text-muted">{checkoutFoot(t, showPix, Boolean(methods?.stripe))}</p>
         </div>
       </section>
       {pixOpen && <ExpayCheckoutModal
@@ -444,7 +455,7 @@ function CheckoutContent() {
         creatorId={quoteCreatorId}
         subjectId={subjectId}
         idempotencyKey={cardKey}
-        publishableKey={methods.stripePublishableKey}
+        publishableKey={methods?.stripePublishableKey ?? ""}
         onAmount={rememberAmount}
         onClose={() => setCardOpen(false)}
         onPaid={() => {

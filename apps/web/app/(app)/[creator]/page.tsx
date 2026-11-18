@@ -1,4 +1,10 @@
 import { renderCreatorProfile } from "@/lib/render-creator-profile";
+import { creatorPageMetadata } from "@/lib/creator-metadata";
+
+export async function generateMetadata(props: { params: Promise<{ creator: string }> }) {
+  const { creator } = await props.params;
+  return creatorPageMetadata(creator);
+}
 
 export default async function UsernameProfilePage(props: {
   params: Promise<{ creator: string }>;

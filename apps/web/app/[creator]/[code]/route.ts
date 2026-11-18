@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { AFFILIATE_EVENT_COOKIE } from "@/lib/analytics";
 import { LINK_CODE_PATTERN } from "@mimelux/core/currency";
-import { publicOrigin, resolveAffiliateRedirect, type RecordedClick } from "@/lib/affiliate-redirect";
+import { publicOrigin, resolveAffiliateRedirect, withReferralQuery, type RecordedClick } from "@/lib/affiliate-redirect";
 import { apiBase } from "@/lib/api-auth";
 import { upstreamAuthHeaders } from "@/lib/client-ip";
+import { creatorOgHtml, creatorShareFromApi, isSocialCrawler } from "@/lib/creator-share";
 
 type Context = { params: Promise<{ creator: string; code: string }> };
 
@@ -40,6 +41,13 @@ export async function GET(request: Request, context: Context) {
   const { creator, code } = await context.params;
   if (!USERNAME_PATTERN.test(creator) || !LINK_CODE_PATTERN.test(code)) return notFound();
   const url = new URL(request.url);
+  if (isSocialCrawler(request.headers.get("user-agent"))) {
+    const share = await creatorShareFromApi(publicOrigin(request), creator, apiBase());
+    return new NextResponse(creatorOgHtml(share), {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300" },
+    });
+  }
   const subId = url.searchParams.get("sub") ?? undefined;
   const locale = url.searchParams.get("lang") ?? undefined;
   let recorded: Recorded | null = null;
@@ -55,11 +63,15 @@ export async function GET(request: Request, context: Context) {
     subId,
     locale,
     secure: url.protocol === "https:",
+    searchParams: url.searchParams,
     record: async () => recorded,
   });
   // Pack links open that pack's checkout; the attribution cookie is the same, so the pack sale credits the affiliate.
   const location = recorded.packId
-    ? `/checkout?${new URLSearchParams({ kind: "pack", id: recorded.packId, creator, return: `/creator/${creator}`, ref: recorded.code }).toString()}`
+    ? withReferralQuery(
+        `/checkout?${new URLSearchParams({ kind: "pack", id: recorded.packId, creator, return: `/creator/${creator}` }).toString()}`,
+        { ref: recorded.code, sub: subId, lang: locale, searchParams: url.searchParams },
+      )
     : result.location;
   const response = NextResponse.redirect(new URL(location, publicOrigin(request)));
   if (result.cookie) response.cookies.set(result.cookie.name, result.cookie.value, result.cookie.options);

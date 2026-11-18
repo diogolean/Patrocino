@@ -31,6 +31,7 @@ export type Creator = {
   /** Set when the price is already in the visitor currency, not a BRL demo amount. */
   priceCurrency?: "BRL" | "USD";
   createdAt: string;
+  socials?: { instagram?: string; x?: string; tiktok?: string };
 };
 
 export type Post = {

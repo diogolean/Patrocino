@@ -1,4 +1,5 @@
-import { readAffiliateCookieHeader } from "@mimelux/core/currency";
+import { normalizeCountry, readAffiliateCookieHeader } from "@mimelux/core/currency";
+import { countryFromIp } from "./geoip";
 
 const ipToken = /^[0-9a-fA-F:.]+$/;
 
@@ -21,10 +22,18 @@ export function clientIpFrom(headers: { get(name: string): string | null }): str
   return proxyClientIp(headers.get("x-forwarded-for"));
 }
 
+/** Cloudflare country, then an explicit x-country, then the local GeoIP database. */
+export function resolvedVisitorCountry(source?: { get(name: string): string | null } | null): string | null {
+  if (!source) return null;
+  const fromHeader = normalizeCountry(source.get("cf-ipcountry")) ?? normalizeCountry(source.get("x-country"));
+  if (fromHeader) return fromHeader;
+  return countryFromIp(clientIpFrom(source) ?? null);
+}
+
 export function visitorForwardHeaders(source?: { get(name: string): string | null }): Record<string, string> {
   const headers: Record<string, string> = {};
   if (!source) return headers;
-  const country = source.get("cf-ipcountry");
+  const country = resolvedVisitorCountry(source);
   if (country) headers["cf-ipcountry"] = country;
   const accept = source.get("accept-language");
   if (accept) headers["accept-language"] = accept;

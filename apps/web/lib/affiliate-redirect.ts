@@ -22,8 +22,17 @@ export function affiliateDestination(input: {
   return affiliateProfilePath(username);
 }
 
-export function withReferralQuery(path: string, input: { sub?: string; lang?: string; ref?: string }) {
+const reservedReferralKeys = new Set(["ref", "sub", "lang"]);
+
+/** Copy inbound query params onto a redirect, then set the referral fields. */
+export function withReferralQuery(path: string, input: { sub?: string; lang?: string; ref?: string; searchParams?: URLSearchParams }) {
   const url = new URL(path, "https://patrocino.local");
+  if (input.searchParams) {
+    for (const [key, value] of input.searchParams.entries()) {
+      if (reservedReferralKeys.has(key) || url.searchParams.has(key)) continue;
+      url.searchParams.append(key, value);
+    }
+  }
   if (input.ref) url.searchParams.set("ref", input.ref);
   if (input.sub) url.searchParams.set("sub", input.sub);
   if (input.lang) url.searchParams.set("lang", input.lang);
@@ -36,6 +45,7 @@ export async function resolveAffiliateRedirect(input: {
   subId?: string;
   locale?: string;
   fallbackCreator?: string | null;
+  searchParams?: URLSearchParams;
   secure: boolean;
   record: (body: { code: string; subId?: string; locale?: string }) => Promise<RecordedClick | null>;
 }) {
@@ -54,9 +64,12 @@ export async function resolveAffiliateRedirect(input: {
     recordedCreator: recorded?.creatorUsername,
     fallbackCreator: input.fallbackCreator,
   });
-  const location = path.startsWith("/creator/")
-    ? withReferralQuery(path, { sub: input.subId, lang: input.locale, ref: recorded?.code })
-    : path;
+  const location = withReferralQuery(path, {
+    sub: path.startsWith("/creator/") ? input.subId : undefined,
+    lang: path.startsWith("/creator/") ? input.locale : undefined,
+    ref: path.startsWith("/creator/") ? recorded?.code : undefined,
+    searchParams: input.searchParams,
+  });
   const username = input.requestedCreator?.trim() || recorded?.creatorUsername?.trim() || input.fallbackCreator?.trim() || "";
   const cookie = recorded?.clickId && recorded.code && username
     ? affiliateCookie({

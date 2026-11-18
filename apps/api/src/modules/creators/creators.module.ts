@@ -1,7 +1,8 @@
 import { apiError } from "../../http/api-error";
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Module, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { centsForCurrency, currencyForVisitor } from "@mimelux/core/currency";
+import { amountInCurrency, currencyForVisitor } from "@mimelux/core/currency";
+import { subscriberCounts } from "./subscribers";
 import { planChargeCents } from "@mimelux/core/monetization";
 import { Prisma, database } from "@mimelux/db/runtime";
 import { z } from "zod";
@@ -146,15 +147,20 @@ class CreatorsController {
       currency,
       items: packs
         .filter((pack) => pack.creator.user.profile?.username)
-        .map((pack) => ({
+        .map((pack) => {
+          const priced = amountInCurrency(currency, pack.priceCents, pack.priceCentsUsd);
+          return {
           id: pack.id,
           name: pack.name,
-          priceCents: centsForCurrency(currency, pack.priceCents, pack.priceCentsUsd),
+          priceCents: priced.amountCents,
+          currency: priced.currency,
           itemCount: pack._count.items,
           username: pack.creator.user.profile!.username,
           creatorName: pack.creator.user.profile!.name,
           avatarUrl: pack.creator.user.profile!.avatarUrl ?? "",
-        })),
+        };
+        })
+        .filter((pack) => pack.priceCents > 0),
     };
   }
 
@@ -393,7 +399,7 @@ class CreatorsController {
     };
   }
 
-  private present(creator: {
+  private async present(creator: {
     id: string;
     category: string;
     aiGenerated: boolean;
@@ -403,6 +409,7 @@ class CreatorsController {
     posts?: { likeCount: number }[];
   }) {
     const profile = creator.user.profile;
+    const subscribers = await subscriberCounts([creator.id]);
     return {
       id: creator.id,
       name: profile?.name ?? "Creator",
@@ -416,7 +423,7 @@ class CreatorsController {
       isFree: (creator.plans[0]?.priceCents ?? 0) === 0,
       monthlyPriceCents: creator.plans.find((plan) => plan.durationMonths === 1)?.priceCents ?? 0,
       plans: creator.plans.map(presentPlan),
-      subscriberCount: 0,
+      subscriberCount: subscribers.get(creator.id) ?? 0,
       postCount: creator.posts?.length ?? 0,
       likeCount: creator.posts?.reduce((total, post) => total + post.likeCount, 0) ?? 0,
       aiGenerated: creator.aiGenerated,

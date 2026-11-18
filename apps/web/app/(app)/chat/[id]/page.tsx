@@ -117,7 +117,7 @@ export default function ConversationPage() {
         {fixture && <div className="mt-3 max-w-[82%] overflow-hidden rounded-[24px_24px_24px_6px] bg-ink text-white shadow-lg">
           <div className="relative h-52 overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={lockedPost.image} alt={t("exclusiveAlt")} className={`h-full w-full object-cover ${unlocked ? "" : "scale-105 blur-xl opacity-65"}`} />
+            <img src={lockedPost.image} alt={t("exclusiveAlt")} className={`h-full w-full object-cover ${unlocked ? "" : "scale-105 blur-sm opacity-90"}`} />
             {!unlocked && <div className="absolute inset-0 grid place-items-center"><span className="grid size-12 place-items-center rounded-full bg-black/35 backdrop-blur"><LockKeyhole className="size-5" /></span></div>}
           </div>
           <div className="p-4">

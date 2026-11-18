@@ -9,6 +9,20 @@ const tinyJpeg = Buffer.from(
 
 const attempted = new Set<string>();
 
+/** Server-side blur for locked previews. Override with PREVIEW_BLUR_SIGMA. */
+export const DEFAULT_PREVIEW_BLUR_SIGMA = 8;
+
+export function previewBlurSigma(raw = process.env.PREVIEW_BLUR_SIGMA) {
+  if (raw == null || raw.trim() === "") return DEFAULT_PREVIEW_BLUR_SIGMA;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_PREVIEW_BLUR_SIGMA;
+  return Math.min(40, Math.max(1, Math.round(parsed)));
+}
+
+export function previewBlurFilter(sigma = previewBlurSigma()) {
+  return `gblur=sigma=${sigma},scale=720:-2`;
+}
+
 function run(args: string[]) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn("ffmpeg", args, { stdio: "ignore" });
@@ -64,7 +78,7 @@ export async function writePosterAndPreview(input: string, poster: string, previ
   let previewReady = false;
   if (posterReady) {
     try {
-      await run(["-y", "-i", poster, "-frames:v", "1", "-vf", "gblur=sigma=18,scale=720:-2", preview]);
+      await run(["-y", "-i", poster, "-frames:v", "1", "-vf", previewBlurFilter(), preview]);
       previewReady = true;
     } catch {
       previewReady = false;

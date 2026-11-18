@@ -37,6 +37,7 @@ export async function GET(request: Request, context: Context) {
     locale,
     fallbackCreator: fallback,
     secure: url.protocol === "https:",
+    searchParams: url.searchParams,
     record: recordClick,
   });
   if (!result.cookie && code === demoAffiliate.code && fallback) {

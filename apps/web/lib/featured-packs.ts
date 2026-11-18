@@ -8,6 +8,7 @@ export type FeaturedPack = {
   username: string;
   creatorName: string;
   avatarUrl: string;
+  currency?: ChargeCurrency;
 };
 
 export type FeaturedPacks = { currency: ChargeCurrency; items: FeaturedPack[] };
@@ -35,6 +36,7 @@ export function parseFeaturedPacks(payload: unknown): FeaturedPacks | null {
       username,
       creatorName: text(item.creatorName) || username,
       avatarUrl: text(item.avatarUrl),
+      ...(item.currency === "BRL" || item.currency === "USD" ? { currency: item.currency } : {}),
     });
   }
   return { currency, items };

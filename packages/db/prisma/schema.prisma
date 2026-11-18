@@ -267,6 +267,7 @@ model Post {
   guestPriceCentsUsd Int?
   likeCount   Int               @default(0)
   sortOrder   Int               @default(0)
+  featuredRank Int?
   isDemo      Boolean           @default(false)
   publishedAt DateTime?
   deletedAt   DateTime?
@@ -283,6 +284,7 @@ model Post {
 
   @@unique([creatorId, contentHash])
   @@index([creatorId, publishedAt])
+  @@index([creatorId, featuredRank])
   @@map("posts")
 }
 

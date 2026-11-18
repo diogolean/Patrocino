@@ -15,25 +15,81 @@ export function isPrivateMediaKey(key: string | null | undefined) {
   return bare.split(/[/\\]/).some((part) => part === "private" || part === "tmp");
 }
 
-/** Clear poster. Paid posts, and every post of a creator who is not live, stay under private/. */
+function derivativeVersion(key: string | null | undefined, mediaId: string, folder: "posters" | "previews") {
+  if (!key) return null;
+  const match = key.match(new RegExp(`/${folder}/${mediaId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.v(\\d+)\\.jpg$`));
+  if (!match) return null;
+  const version = Number(match[1]);
+  return Number.isInteger(version) && version > 0 ? version : null;
+}
+
+function isPublicDerivative(key: string, creatorId: string, mediaId: string, folder: "posters" | "previews", version: number) {
+  return key === `uploads/${creatorId}/${folder}/${mediaId}.v${version}.jpg`;
+}
+
+/**
+ * Public FREE poster. Never the legacy `posters/<id>.jpg` path: Cloudflare may have
+ * cached a year-long 404 for it. A key that is already public and versioned is kept.
+ * Coming back from a private copy bumps the version so a URL that 404'd is not reused.
+ */
 export function posterKeyFor(input: {
   creatorId: string;
   mediaId: string;
   visibility: string;
   creatorStatus: string;
+  currentKey?: string | null;
 }) {
+  const version = derivativeVersion(input.currentKey, input.mediaId, "posters");
   if (input.visibility !== "FREE" || creatorHidesDerivatives(input.creatorStatus)) {
+    if (version != null) return `uploads/${input.creatorId}/private/posters/${input.mediaId}.v${version}.jpg`;
     return `uploads/${input.creatorId}/private/posters/${input.mediaId}.jpg`;
   }
-  return `uploads/${input.creatorId}/posters/${input.mediaId}.jpg`;
+  if (
+    version != null &&
+    input.currentKey &&
+    isPublicDerivative(input.currentKey, input.creatorId, input.mediaId, "posters", version)
+  ) {
+    return input.currentKey;
+  }
+  const next = (version ?? 1) + 1;
+  return `uploads/${input.creatorId}/posters/${input.mediaId}.v${next}.jpg`;
 }
 
-/** Blurred frame. Public teaser only while the creator is ACTIVE. */
-export function previewKeyFor(input: { creatorId: string; mediaId: string; creatorStatus: string }) {
+/**
+ * Blurred frame. Public while the creator is ACTIVE.
+ * A versioned public preview (written by --regenerate-previews) stays put so a later
+ * align does not rename it back onto the cached unversioned URL.
+ */
+export function previewKeyFor(input: { creatorId: string; mediaId: string; creatorStatus: string; currentKey?: string | null }) {
+  const version = derivativeVersion(input.currentKey, input.mediaId, "previews");
   if (creatorHidesDerivatives(input.creatorStatus)) {
+    if (version != null) return `uploads/${input.creatorId}/private/previews/${input.mediaId}.v${version}.jpg`;
     return `uploads/${input.creatorId}/private/previews/${input.mediaId}.jpg`;
   }
+  if (
+    version != null &&
+    input.currentKey &&
+    isPublicDerivative(input.currentKey, input.creatorId, input.mediaId, "previews", version)
+  ) {
+    return input.currentKey;
+  }
   return `uploads/${input.creatorId}/previews/${input.mediaId}.jpg`;
+}
+
+/** Next public preview key for a rebuilt blur. Null when this preview was already regenerated and force is off. */
+export function regeneratedPreviewKey(input: {
+  creatorId: string;
+  mediaId: string;
+  creatorStatus: string;
+  currentKey?: string | null;
+  force?: boolean;
+}) {
+  const version = derivativeVersion(input.currentKey, input.mediaId, "previews");
+  const already = version != null && version >= 2;
+  if (already && !input.force) return null;
+  const next = input.force ? (version ?? 1) + 1 : 2;
+  const folder = creatorHidesDerivatives(input.creatorStatus) ? "private/previews" : "previews";
+  return `uploads/${input.creatorId}/${folder}/${input.mediaId}.v${next}.jpg`;
 }
 
 /** Static /media URL for a derivative that is allowed on the public disk. Private keys return null. */
@@ -87,10 +143,16 @@ export async function alignMediaDerivatives(
         mediaId: input.mediaId,
         visibility: input.visibility,
         creatorStatus: input.creatorStatus,
+        currentKey: input.posterKey,
       })
     : null;
   const previewTarget = input.previewKey
-    ? previewKeyFor({ creatorId: input.creatorId, mediaId: input.mediaId, creatorStatus: input.creatorStatus })
+    ? previewKeyFor({
+        creatorId: input.creatorId,
+        mediaId: input.mediaId,
+        creatorStatus: input.creatorStatus,
+        currentKey: input.previewKey,
+      })
     : null;
   const posterKey = input.posterKey && posterTarget ? await relocate(storage, input.posterKey, posterTarget) : input.posterKey;
   const previewKey =

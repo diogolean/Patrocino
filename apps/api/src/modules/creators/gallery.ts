@@ -1,7 +1,7 @@
 import { database } from "@mimelux/db/runtime";
 import { ppvQuote, type ChargeCurrency } from "@mimelux/core/currency";
 import { exclusiveVideoIndex, exclusiveVideoLabel } from "@mimelux/core/exclusive-video";
-import { postsTabSlots } from "@mimelux/core/profile-gallery";
+import { hasFeaturedRank, orderFeaturedGallery, postsTabSlots } from "@mimelux/core/profile-gallery";
 import { signMediaGrant } from "../media/signed-url";
 import { fanSubscribed, paidPostPurchase } from "../media/entitlement";
 import { publicMediaUrl } from "./catalog";
@@ -13,6 +13,7 @@ type Row = {
   caption: string;
   visibility: string;
   likeCount: number;
+  featuredRank: number | null;
   publishedAt: Date | null;
   createdAt: Date;
   priceCents: number | null;
@@ -87,6 +88,7 @@ export async function loadCreatorGallery(input: {
       caption: true,
       visibility: true,
       likeCount: true,
+      featuredRank: true,
       publishedAt: true,
       createdAt: true,
       priceCents: true,
@@ -117,8 +119,16 @@ export async function loadCreatorGallery(input: {
   const locked = videos.filter((row) => !bought.has(row.id));
   const open = videos.filter((row) => bought.has(row.id));
   const orderedVideos = [...locked, ...open];
-  const slots =
-    input.tab === "videos"
+  const featured = hasFeaturedRank(rows);
+  const featuredRows = featured ? orderFeaturedGallery(rows) : [];
+  const sequence = featured
+    ? input.tab === "videos"
+      ? featuredRows.filter((row) => row.media.some((item) => item.kind === "VIDEO"))
+      : featuredRows
+    : null;
+  const slots = sequence
+    ? []
+    : input.tab === "videos"
       ? videos.map((_, index) => ({ kind: "video" as const, index }))
       : input.tab === "media"
         ? [...photos.map((row) => ({ kind: "photo" as const, row })), ...videos.map((row) => ({ kind: "video" as const, row }))]
@@ -130,14 +140,19 @@ export async function loadCreatorGallery(input: {
             )
         : postsTabSlots(photos.length, orderedVideos.length, input.seed);
   const videoList = input.tab === "posts" ? orderedVideos : videos;
-  const page = slots.slice(input.offset, input.offset + input.limit);
+  const pageRows = sequence
+    ? sequence.slice(input.offset, input.offset + input.limit)
+    : slots.slice(input.offset, input.offset + input.limit).flatMap((slot) => {
+        const row = slot.kind === "photo" ? photos[slot.index] : videoList[slot.index];
+        return row ? [row] : [];
+      });
+  const pageLength = sequence ? sequence.length : slots.length;
   const items = [];
-  for (const slot of page) {
-    const row = slot.kind === "photo" ? photos[slot.index] : videoList[slot.index];
+  for (const row of pageRows) {
     if (!row) continue;
     const media = row.media[0];
     if (!media) continue;
-    if (slot.kind === "video" || media.kind === "VIDEO") {
+    if (media.kind === "VIDEO") {
       const index = exclusiveVideoIndex(ordinals, row.id);
       const priced = ppvQuote({
         currency: input.currency,
@@ -205,7 +220,7 @@ export async function loadCreatorGallery(input: {
     locked: lockedCount,
     offset: input.offset,
     limit: input.limit,
-    nextOffset: input.offset + input.limit < slots.length ? input.offset + input.limit : null,
+    nextOffset: input.offset + input.limit < pageLength ? input.offset + input.limit : null,
     seed: input.seed,
     items,
   };

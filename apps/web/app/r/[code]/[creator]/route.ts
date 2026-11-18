@@ -35,6 +35,7 @@ export async function GET(request: Request, context: Context) {
     subId,
     locale,
     secure: url.protocol === "https:",
+    searchParams: url.searchParams,
     record: (body) => recordClick({ ...body, creator }),
   });
   if (!result.cookie && code === demoAffiliate.code) {

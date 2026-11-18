@@ -557,7 +557,21 @@
     "pixOnlyBrl": "Pix is only available for payments in reais.",
     "subscriberDiscount": "Subscribers get a discount",
     "subscriberPays": "Subscribers pay {price}",
-    "subscribeInstead": "Subscribe and pay less"
+    "subscribeInstead": "Subscribe and pay less",
+    "guestTitle": "Create your account to pay",
+    "guestBody": "It takes a minute. The referral stays with this checkout.",
+    "guestName": "Name",
+    "guestEmail": "Email",
+    "guestPassword": "Password",
+    "guestContinue": "Continue to payment",
+    "guestGoogle": "Continue with Google",
+    "guestCreating": "Creating the account...",
+    "guestFailed": "Could not sign in.",
+    "guestInvalid": "Check the name, email, and password.",
+    "guestHaveAccount": "I already have an account",
+    "guestNeedAccount": "Create an account",
+    "guestSignIn": "Sign in and pay",
+    "guestSignInTitle": "Sign in to pay"
   },
   "billing": {
     "canceledTitle": "Payment canceled",
@@ -643,7 +657,9 @@
     "save": "Save",
     "moveUp": "Move up",
     "moveDown": "Move down",
-    "remove": "Delete"
+    "remove": "Delete",
+    "featuredRank": "Featured",
+    "featuredRankHint": "Empty keeps the current order. 1 shows first."
   },
   "studio": {
     "defaultPlanName": "Monthly",
@@ -1214,5 +1230,10 @@
     "failed": "Could not save. Try again.",
     "tooShort": "Password needs at least 8 characters.",
     "mismatch": "Passwords do not match."
+  },
+  "funnel": {
+    "subscribe": "Subscribe",
+    "videos": "Watch videos",
+    "profile": "Open full profile"
   }
 }
