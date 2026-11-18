@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { ImageResponse } from "next/og";
+import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from "@/lib/og-size";
 import { publicMediaAllowed } from "@/lib/public-media";
 
 const roots = [process.env.MEDIA_ROOT, path.join(process.cwd(), "public"), path.join(process.cwd(), "apps/web/public")].filter(
@@ -42,25 +43,43 @@ async function readPublicFile(src: string): Promise<{ bytes: Buffer; type: strin
   return null;
 }
 
+function dataUri(file: { bytes: Buffer; type: string }) {
+  return `data:${file.type};base64,${file.bytes.toString("base64")}`;
+}
+
 export async function creatorOgResponse(input: { name: string; image: string | null | undefined }) {
   const file = await readPublicFile(input.image ?? "");
-  if (file) {
-    return new Response(new Uint8Array(file.bytes), {
-      headers: {
-        "content-type": file.type,
-        "cache-control": "public, max-age=86400",
-        "x-content-type-options": "nosniff",
-      },
-    });
-  }
+  const picture = file && file.type !== "image/webp" ? dataUri(file) : null;
   const card = new ImageResponse(
     (
-      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "flex-end", background: "#181725", color: "white", fontSize: 64, fontWeight: 700, padding: 48 }}>
-        {input.name || "Patrocino"}
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "flex-end",
+          background: "#181725",
+          color: "white",
+          fontSize: 64,
+          fontWeight: 700,
+        }}
+      >
+        {picture ? (
+          <img
+            alt=""
+            src={picture}
+            width={OG_IMAGE_WIDTH}
+            height={OG_IMAGE_HEIGHT}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          <div style={{ display: "flex", padding: 48 }}>{input.name || "Patrocino"}</div>
+        )}
       </div>
     ),
-    { width: 1200, height: 630 },
+    { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT },
   );
   card.headers.set("cache-control", "public, max-age=86400");
+  card.headers.set("x-content-type-options", "nosniff");
   return card;
 }

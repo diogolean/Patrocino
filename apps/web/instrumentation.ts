@@ -1,5 +1,7 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  const { ensureVisitorVary } = await import("./lib/visitor-vary");
+  ensureVisitorVary();
   const { spawn } = await import("node:child_process");
   const { existsSync } = await import("node:fs");
   const { resolve } = await import("node:path");

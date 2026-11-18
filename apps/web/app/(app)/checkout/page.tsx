@@ -2,6 +2,9 @@ import { creatorPageMetadata } from "@/lib/creator-metadata";
 import { loadDatabaseProfile } from "@/lib/load-public-catalog";
 import { CheckoutView } from "./checkout-view";
 
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+
 function creatorKey(query: Record<string, string | string[] | undefined>) {
   const kind = typeof query.kind === "string" ? query.kind : "subscription";
   const id = typeof query.id === "string" ? query.id : "";

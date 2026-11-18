@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { visitorCacheHeaders } from "@mimelux/core/currency";
 import { proxyApi } from "@/lib/admin-proxy";
 import { apiBase } from "@/lib/api-auth";
 import { upstreamAuthHeaders } from "@/lib/client-ip";
+
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 export async function GET(request: Request, context: { params: Promise<{ username: string }> }) {
   const { username } = await context.params;
@@ -12,15 +16,10 @@ export async function GET(request: Request, context: { params: Promise<{ usernam
       signal: AbortSignal.timeout(2500),
     });
     const data = await response.json().catch(() => null);
-    if (!response.ok) return NextResponse.json(null, { status: response.status });
-    return NextResponse.json(data, {
-      headers: {
-        "cache-control": "private, no-store",
-        vary: "cf-ipcountry, accept-language, cookie",
-      },
-    });
+    if (!response.ok) return NextResponse.json(null, { status: response.status, headers: visitorCacheHeaders() });
+    return NextResponse.json(data, { headers: visitorCacheHeaders() });
   } catch {
-    return NextResponse.json(null, { status: 503 });
+    return NextResponse.json(null, { status: 503, headers: visitorCacheHeaders() });
   }
 }
 

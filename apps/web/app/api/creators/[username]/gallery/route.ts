@@ -1,8 +1,12 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { visitorCacheHeaders } from "@mimelux/core/currency";
 import { apiBase } from "@/lib/api-auth";
 import { upstreamAuthHeaders } from "@/lib/client-ip";
 import { ACCESS_COOKIE } from "@/lib/session-cookies";
+
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 export async function GET(request: Request, context: { params: Promise<{ username: string }> }) {
   const { username } = await context.params;
@@ -18,8 +22,8 @@ export async function GET(request: Request, context: { params: Promise<{ usernam
   try {
     const response = await fetch(target, { headers, cache: "no-store", signal: AbortSignal.timeout(8000) });
     const data = await response.json().catch(() => null);
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: visitorCacheHeaders() });
   } catch {
-    return NextResponse.json(null, { status: 503 });
+    return NextResponse.json(null, { status: 503, headers: visitorCacheHeaders() });
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { normalizeCountry, LINK_CODE_PATTERN } from "@mimelux/core/currency";
+import { countryFromHeaders, LINK_CODE_PATTERN } from "@mimelux/core/currency";
 import { affiliateCookie } from "@/lib/affiliate-redirect";
+import { applyVisitorCache } from "@/lib/client-ip";
 import { creatorSlugFromPath } from "@/lib/creator-route";
 import { isSocialCrawler } from "@/lib/creator-share";
 
@@ -12,9 +13,7 @@ export async function proxy(request: NextRequest) {
   const session = SESSION.test(current) ? current : crypto.randomUUID();
   const headers = new Headers(request.headers);
   headers.set("x-gallery-session", session);
-  const country =
-    normalizeCountry(request.headers.get("cf-ipcountry")) ??
-    normalizeCountry(request.headers.get("x-country"));
+  const country = countryFromHeaders(request.headers);
   if (country) headers.set("x-patrocino-country", country);
   const response = NextResponse.next({ request: { headers } });
   if (session !== current) {
@@ -26,13 +25,11 @@ export async function proxy(request: NextRequest) {
       secure: process.env.NODE_ENV === "production",
     });
   }
+  const pathname = request.nextUrl.pathname;
   const personalized =
-    !request.nextUrl.pathname.endsWith("/opengraph-image") &&
-    (/^\/(creator|l|checkout)(\/|$)/.test(request.nextUrl.pathname) || request.nextUrl.pathname.startsWith("/api/creators"));
-  if (personalized) {
-    response.headers.set("cache-control", "private, no-store");
-    response.headers.set("vary", "cf-ipcountry, accept-language, cookie");
-  }
+    !pathname.endsWith("/opengraph-image") &&
+    (pathname === "/checkout" || pathname.startsWith("/checkout/") || pathname.startsWith("/api/creators") || creatorSlugFromPath(pathname) !== null);
+  if (personalized) applyVisitorCache(response);
   await attachReferral(request, response);
   return response;
 }
@@ -46,7 +43,7 @@ async function attachReferral(request: NextRequest, response: NextResponse) {
   const locale = request.nextUrl.searchParams.get("lang") ?? undefined;
   try {
     const api = (process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3334/v1").replace(/\/$/, "");
-    const country = normalizeCountry(request.headers.get("cf-ipcountry")) ?? normalizeCountry(request.headers.get("x-country"));
+    const country = countryFromHeaders(request.headers);
     const recorded = await fetch(`${api}/affiliate/clicks`, {
       method: "POST",
       headers: {

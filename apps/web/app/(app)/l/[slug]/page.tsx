@@ -7,6 +7,9 @@ import { creatorPageMetadata, fixtureBySlug } from "@/lib/creator-metadata";
 import { withCampaignQuery } from "@/lib/creator-route";
 import { loadDatabaseProfile } from "@/lib/load-public-catalog";
 
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+
 export async function generateMetadata(props: { params: Promise<{ slug: string }> }) {
   const { slug } = await props.params;
   return creatorPageMetadata(slug);
@@ -26,8 +29,9 @@ export default async function CreatorLinksPage(props: {
     if (typeof value === "string") search.set(key, value);
   }
   const cookie = parseAffiliateCookie(jar.get(AFFILIATE_COOKIE)?.value);
+  const returnTo = withCampaignQuery(`/l/${creator.username}`, search, cookie);
   const subscribe = withCampaignQuery(
-    `/checkout?${new URLSearchParams({ kind: "subscription", id: creator.username, return: `/l/${creator.username}` }).toString()}`,
+    `/checkout?${new URLSearchParams({ kind: "subscription", id: creator.username, return: returnTo }).toString()}`,
     search,
     cookie,
   );

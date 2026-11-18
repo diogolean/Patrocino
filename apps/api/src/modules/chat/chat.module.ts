@@ -1,10 +1,11 @@
 import { apiError } from "../../http/api-error";
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Module, NotFoundException, Param, Post, Put } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Module, NotFoundException, Param, Post, Put, Req } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { exclusiveVideoIndex } from "@mimelux/core/exclusive-video";
 import { chatSequenceOfferModes } from "@mimelux/core/chat-sequence";
 import { database } from "@mimelux/db/runtime";
-import { currencyForVisitor } from "@mimelux/core/currency";
+import type { Request } from "express";
+import { currencyFromHeaderMap } from "../../http/visitor-currency";
 import { z } from "zod";
 import { assertOwnsCreator } from "../access/creator-scope";
 import { optionalUser, requireUser } from "../auth/require-user";
@@ -48,13 +49,11 @@ class ChatController {
   async withCreator(
     @Headers("authorization") authorization: string | undefined,
     @Param("creatorKey") creatorKey: string,
-    @Headers("cf-ipcountry") country?: string,
-    @Headers("x-patrocino-locale") locale?: string,
-    @Headers("accept-language") acceptLanguage?: string,
+    @Req() request: Request,
   ) {
     const user = await optionalUser(authorization);
     if (!user) return { messages: [] };
-    const thread = await readFanThread(user.id, creatorKey, currencyForVisitor({ country, locale, acceptLanguage }));
+    const thread = await readFanThread(user.id, creatorKey, currencyFromHeaderMap(request.headers));
     await markFanThreadRead(user.id, creatorKey);
     return thread;
   }

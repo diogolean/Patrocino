@@ -3,7 +3,7 @@ import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers
 import type { Request } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { amountInCurrency } from "@mimelux/core/currency";
-import { currencyFromHeaderMap } from "../../http/visitor-currency";
+import { applyPrivateCurrencyCache, currencyFromHeaderMap } from "../../http/visitor-currency";
 import { subscriberCounts } from "./subscribers";
 import { planChargeCents } from "@mimelux/core/monetization";
 import { Prisma, database } from "@mimelux/db/runtime";
@@ -105,6 +105,7 @@ class CreatorsController {
     @Query() query: unknown,
     @Req() request: Request,
   ) {
+    applyPrivateCurrencyCache(request);
     const parsed = discoveryQuerySchema.parse(query);
     const items = await listActiveCreators({
       search: parsed.search,
@@ -120,6 +121,7 @@ class CreatorsController {
   async ranking(
     @Req() request: Request,
   ) {
+    applyPrivateCurrencyCache(request);
     const items = await listActiveCreators({
       currency: currencyFromHeaderMap(request.headers),
       includeDemo: this.includeDemo,
@@ -132,6 +134,7 @@ class CreatorsController {
   async featuredPacks(
     @Req() request: Request,
   ) {
+    applyPrivateCurrencyCache(request);
     const currency = currencyFromHeaderMap(request.headers);
     const packs = await database.contentPack.findMany({
       where: { active: true, isDemo: false, creator: { status: "ACTIVE" } },
@@ -321,6 +324,7 @@ class CreatorsController {
     @Query("seed") seed?: string,
     @Headers("authorization") authorization?: string,
   ) {
+    applyPrivateCurrencyCache(request);
     const viewer = await optionalUser(authorization);
     const query = galleryQuery({ tab, offset, limit, seed });
     const page = await loadCreatorGallery({
@@ -339,6 +343,7 @@ class CreatorsController {
     @Param("username") username: string,
     @Req() request: Request,
   ) {
+    applyPrivateCurrencyCache(request);
     return loadCreatorOffers(username, currencyFromHeaderMap(request.headers));
   }
 

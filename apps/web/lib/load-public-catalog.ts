@@ -5,8 +5,8 @@ import { creators as fixtureCreators, posts as fixturePosts, type Creator, type 
 import { mergePublicCreators, parseDatabaseCreators, parseDatabaseProfile, parseGalleryPage } from "@/lib/public-catalog";
 
 async function readJson(path: string) {
+  const headerList = await headers();
   try {
-    const headerList = await headers();
     const response = await fetch(`${apiBase()}${path}`, {
       headers: visitorForwardHeaders(headerList),
       cache: "no-store",
@@ -40,8 +40,8 @@ export async function loadCreatorGalleryPage(username: string, input: { tab: str
     seed: input.seed,
     limit: String(input.limit ?? 24),
   });
+  const headerList = await headers();
   try {
-    const headerList = await headers();
     const response = await fetch(`${apiBase()}/creators/${encodeURIComponent(username)}/gallery?${params}`, {
       headers: visitorForwardHeaders(headerList),
       cache: "no-store",

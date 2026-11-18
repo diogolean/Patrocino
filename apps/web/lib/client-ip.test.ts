@@ -22,6 +22,31 @@ test("a US Cloudflare country is forwarded to the API as USD country headers", (
   expect(forwarded["x-patrocino-currency"]).toBe("USD");
 });
 
+test("country headers win in order and a proxy address is not a country", () => {
+  const forwarded = upstreamAuthHeaders({
+    headers: headers({
+      "cf-ipcountry": "US",
+      "x-vercel-ip-country": "BR",
+      "x-patrocino-country": "BR",
+      "x-forwarded-for": "177.0.0.8",
+      "accept-language": "pt-BR",
+    }),
+  });
+  expect(forwarded["cf-ipcountry"]).toBe("US");
+  expect(forwarded["x-patrocino-country"]).toBe("US");
+  const languageOnly = upstreamAuthHeaders({
+    headers: headers({ "x-forwarded-for": "177.0.0.8", "accept-language": "en-US" }),
+  });
+  expect(languageOnly["cf-ipcountry"]).toBeUndefined();
+  expect(languageOnly["x-patrocino-country"]).toBeUndefined();
+  expect(languageOnly["accept-language"]).toBe("en-US");
+  const vercel = upstreamAuthHeaders({
+    headers: headers({ "x-vercel-ip-country": "DE", "accept-language": "pt-BR" }),
+  });
+  expect(vercel["cf-ipcountry"]).toBe("DE");
+  expect(vercel["x-patrocino-country"]).toBe("DE");
+});
+
 test("upstream headers include the proxy secret only when it is configured", () => {
   const previous = process.env.INTERNAL_PROXY_SECRET;
   process.env.INTERNAL_PROXY_SECRET = "local-secret";

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { creators } from "@/lib/gateway";
+import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from "@/lib/og-size";
 import { loadDatabaseProfile } from "@/lib/load-public-catalog";
 import { creatorShare } from "@/lib/creator-share";
 
@@ -27,7 +28,7 @@ export async function creatorPageMetadata(slug: string): Promise<Metadata> {
       url: share.url,
       siteName: "Patrocino",
       type: "profile",
-      images: [{ url: share.image, width: 1200, height: 630, alt: share.title }],
+      images: [{ url: share.image, width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, alt: share.title }],
     },
     twitter: {
       card: "summary_large_image",
