@@ -1,7 +1,9 @@
 import { apiError } from "../../http/api-error";
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Module, Param, Patch, Post, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Module, Param, Patch, Post, Query, Req } from "@nestjs/common";
+import type { Request } from "express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { amountInCurrency, currencyForVisitor } from "@mimelux/core/currency";
+import { amountInCurrency } from "@mimelux/core/currency";
+import { applyPrivateCurrencyCache, currencyFromHeaderMap } from "../../http/visitor-currency";
 import { subscriberCounts } from "./subscribers";
 import { planChargeCents } from "@mimelux/core/monetization";
 import { Prisma, database } from "@mimelux/db/runtime";
@@ -101,15 +103,14 @@ class CreatorsController {
   @ApiOperation({ summary: "List creators" })
   async list(
     @Query() query: unknown,
-    @Headers("cf-ipcountry") country?: string,
-    @Headers("x-patrocino-locale") locale?: string,
-    @Headers("accept-language") acceptLanguage?: string,
+    @Req() request: Request,
   ) {
+    applyPrivateCurrencyCache(request);
     const parsed = discoveryQuerySchema.parse(query);
     const items = await listActiveCreators({
       search: parsed.search,
       category: parsed.category,
-      currency: currencyForVisitor({ country, locale, acceptLanguage }),
+      currency: currencyFromHeaderMap(request.headers),
       includeDemo: this.includeDemo,
     });
     return { items, nextCursor: null, source: "postgres" as const };
@@ -118,12 +119,11 @@ class CreatorsController {
   @Get("ranking")
   @ApiOperation({ summary: "List ranked creators" })
   async ranking(
-    @Headers("cf-ipcountry") country?: string,
-    @Headers("x-patrocino-locale") locale?: string,
-    @Headers("accept-language") acceptLanguage?: string,
+    @Req() request: Request,
   ) {
+    applyPrivateCurrencyCache(request);
     const items = await listActiveCreators({
-      currency: currencyForVisitor({ country, locale, acceptLanguage }),
+      currency: currencyFromHeaderMap(request.headers),
       includeDemo: this.includeDemo,
     });
     return { items, nextCursor: null, source: "postgres" as const };
@@ -132,11 +132,10 @@ class CreatorsController {
   @Get("packs/featured")
   @ApiOperation({ summary: "List active content packs for the home page" })
   async featuredPacks(
-    @Headers("cf-ipcountry") country?: string,
-    @Headers("x-patrocino-locale") locale?: string,
-    @Headers("accept-language") acceptLanguage?: string,
+    @Req() request: Request,
   ) {
-    const currency = currencyForVisitor({ country, locale, acceptLanguage });
+    applyPrivateCurrencyCache(request);
+    const currency = currencyFromHeaderMap(request.headers);
     const packs = await database.contentPack.findMany({
       where: { active: true, isDemo: false, creator: { status: "ACTIVE" } },
       include: { creator: { include: { user: { include: { profile: true } } } }, _count: { select: { items: true } } },
@@ -318,21 +317,20 @@ class CreatorsController {
   @Get(":username/gallery")
   async gallery(
     @Param("username") username: string,
+    @Req() request: Request,
     @Query("tab") tab?: string,
     @Query("offset") offset?: string,
     @Query("limit") limit?: string,
     @Query("seed") seed?: string,
     @Headers("authorization") authorization?: string,
-    @Headers("cf-ipcountry") country?: string,
-    @Headers("x-patrocino-locale") locale?: string,
-    @Headers("accept-language") acceptLanguage?: string,
   ) {
+    applyPrivateCurrencyCache(request);
     const viewer = await optionalUser(authorization);
     const query = galleryQuery({ tab, offset, limit, seed });
     const page = await loadCreatorGallery({
       key: username,
       ...query,
-      currency: currencyForVisitor({ country, locale, acceptLanguage }),
+      currency: currencyFromHeaderMap(request.headers),
       viewerId: viewer?.id,
     });
     if (!page) throw apiError(404, "CREATOR_NOT_FOUND", "Creator not found");
@@ -343,11 +341,10 @@ class CreatorsController {
   @ApiOperation({ summary: "Get a creator profile" })
   async get(
     @Param("username") username: string,
-    @Headers("cf-ipcountry") country?: string,
-    @Headers("x-patrocino-locale") locale?: string,
-    @Headers("accept-language") acceptLanguage?: string,
+    @Req() request: Request,
   ) {
-    return loadCreatorOffers(username, currencyForVisitor({ country, locale, acceptLanguage }));
+    applyPrivateCurrencyCache(request);
+    return loadCreatorOffers(username, currencyFromHeaderMap(request.headers));
   }
 
   private async scopedCreator(

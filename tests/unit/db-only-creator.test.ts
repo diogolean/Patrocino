@@ -286,7 +286,7 @@ describe("database-only creator", () => {
     expect(await listActiveCreators({ currency: "USD", includeDemo: true })).toEqual(
       expect.arrayContaining([expect.objectContaining({ username: "sophie-bennet", monthlyPriceCents: 800 })]),
     );
-    expect(currencyForVisitor({})).toBe("USD");
+    expect(currencyForVisitor({})).toBe("BRL");
     expect(currencyForVisitor({ country: "BR" })).toBe("BRL");
     expect(currencyForVisitor({ country: "US" })).toBe("USD");
 

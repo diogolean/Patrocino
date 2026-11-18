@@ -39,6 +39,7 @@ import {
   staticMediaUrl,
 } from "./derivative-access";
 import { centsForCurrency, currencyForVisitor, ppvQuote, type ChargeCurrency } from "@mimelux/core/currency";
+import { currencyFromHeaderMap } from "../../http/visitor-currency";
 import { fanSubscribed, paidPostPurchase, resolveVideoPrice, viewerCanReadPost } from "./entitlement";
 import { MEDIA_GRANT_TTL_SECONDS, readMediaGrant, signMediaGrant } from "./signed-url";
 import { chunkSizeBytes, declaredMimeMatches, detectFile, maxBytes, servedMimeType } from "./sniff";
@@ -246,10 +247,13 @@ export class MediaController {
     @Param("key") key: string,
     @Headers("authorization") authorization?: string,
     @Headers("cf-ipcountry") country?: string,
-    @Headers("x-patrocino-locale") locale?: string,
+    @Headers("x-patrocino-locale") _locale?: string,
     @Headers("accept-language") acceptLanguage?: string,
+    @Req() request?: Request,
   ) {
-    const currency = currencyForVisitor({ country, locale, acceptLanguage });
+    const currency = request
+      ? currencyFromHeaderMap(request.headers)
+      : currencyForVisitor({ country, acceptLanguage });
     const viewer = await optionalUser(authorization);
     const keys = Array.from(new Set([key, key.replace(/-/g, "")]));
     const creator = await database.creator.findFirst({

@@ -1,7 +1,5 @@
 import { getRequestConfig } from "next-intl/server";
 import { cookies, headers } from "next/headers";
-import { clientIpFrom } from "@/lib/client-ip";
-import { countryFromIp } from "@/lib/geoip";
 import { resolveRequestLocale } from "./locale";
 
 export { locales, resolveLocale, resolveRequestLocale } from "./locale";
@@ -14,9 +12,7 @@ export default getRequestConfig(async () => {
     cookie: jar.get("mimelux-locale")?.value,
     acceptLanguage: header.get("accept-language"),
     cfIpCountry: header.get("cf-ipcountry"),
-    xCountry: header.get("x-country"),
-    ip: clientIpFrom(header) ?? null,
-    lookupCountry: countryFromIp,
+    xCountry: header.get("x-vercel-ip-country") ?? header.get("x-patrocino-country") ?? header.get("x-country"),
   });
   return {
     locale,

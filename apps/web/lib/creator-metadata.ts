@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
 import { creators } from "@/lib/gateway";
+import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from "@/lib/og-size";
 import { loadDatabaseProfile } from "@/lib/load-public-catalog";
 import { creatorShare } from "@/lib/creator-share";
 
+export function fixtureBySlug(slug: string) {
+  return creators.find((item) => item.username === slug || item.id === slug) ?? null;
+}
+
 export async function creatorPageMetadata(slug: string): Promise<Metadata> {
   const profile = await loadDatabaseProfile(slug);
-  const fixture = creators.find((item) => item.username === slug);
+  const fixture = fixtureBySlug(slug);
   const origin = (process.env.WEB_ORIGIN || "https://patrocino.com").replace(/\/$/, "");
   const share = creatorShare({
     name: profile?.creator.name || fixture?.name || slug,
@@ -23,7 +28,7 @@ export async function creatorPageMetadata(slug: string): Promise<Metadata> {
       url: share.url,
       siteName: "Patrocino",
       type: "profile",
-      images: [{ url: share.image, width: 1200, height: 630, alt: share.title }],
+      images: [{ url: share.image, width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, alt: share.title }],
     },
     twitter: {
       card: "summary_large_image",

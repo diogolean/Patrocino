@@ -49,7 +49,7 @@ export function PostVisual({
       draggable={false}
       onContextMenu={shield}
       onDragStart={shield}
-      className={`media-shield h-full w-full object-cover transition duration-500 ${locked ? lockedClassName : ""}`}
+      className={`media-shield h-full w-full object-cover transition duration-500 ${locked ? `${lockedClassName} blur-md` : ""}`}
     />
   );
 }

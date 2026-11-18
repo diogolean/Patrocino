@@ -1,4 +1,4 @@
-import { normalizeCountry, readAffiliateCookieHeader } from "@mimelux/core/currency";
+import { countryFromHeaders, readAffiliateCookieHeader, visitorCacheHeaders } from "@mimelux/core/currency";
 import {
   ATTRIBUTION_HEADER,
   FBP_HEADER,
@@ -9,8 +9,6 @@ import {
   sanitizeUserAgent,
   touchFromCookieHeader,
 } from "@mimelux/core/attribution";
-import { countryFromIp } from "./geoip";
-
 const ipToken = /^[0-9a-fA-F:.]+$/;
 
 export const CLIENT_IP_HEADER = "x-patrocino-client-ip";
@@ -32,22 +30,38 @@ export function clientIpFrom(headers: { get(name: string): string | null }): str
   return proxyClientIp(headers.get("x-forwarded-for"));
 }
 
-/** Cloudflare country, then an explicit x-country, then the local GeoIP database. */
+/**
+ * Country from the edge headers only. The connecting address is the Cloudflare
+ * hop in front of Caddy, so it is not the visitor and must not decide currency.
+ */
 export function resolvedVisitorCountry(source?: { get(name: string): string | null } | null): string | null {
   if (!source) return null;
-  const fromHeader = normalizeCountry(source.get("cf-ipcountry")) ?? normalizeCountry(source.get("x-country"));
-  if (fromHeader) return fromHeader;
-  return countryFromIp(clientIpFrom(source) ?? null);
+  return countryFromHeaders(source);
+}
+
+export function applyVisitorCache(response: { headers: { set(name: string, value: string): void } }) {
+  for (const [name, value] of Object.entries(visitorCacheHeaders())) response.headers.set(name, value);
 }
 
 export function visitorForwardHeaders(source?: { get(name: string): string | null }): Record<string, string> {
   const headers: Record<string, string> = {};
   if (!source) return headers;
   const country = resolvedVisitorCountry(source);
-  if (country) headers["cf-ipcountry"] = country;
+  if (country) {
+    headers["cf-ipcountry"] = country;
+    headers["x-patrocino-country"] = country;
+  }
   const accept = source.get("accept-language");
   if (accept) headers["accept-language"] = accept;
   const cookie = source.get("cookie") ?? "";
+  const choice = decodeURIComponent(
+    cookie
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("mimelux-currency="))
+      ?.slice("mimelux-currency=".length) ?? "",
+  ).toUpperCase();
+  if (choice === "USD" || choice === "BRL") headers["x-patrocino-currency"] = choice;
   const locale = cookie
     .split(";")
     .map((part) => part.trim())

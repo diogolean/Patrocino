@@ -46,6 +46,10 @@ describe("preview blur", () => {
     expect(previewBlurSigma("")).toBe(6);
     expect(previewBlurSigmaVideo("")).toBe(4);
     expect(previewBlurSigma("12")).toBe(12);
+    expect(previewBlurSigma("24")).toBe(24);
+    expect(previewBlurSigmaVideo("20")).toBe(20);
+    expect(previewBlurSigma("41")).toBe(40);
+    expect(previewBlurSigma("0")).toBe(1);
     expect(previewBlurFilter(6)).toBe("gblur=sigma=6,eq=brightness=-0.15,scale=720:-2");
     expect(previewBlurFilter(previewBlurSigmaVideo("4"))).toContain("sigma=4");
   });

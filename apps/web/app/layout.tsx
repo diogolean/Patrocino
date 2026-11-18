@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { cookies, headers } from "next/headers";
 import { currencyForVisitor } from "@mimelux/core/currency";
+import { connection } from "next/server";
 import { resolvedVisitorCountry } from "@/lib/client-ip";
 import { VisitorCurrencyProvider } from "@/lib/visitor-currency";
 import { PersistLocaleCookie } from "@/components/persist-locale";
@@ -23,6 +24,9 @@ const poppins = Poppins({
   weight: ["400", "500", "600", "700", "800"],
   display: "swap",
 });
+
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 export const viewport: Viewport = {
   themeColor: "#181725",
@@ -67,13 +71,15 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  await connection();
   const locale = await getLocale();
   const messages = await getMessages();
   const header = await headers();
+  const jar = await cookies();
   const currency = currencyForVisitor({
     country: resolvedVisitorCountry(header),
-    locale: (await cookies()).get("mimelux-locale")?.value,
     acceptLanguage: header.get("accept-language"),
+    choice: jar.get("mimelux-currency")?.value,
   });
   return (
     <html lang={locale} suppressHydrationWarning>

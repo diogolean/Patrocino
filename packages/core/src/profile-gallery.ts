@@ -72,7 +72,15 @@ export type GalleryOrderItem = {
   visibility: string;
   featuredRank?: number | null;
   publishedAt?: Date | string | null;
+  media?: readonly { kind?: string | null }[] | null;
 };
+
+function isGalleryVideo(item: GalleryOrderItem) {
+  return item.media?.some((media) => media.kind === "VIDEO") === true;
+}
+
+/** Free tile column for each featured row: 0, then 2, then 1, then the pattern repeats. */
+const FREE_TILE_COLUMNS = [0, 2, 1];
 
 function publishedMs(value: Date | string | null | undefined) {
   if (!value) return 0;
@@ -93,18 +101,62 @@ export function hasFeaturedRank<T extends GalleryOrderItem>(rows: readonly T[]) 
 /**
  * With no featuredRank set, the array is returned as given so a caller that
  * already sorted by publishedAt keeps that exact order.
- * With any rank set: FREE teasers (publishedAt desc), then ranked posts
- * (lower rank first, photos and videos together), then the rest (publishedAt desc).
+ * With any rank set, rows of three are built while FREE posts remain: exactly
+ * one FREE tile (newest first) and two locked tiles. The free column follows
+ * 0, 2, 1. Every other row takes one locked video (ranked videos by
+ * featuredRank, then newest). The other locked slots take ranked photos, then
+ * the remaining locked photos newest first. After the FREE posts run out, the
+ * leftover photos and videos use layoutGalleryRows.
  */
-export function orderFeaturedGallery<T extends GalleryOrderItem>(rows: readonly T[]): T[] {
+export function orderFeaturedGallery<T extends GalleryOrderItem>(rows: readonly T[], seedKey = ""): T[] {
   if (!hasFeaturedRank(rows)) return [...rows];
+  const width = PROFILE_GALLERY_COLUMNS;
   const current = [...rows].sort(byPublishedDesc);
   const free = current.filter((row) => row.visibility === "FREE");
-  const featured = current
-    .filter((row) => row.visibility !== "FREE" && typeof row.featuredRank === "number")
-    .sort((left, right) => (left.featuredRank ?? 0) - (right.featuredRank ?? 0) || byPublishedDesc(left, right));
-  const rest = current.filter((row) => row.visibility !== "FREE" && typeof row.featuredRank !== "number");
-  return [...free, ...featured, ...rest];
+  const locked = current.filter((row) => row.visibility !== "FREE");
+  const ranked = (row: T) => typeof row.featuredRank === "number";
+  const byRank = (left: T, right: T) => (left.featuredRank ?? 0) - (right.featuredRank ?? 0) || byPublishedDesc(left, right);
+  const videos = [
+    ...locked.filter((row) => isGalleryVideo(row) && ranked(row)).sort(byRank),
+    ...locked.filter((row) => isGalleryVideo(row) && !ranked(row)),
+  ];
+  const photos = [
+    ...locked.filter((row) => !isGalleryVideo(row) && ranked(row)).sort(byRank),
+    ...locked.filter((row) => !isGalleryVideo(row) && !ranked(row)),
+  ];
+  const placed: T[] = [];
+  let row = 0;
+  let freeIndex = 0;
+  let videoIndex = 0;
+  let photoIndex = 0;
+  while (freeIndex < free.length && (videoIndex < videos.length || photoIndex < photos.length)) {
+    const lockedSlots: T[] = [];
+    if (row % 2 === 0 && videoIndex < videos.length) {
+      lockedSlots.push(videos[videoIndex] as T);
+      videoIndex += 1;
+    }
+    while (lockedSlots.length < width - 1 && photoIndex < photos.length) {
+      lockedSlots.push(photos[photoIndex] as T);
+      photoIndex += 1;
+    }
+    while (lockedSlots.length < width - 1 && videoIndex < videos.length) {
+      lockedSlots.push(videos[videoIndex] as T);
+      videoIndex += 1;
+    }
+    if (lockedSlots.length < width - 1) break;
+    const freeColumn = FREE_TILE_COLUMNS[row % FREE_TILE_COLUMNS.length] ?? 0;
+    let lockedCursor = 0;
+    for (let column = 0; column < width; column += 1) {
+      if (column === freeColumn) placed.push(free[freeIndex] as T);
+      else placed.push(lockedSlots[lockedCursor++] as T);
+    }
+    freeIndex += 1;
+    row += 1;
+  }
+  const remainingFree = free.slice(freeIndex);
+  const remainingPhotos = [...remainingFree.filter((item) => !isGalleryVideo(item)), ...photos.slice(photoIndex)];
+  const remainingVideos = [...remainingFree.filter((item) => isGalleryVideo(item)), ...videos.slice(videoIndex)];
+  return [...placed, ...layoutGalleryRows(remainingPhotos, remainingVideos, seedKey || "gallery", width)];
 }
 
 export type GallerySlot = { kind: "photo" | "video"; index: number };

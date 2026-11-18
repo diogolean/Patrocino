@@ -12,6 +12,41 @@ test("client ip trusts only the proxy hop in X-Forwarded-For", () => {
   expect(clientIpFrom(headers({ "x-forwarded-for": "not an ip" }))).toBeUndefined();
 });
 
+test("a US Cloudflare country is forwarded to the API as USD country headers", () => {
+  const forwarded = upstreamAuthHeaders({
+    headers: headers({ "cf-ipcountry": "US", "accept-language": "en", cookie: "mimelux-currency=USD" }),
+  });
+  expect(forwarded["cf-ipcountry"]).toBe("US");
+  expect(forwarded["x-patrocino-country"]).toBe("US");
+  expect(forwarded["accept-language"]).toBe("en");
+  expect(forwarded["x-patrocino-currency"]).toBe("USD");
+});
+
+test("country headers win in order and a proxy address is not a country", () => {
+  const forwarded = upstreamAuthHeaders({
+    headers: headers({
+      "cf-ipcountry": "US",
+      "x-vercel-ip-country": "BR",
+      "x-patrocino-country": "BR",
+      "x-forwarded-for": "177.0.0.8",
+      "accept-language": "pt-BR",
+    }),
+  });
+  expect(forwarded["cf-ipcountry"]).toBe("US");
+  expect(forwarded["x-patrocino-country"]).toBe("US");
+  const languageOnly = upstreamAuthHeaders({
+    headers: headers({ "x-forwarded-for": "177.0.0.8", "accept-language": "en-US" }),
+  });
+  expect(languageOnly["cf-ipcountry"]).toBeUndefined();
+  expect(languageOnly["x-patrocino-country"]).toBeUndefined();
+  expect(languageOnly["accept-language"]).toBe("en-US");
+  const vercel = upstreamAuthHeaders({
+    headers: headers({ "x-vercel-ip-country": "DE", "accept-language": "pt-BR" }),
+  });
+  expect(vercel["cf-ipcountry"]).toBe("DE");
+  expect(vercel["x-patrocino-country"]).toBe("DE");
+});
+
 test("upstream headers include the proxy secret only when it is configured", () => {
   const previous = process.env.INTERNAL_PROXY_SECRET;
   process.env.INTERNAL_PROXY_SECRET = "local-secret";
