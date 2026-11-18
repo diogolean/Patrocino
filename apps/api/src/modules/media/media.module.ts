@@ -32,6 +32,7 @@ import { ensureBlurredPreview, writePosterAndPreview } from "./derivatives";
 import {
   alignMediaDerivatives,
   canReadDerivative,
+  guestLockedVideoUrls,
   isPrivateMediaKey,
   posterKeyFor,
   previewKeyFor,
@@ -341,6 +342,14 @@ export class MediaController {
         })(),
         previewUrl: staticMediaUrl(previewKey, previewVersion),
         posterUrl,
+        clipUrl: purchased
+          ? null
+          : guestLockedVideoUrls({
+              previewKey,
+              posterKey: media.posterKey,
+              storageKey: media.storageKey,
+              previewClipKey: media.previewClipKey,
+            }).clipUrl,
         fileUrl: null,
         durationMs: media.durationMs,
         publishedAt: post.publishedAt?.toISOString() ?? null,

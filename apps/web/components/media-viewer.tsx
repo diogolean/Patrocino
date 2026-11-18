@@ -10,6 +10,7 @@ export type ViewerSlide = {
   src?: string;
   mediaId?: string;
   poster?: string;
+  teaserSrc?: string;
   caption?: string;
 };
 
@@ -45,7 +46,16 @@ export function MediaViewer({
     : slide?.src
       ? { id: slide.id, src: slide.src }
       : null;
-  const failed = Boolean(slide && failedId === slide.id && !resolved);
+  const failed = Boolean(slide && failedId === slide.id && !resolved && !slide.teaserSrc);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReducedMotion(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  const teaser = slide?.teaserSrc && !reducedMotion && (!resolved || !slide.mediaId) ? slide.teaserSrc : null;
 
   useEffect(() => {
     if (!slide?.mediaId) return;
@@ -143,7 +153,21 @@ export function MediaViewer({
           className="flex h-full items-center justify-center overflow-hidden px-3"
           style={zoom === 1 ? undefined : { transform: `scale(${zoom})` }}
         >
-          {failed ? (
+          {teaser ? (
+            <video
+              key={teaser}
+              src={teaser}
+              poster={slide.poster}
+              muted
+              autoPlay
+              loop
+              playsInline
+              draggable={false}
+              onContextMenu={shield}
+              onDragStart={shield}
+              className="media-shield max-h-full max-w-full bg-black object-cover"
+            />
+          ) : failed ? (
             <p className="px-6 text-center text-sm text-white/80">{t("openFailed")}</p>
           ) : !resolved ? (
             <p className="text-sm text-white/70">{t("opening")}</p>

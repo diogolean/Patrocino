@@ -143,6 +143,7 @@ function parseVideo(value: unknown): SubscriberVideo | null {
   if (typeof video.id !== "string" || typeof video.mediaId !== "string") return null;
   const preview = typeof video.previewUrl === "string" && !video.previewUrl.includes("/private/") ? video.previewUrl : null;
   const poster = typeof video.posterUrl === "string" && !video.posterUrl.includes("/private/") ? video.posterUrl : null;
+  const clip = typeof video.clipUrl === "string" && !video.clipUrl.includes("/private/") ? video.clipUrl : null;
   return {
     id: video.id,
     mediaId: video.mediaId,
@@ -152,6 +153,7 @@ function parseVideo(value: unknown): SubscriberVideo | null {
     currency: video.currency === "BRL" || video.currency === "USD" ? video.currency : undefined,
     previewUrl: preview,
     posterUrl: poster,
+    clipUrl: clip,
     purchased: video.purchased === true,
     subscribed: video.subscribed === true,
     durationMs: typeof video.durationMs === "number" ? video.durationMs : null,

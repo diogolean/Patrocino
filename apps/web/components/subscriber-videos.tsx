@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { LockKeyhole, Play } from "lucide-react";
 import { useLocale } from "next-intl";
 import { formatMoney } from "@mimelux/core/currency";
@@ -21,11 +22,25 @@ function shield(event: { preventDefault: () => void }) {
   event.preventDefault();
 }
 
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduced(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  return reduced;
+}
+
 export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; onOpen: () => void }) {
   const locale = useLocale();
   const duration = formatDuration(video.durationMs);
+  const reducedMotion = useReducedMotion();
   const { locked, cover } = ppvCardView(video);
   const price = formatMoney(video.priceCents, video.currency ?? "BRL", locale);
+  const clip = locked && video.clipUrl && !reducedMotion ? video.clipUrl : null;
   return (
     <button
       type="button"
@@ -36,18 +51,30 @@ export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; o
       onDragStart={shield}
       className="media-shield relative aspect-[3/4] overflow-hidden rounded-[16px] bg-ink text-left text-white"
     >
-      <span
-        aria-hidden
-        className="absolute inset-0 scale-105 bg-cover bg-center"
-        style={cover ? { backgroundImage: `url("${cover.replace(/"/g, "")}")` } : undefined}
-      />
-      <span className={`absolute inset-0 ${locked ? "bg-black/25" : "bg-black/15"}`} />
+      {clip ? (
+        <video
+          src={clip}
+          poster={cover ?? undefined}
+          muted
+          autoPlay
+          loop
+          playsInline
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        <span
+          aria-hidden
+          className="absolute inset-0 scale-[1.02] bg-cover bg-center"
+          style={cover ? { backgroundImage: `url("${cover.replace(/"/g, "")}")` } : undefined}
+        />
+      )}
+      <span className={`absolute inset-0 ${locked ? "bg-black/10" : "bg-black/15"}`} />
       <span className="relative grid h-full place-items-center p-2 text-center">
         <span>
           <span className="mx-auto flex items-center justify-center gap-1">
             {locked && (
-              <span className="grid size-8 place-items-center rounded-full bg-black/50">
-                <LockKeyhole className="size-3.5" />
+              <span className="grid size-7 place-items-center rounded-full bg-black/40">
+                <LockKeyhole className="size-3" />
               </span>
             )}
             <span className="grid size-8 place-items-center rounded-full bg-black/50">

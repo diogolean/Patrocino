@@ -117,14 +117,14 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
             alt=""
             loading="lazy"
             decoding="async"
-            className="h-full w-full scale-105 object-cover blur-sm"
+            className="h-full w-full scale-[1.02] object-cover"
           />
         ) : (
           <PostVisual
             post={post}
             locked={locked}
             testId={post.playback ? "feed-video" : undefined}
-            lockedClassName={post.image.includes("/previews/") ? "scale-[1.01]" : "scale-105 blur-sm"}
+            lockedClassName="scale-[1.02]"
           />
         )}
         {visitorLocked && (
@@ -142,7 +142,7 @@ export function PostCard({ post, creator }: { post: Post; creator: Creator }) {
         )}
         {locked && !visitorLocked && (
           <div className="absolute inset-0 grid place-items-center bg-ink/30 px-6 text-center">
-            <div className="max-w-xs rounded-[26px] border border-white/20 bg-ink/78 p-6 text-white shadow-2xl backdrop-blur-md">
+            <div className="max-w-xs rounded-[26px] border border-white/15 bg-ink/55 p-5 text-white shadow-xl">
               <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-white/10">
                 <LockKeyhole className="size-5" />
               </span>

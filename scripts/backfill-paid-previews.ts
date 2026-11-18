@@ -19,9 +19,16 @@ import { backfillPaidPreviews } from "../apps/api/src/modules/media/paid-preview
  *   pnpm exec tsx scripts/backfill-paid-previews.ts --regenerate-previews --apply
  *   pnpm exec tsx scripts/backfill-paid-previews.ts --regenerate-previews --force --apply
  *
- * --regenerate-previews rebuilds the blur from the clear source (PREVIEW_BLUR_SIGMA,
- * default 8) and writes previews/<id>.v2.jpg. A second run is a no-op. --force writes
+ * --regenerate-previews rebuilds the blur from the clear source. Stills use
+ * PREVIEW_BLUR_SIGMA (default 6) and video posters use PREVIEW_BLUR_SIGMA_VIDEO
+ * (default 4). The new file is previews/<id>.v3.jpg or the next free version, so a
+ * cached older preview is never reused. A second run is a no-op. --force writes
  * the next version. Old preview files are left on disk so their URLs do not 404.
+ *
+ * --clips builds a muted 3-second H.264 teaser for locked subscriber videos at
+ * previews/<id>.clip.v1.mp4. It reads a copy of the original and never rewrites it.
+ *   pnpm exec tsx scripts/backfill-paid-previews.ts --clips
+ *   pnpm exec tsx scripts/backfill-paid-previews.ts --clips --apply
  *
  * Deploy order:
  * 1. Deploy this code first, so public galleries point at blurred previews.
@@ -50,11 +57,12 @@ async function main() {
   const apply = process.argv.includes("--apply");
   const regeneratePreviews = process.argv.includes("--regenerate-previews") || process.argv.includes("--force");
   const force = process.argv.includes("--force");
+  const clips = process.argv.includes("--clips");
   const creatorFlag = process.argv.indexOf("--creator");
   const creatorKey = creatorFlag >= 0 ? process.argv[creatorFlag + 1] : undefined;
   if (creatorFlag >= 0 && !creatorKey) throw new Error("--creator needs a username or id");
   const creatorId = creatorKey ? await creatorIdFrom(creatorKey) : undefined;
-  const report = await backfillPaidPreviews({ apply, creatorId, regeneratePreviews, force });
+  const report = await backfillPaidPreviews({ apply, creatorId, regeneratePreviews, force, clips });
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }
 

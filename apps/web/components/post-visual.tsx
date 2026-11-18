@@ -6,7 +6,7 @@ export function PostVisual({
   locked,
   testId,
   autoPlay = false,
-  lockedClassName = "scale-105 blur-sm",
+  lockedClassName = "scale-[1.02]",
 }: {
   post: Post;
   locked: boolean;

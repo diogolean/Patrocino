@@ -76,7 +76,11 @@ export function previewKeyFor(input: { creatorId: string; mediaId: string; creat
   return `uploads/${input.creatorId}/previews/${input.mediaId}.jpg`;
 }
 
-/** Next public preview key for a rebuilt blur. Null when this preview was already regenerated and force is off. */
+/**
+ * Next public preview key for a rebuilt blur.
+ * The lighter blur always lands on v3 or newer so a cached v2 URL is never reused.
+ * Null when that key is already current and force is off.
+ */
 export function regeneratedPreviewKey(input: {
   creatorId: string;
   mediaId: string;
@@ -85,11 +89,51 @@ export function regeneratedPreviewKey(input: {
   force?: boolean;
 }) {
   const version = derivativeVersion(input.currentKey, input.mediaId, "previews");
-  const already = version != null && version >= 2;
+  const already = version != null && version >= 3;
   if (already && !input.force) return null;
-  const next = input.force ? (version ?? 1) + 1 : 2;
+  const next = input.force ? (version ?? 2) + 1 : 3;
   const folder = creatorHidesDerivatives(input.creatorStatus) ? "private/previews" : "previews";
   return `uploads/${input.creatorId}/${folder}/${input.mediaId}.v${next}.jpg`;
+}
+
+function clipVersion(key: string | null | undefined, mediaId: string) {
+  if (!key) return null;
+  const match = key.match(new RegExp(`/${mediaId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.clip\\.v(\\d+)\\.mp4$`));
+  if (!match) return null;
+  const version = Number(match[1]);
+  return Number.isInteger(version) && version > 0 ? version : null;
+}
+
+/** Public muted teaser. Null when this version is already recorded and force is off. */
+export function nextPreviewClipKey(input: {
+  creatorId: string;
+  mediaId: string;
+  creatorStatus: string;
+  currentKey?: string | null;
+  force?: boolean;
+}) {
+  const version = clipVersion(input.currentKey, input.mediaId);
+  if (version != null && !input.force) return null;
+  const next = input.force ? (version ?? 0) + 1 : 1;
+  const folder = creatorHidesDerivatives(input.creatorStatus) ? "private/previews" : "previews";
+  return `uploads/${input.creatorId}/${folder}/${input.mediaId}.clip.v${next}.mp4`;
+}
+
+/** What a guest may see for a locked video. The sharp poster and the original file are never included. */
+export function guestLockedVideoUrls(input: {
+  previewKey: string | null;
+  posterKey: string | null;
+  storageKey: string;
+  previewClipKey: string | null;
+}) {
+  void input.posterKey;
+  void input.storageKey;
+  return {
+    previewUrl: staticMediaUrl(input.previewKey),
+    clipUrl: staticMediaUrl(input.previewClipKey),
+    posterUrl: null,
+    fileUrl: null,
+  };
 }
 
 /** Static /media URL for a derivative that is allowed on the public disk. Private keys return null. */

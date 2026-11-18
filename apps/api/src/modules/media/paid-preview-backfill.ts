@@ -2,8 +2,8 @@ import { randomBytes } from "node:crypto";
 import { copyFile, mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { database } from "@mimelux/db/runtime";
-import { alignMediaDerivatives, posterKeyFor, previewKeyFor, regeneratedPreviewKey } from "./derivative-access";
-import { isRealPreviewFile, writePosterAndPreview } from "./derivatives";
+import { alignMediaDerivatives, nextPreviewClipKey, posterKeyFor, previewKeyFor, regeneratedPreviewKey } from "./derivative-access";
+import { isRealClipFile, isRealPreviewFile, writePosterAndPreview, writePreviewClip, mediaDurationSeconds } from "./derivatives";
 import { openStorage, type DiskStorage } from "./storage";
 
 export type PaidPreviewBackfillOptions = {
@@ -12,8 +12,10 @@ export type PaidPreviewBackfillOptions = {
   creatorId?: string;
   /** Rebuild blurred previews from the clear source onto a new versioned key. */
   regeneratePreviews?: boolean;
-  /** With regeneratePreviews, bump the version even when a v2 preview already exists. */
+  /** With regeneratePreviews, bump the version even when a v3 preview already exists. */
   force?: boolean;
+  /** Build a muted 3s blurred clip for locked subscriber videos. */
+  clips?: boolean;
 };
 
 export type PaidPreviewBackfillReport = {
@@ -21,6 +23,7 @@ export type PaidPreviewBackfillReport = {
   scanned: number;
   postersMoved: number;
   previewsWritten: number;
+  clipsWritten: number;
   unchanged: number;
   failed: { mediaId: string; message: string }[];
 };
@@ -77,6 +80,7 @@ export async function backfillPaidPreviews(options: PaidPreviewBackfillOptions =
     scanned: 0,
     postersMoved: 0,
     previewsWritten: 0,
+    clipsWritten: 0,
     unchanged: 0,
     failed: [],
   };
@@ -95,6 +99,7 @@ export async function backfillPaidPreviews(options: PaidPreviewBackfillOptions =
       storageKey: true,
       posterKey: true,
       previewKey: true,
+      previewClipKey: true,
       post: {
         select: {
           visibility: true,
@@ -176,6 +181,58 @@ export async function backfillPaidPreviews(options: PaidPreviewBackfillOptions =
       const message = error instanceof Error ? error.message : "unknown";
       report.failed.push({ mediaId: row.id, message });
       process.stderr.write(`paid preview backfill failed for ${row.id}: ${message}\n`);
+    }
+  }
+  if (options.clips) {
+    for (const row of rows) {
+      const post = row.post;
+      if (!post || row.kind !== "VIDEO") continue;
+      if (post.visibility !== "SUBSCRIBERS" && post.visibility !== "SUBSCRIBER_PPV") continue;
+      if (!row.storageKey || row.storageKey === "pending") continue;
+      try {
+        let target = nextPreviewClipKey({
+          creatorId: post.creatorId,
+          mediaId: row.id,
+          creatorStatus: post.creator.status,
+          currentKey: row.previewClipKey,
+          force: options.force,
+        });
+        if (!target && row.previewClipKey && !(await isRealClipFile(storage.resolve(row.previewClipKey)))) {
+          target = nextPreviewClipKey({
+            creatorId: post.creatorId,
+            mediaId: row.id,
+            creatorStatus: post.creator.status,
+            currentKey: row.previewClipKey,
+            force: true,
+          });
+        }
+        if (!target) continue;
+        if (!apply) {
+          report.clipsWritten += 1;
+          continue;
+        }
+        if (!(await storage.exists(row.storageKey))) throw new Error("no source video");
+        const scratch = storage.resolve(`uploads/tmp/clip-${randomBytes(8).toString("hex")}`);
+        await mkdir(scratch, { recursive: true });
+        const sourceCopy = path.join(scratch, "source");
+        const clipOut = path.join(scratch, "clip.mp4");
+        try {
+          await copyFile(storage.resolve(row.storageKey), sourceCopy);
+          const duration = await mediaDurationSeconds(sourceCopy);
+          await writePreviewClip(sourceCopy, clipOut, duration);
+          if (!(await isRealClipFile(clipOut))) throw new Error("teaser clip was not created");
+          await mkdir(path.dirname(storage.resolve(target)), { recursive: true });
+          await rename(clipOut, storage.resolve(target));
+        } finally {
+          await rm(scratch, { recursive: true, force: true });
+        }
+        await database.media.update({ where: { id: row.id }, data: { previewClipKey: target } });
+        report.clipsWritten += 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "unknown";
+        report.failed.push({ mediaId: row.id, message });
+        process.stderr.write(`preview clip failed for ${row.id}: ${message}\n`);
+      }
     }
   }
   return report;

@@ -652,7 +652,7 @@ export function CreatorProfile({
           const locked = postLocked(post);
           return (
             <div key={post.id} data-testid="profile-post" data-locked={locked} onContextMenu={(event) => event.preventDefault()} className={`clickable media-shield group relative aspect-[3/4] overflow-hidden rounded-[16px] ${post.playback ? "bg-black" : "bg-surface"}`}>
-              <PostVisual post={post} locked={locked} testId={post.playback ? "profile-video" : undefined} autoPlay lockedClassName={post.image.includes("/previews/") ? "scale-[1.01]" : undefined} />
+              <PostVisual post={post} locked={locked} testId={post.playback ? "profile-video" : undefined} autoPlay lockedClassName="scale-[1.02]" />
               {!locked && !post.playback && (
                 <button type="button" aria-label={t("openPhoto")} className="absolute inset-0 z-[2]" onClick={() => openSlides(post.id)} />
               )}
@@ -664,7 +664,7 @@ export function CreatorProfile({
               {locked && (
                 <Link
                   href={post.visibility === "subscriber" ? planHref(1) : `/checkout?kind=post&id=${post.id}&creator=${creator.id}&return=/creator/${creator.username}`}
-                  className="absolute inset-0 z-[3] grid place-items-center bg-black/15 p-2 text-center text-white"
+                  className="absolute inset-0 z-[3] grid place-items-center bg-black/10 p-2 text-center text-white"
                 >
                   <span>
                     <span className="mx-auto grid size-8 place-items-center rounded-full bg-black/40"><LockKeyhole className="size-3.5" /></span>
@@ -735,6 +735,26 @@ export function CreatorProfile({
       <PremiumModal open={Boolean(purchase)} onClose={() => setPurchase(null)} title={purchase ? media("exclusiveVideo", { n: purchase.exclusiveIndex }) : t("videoFallback")} description={t("purchaseBody")}>
         {purchase && (
           <div className="space-y-3">
+            {purchase.clipUrl ? (
+              <>
+                <video
+                  src={purchase.clipUrl}
+                  poster={purchase.previewUrl ?? undefined}
+                  muted
+                  autoPlay
+                  loop
+                  playsInline
+                  className="aspect-[3/4] w-full rounded-2xl bg-black object-cover motion-reduce:hidden"
+                />
+                {purchase.previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={purchase.previewUrl} alt="" className="hidden aspect-[3/4] w-full rounded-2xl object-cover motion-reduce:block" />
+                ) : null}
+              </>
+            ) : purchase.previewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={purchase.previewUrl} alt="" className="aspect-[3/4] w-full rounded-2xl object-cover" />
+            ) : null}
             <p className="text-sm font-semibold">
               {formatDuration(purchase.durationMs) ? `${formatDuration(purchase.durationMs)} · ` : ""}
               {money(purchase.priceCents)}

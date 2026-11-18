@@ -4,6 +4,7 @@ import { exclusiveVideoIndex, exclusiveVideoLabel } from "@mimelux/core/exclusiv
 import { hasFeaturedRank, orderFeaturedGallery, postsTabSlots } from "@mimelux/core/profile-gallery";
 import { signMediaGrant } from "../media/signed-url";
 import { fanSubscribed, paidPostPurchase } from "../media/entitlement";
+import { guestLockedVideoUrls } from "../media/derivative-access";
 import { publicMediaUrl } from "./catalog";
 
 const PAGE_LIMIT = 24;
@@ -20,7 +21,7 @@ type Row = {
   priceCentsUsd: number | null;
   guestPriceCents: number | null;
   guestPriceCentsUsd: number | null;
-  media: { id: string; kind: string; posterKey: string | null; previewKey: string | null; durationMs: number | null }[];
+  media: { id: string; kind: string; posterKey: string | null; previewKey: string | null; previewClipKey: string | null; storageKey: string; durationMs: number | null }[];
 };
 
 function byNewest(left: Row, right: Row) {
@@ -96,7 +97,7 @@ export async function loadCreatorGallery(input: {
       guestPriceCents: true,
       guestPriceCentsUsd: true,
       media: {
-        select: { id: true, kind: true, posterKey: true, previewKey: true, durationMs: true },
+        select: { id: true, kind: true, posterKey: true, previewKey: true, previewClipKey: true, storageKey: true, durationMs: true },
         orderBy: { createdAt: "asc" },
       },
     },
@@ -167,6 +168,12 @@ export async function loadCreatorGallery(input: {
         defaultGuestUsd: creator.guestVideoPriceCentsUsd,
       });
       const purchased = bought.has(row.id) || (actor ? await paidPostPurchase(actor.id, row.id) : false);
+      const teaser = guestLockedVideoUrls({
+        previewKey: media.previewKey,
+        posterKey: media.posterKey,
+        storageKey: media.storageKey,
+        previewClipKey: media.previewClipKey,
+      });
       items.push({
         kind: "video" as const,
         video: {
@@ -176,8 +183,9 @@ export async function loadCreatorGallery(input: {
           priceCents: priced.amountCents,
           subscriberCents: priced.subscriberCents,
           currency: input.currency,
-          previewUrl: publicMediaUrl(media, row.visibility),
+          previewUrl: teaser.previewUrl ?? publicMediaUrl(media, row.visibility),
           posterUrl: purchased && actor ? posterLink(media.id, actor.id) : null,
+          clipUrl: purchased ? null : teaser.clipUrl,
           purchased,
           subscribed,
           durationMs: media.durationMs,

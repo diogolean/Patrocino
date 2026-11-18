@@ -302,6 +302,7 @@ model Media {
   durationMs Int?
   posterKey  String?
   previewKey String?
+  previewClipKey String?
   byteSize   Int?
   private    Boolean   @default(false)
   isDemo     Boolean   @default(false)

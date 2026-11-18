@@ -293,8 +293,8 @@ export function LockedMediaPlaceholder({
   action?: ReactNode;
 }) {
   return (
-    <div className="absolute inset-0 grid place-items-center bg-ink/35 p-5 text-center">
-      <div className="max-w-xs rounded-[24px] bg-ink/80 p-5 text-white backdrop-blur-md">
+    <div className="absolute inset-0 grid place-items-center bg-black/10 p-5 text-center">
+      <div className="max-w-xs rounded-[24px] bg-ink/55 p-4 text-white">
         <span className="mx-auto grid size-11 place-items-center rounded-2xl bg-white/10"><LockKeyhole className="size-5" /></span>
         <h3 className="mt-3 text-sm font-extrabold">{title}</h3>
         <p className="mt-2 text-[10px] leading-5 text-white/65">{description}</p>

@@ -10,6 +10,8 @@ export type SubscriberVideo = {
   previewUrl: string | null;
   /** Unblurred cover, only sent to a fan who bought the video. */
   posterUrl?: string | null;
+  /** Muted blurred loop. Absent when the buyer can watch the original. */
+  clipUrl?: string | null;
   purchased: boolean;
   subscribed: boolean;
   durationMs: number | null;

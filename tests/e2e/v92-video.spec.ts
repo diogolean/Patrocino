@@ -26,7 +26,7 @@ test("demo video posts render a 3:4 player and keep locked clips behind the post
   await expect(locked).toHaveCount(1);
   await expect(locked.locator("video")).toHaveCount(0);
   await expect(locked.locator("img")).toHaveAttribute("src", "/media/models/demo/luna-ferraz/v001.jpg?v=2");
-  await expect(locked.locator("img")).toHaveClass(/blur-/);
+  await expect(locked.locator("img")).not.toHaveClass(/blur-/);
   await expect(locked).toHaveClass(/aspect-\[3\/4\]/);
 
   await page.getByRole("link", { name: /1 mês/ }).click();
@@ -52,7 +52,7 @@ test("demo video posts render a 3:4 player and keep locked clips behind the post
   expect(feedHtml).not.toContain("demo-media-nina-valenca-v001");
   const lockedCover = page.locator("article").filter({ hasText: "Clara Duarte" }).locator("[data-testid=locked-cover]").first();
   await expect(lockedCover).toHaveAttribute("src", /creator-clara-duarte-cover/);
-  await expect(lockedCover).toHaveClass(/blur-/);
+  await expect(lockedCover).not.toHaveClass(/blur-/);
   const feed = await freeFeed.evaluate((video) => {
     if (!(video instanceof HTMLVideoElement)) return null;
     video.scrollIntoView({ block: "center" });

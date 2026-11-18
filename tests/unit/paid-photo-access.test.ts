@@ -596,7 +596,7 @@ describe("paid photo paywall", () => {
     const firstBlur = await backfillPaidPreviews({ apply: true, creatorId: ids.creatorA, regeneratePreviews: true });
     expect(firstBlur.previewsWritten).toBeGreaterThan(0);
     const rebuilt = await database.media.findUniqueOrThrow({ where: { id: ids.ppvMedia } });
-    expect(rebuilt.previewKey).toBe(`uploads/${ids.creatorA}/previews/${ids.ppvMedia}.v2.jpg`);
+    expect(rebuilt.previewKey).toBe(`uploads/${ids.creatorA}/previews/${ids.ppvMedia}.v3.jpg`);
     expect(await readFile(path.join(ids.root, `uploads/${ids.creatorA}/previews/${ids.ppvMedia}.jpg`))).toBeTruthy();
     const secondBlur = await backfillPaidPreviews({ apply: true, creatorId: ids.creatorA, regeneratePreviews: true });
     expect(secondBlur.previewsWritten).toBe(0);
