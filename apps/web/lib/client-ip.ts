@@ -1,4 +1,14 @@
 import { normalizeCountry, readAffiliateCookieHeader } from "@mimelux/core/currency";
+import {
+  ATTRIBUTION_HEADER,
+  FBP_HEADER,
+  USER_AGENT_HEADER,
+  attributionHeaderValue,
+  readCookieValue,
+  sanitizeFbp,
+  sanitizeUserAgent,
+  touchFromCookieHeader,
+} from "@mimelux/core/attribution";
 import { countryFromIp } from "./geoip";
 
 const ipToken = /^[0-9a-fA-F:.]+$/;
@@ -46,6 +56,12 @@ export function visitorForwardHeaders(source?: { get(name: string): string | nul
   if (locale) headers["x-patrocino-locale"] = decodeURIComponent(locale);
   const click = readAffiliateCookieHeader(cookie);
   if (click?.clickId) headers["x-patrocino-click"] = click.clickId;
+  const attribution = attributionHeaderValue(touchFromCookieHeader(cookie));
+  if (attribution) headers[ATTRIBUTION_HEADER] = attribution;
+  const fbp = sanitizeFbp(readCookieValue(cookie, "_fbp"));
+  if (fbp) headers[FBP_HEADER] = fbp;
+  const userAgent = sanitizeUserAgent(source.get("user-agent"));
+  if (userAgent) headers[USER_AGENT_HEADER] = userAgent;
   return headers;
 }
 

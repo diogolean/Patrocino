@@ -41,6 +41,8 @@ import { listBuyerPaymentAlerts, markPaymentAlertSeen } from "./payment-alerts";
 import { logPayment } from "./payment-log";
 import { currencyForVisitor } from "@mimelux/core/currency";
 import { chargeDraftForUser, ensureQuotedPurchase, quoteCharge, quoteRequestSchema } from "./quote-charge";
+import { touchFromRequest } from "./request-touch";
+import { database } from "@mimelux/db/runtime";
 
 function expayEnabled() {
   return paymentMethodsEnabled().expay;
@@ -124,6 +126,7 @@ export class ExpayPaymentsController {
     @Headers("x-patrocino-locale") locale: string | undefined,
     @Headers("accept-language") acceptLanguage: string | undefined,
     @Headers("x-patrocino-click") clickId: string | undefined,
+    @Req() request: Request,
     @Body() body: unknown,
   ) {
     const user = await requireUser(authorization);
@@ -131,7 +134,7 @@ export class ExpayPaymentsController {
     const currency = currencyForVisitor({ country, locale, acceptLanguage });
     const draft = await chargeDraftForUser(user, body, currency, clickId);
     if (draft.currency !== "BRL") throw apiError(409, "PIX_IS_ONLY_AVAILABLE_IN_BRL", "Pix is only available in BRL.");
-    await ensureQuotedPurchase(draft);
+    const purchase = await ensureQuotedPurchase(draft, touchFromRequest(request));
     const store = createPrismaPaymentStore();
     const expay = client();
     try {
@@ -139,7 +142,7 @@ export class ExpayPaymentsController {
         draft.purpose === "subscription"
           ? await createSubscriptionPix(expay, store, draft)
           : await createOneOffPixCharge(expay, store, draft);
-      return present(charge);
+      return { ...present(charge), eventId: purchase.id, currency: "BRL" as const };
     } catch (error) {
       if (error instanceof ExpayError && error.message === "idempotency_conflict") {
         throw apiError(409, "IDEMPOTENCY_KEY_ALREADY_USED", "Idempotency key already used.");
@@ -172,7 +175,8 @@ export class ExpayPaymentsController {
     try {
       const charge = await syncChargeFromExpay(client(), store, id);
       if (!charge) throw apiError(404, "CHARGE_NOT_FOUND", "Charge not found");
-      return present(charge);
+      const purchase = await database.purchase.findUnique({ where: { idempotencyKey: charge.idempotencyKey }, select: { id: true } });
+      return { ...present(charge), eventId: purchase?.id, currency: "BRL" as const };
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       if (error instanceof ExpayError) throw apiError(503, "EXPAY_UNAVAILABLE", error.message);

@@ -2,6 +2,7 @@ import { apiError } from "../../http/api-error";
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Prisma, database } from "@mimelux/db/runtime";
 import { amountInCurrency, ppvQuote, type ChargeCurrency } from "@mimelux/core/currency";
+import { purchaseColumns, utmColumns, type PurchaseTouch } from "@mimelux/core/attribution";
 import { chargeForPlan } from "./plan-price";
 import type { ChargeDraft, PaymentPurpose } from "@mimelux/core/expay";
 import { z } from "zod";
@@ -262,7 +263,7 @@ function samePurchase(
   );
 }
 
-export async function ensureQuotedPurchase(draft: ChargeDraft & { currency?: ChargeCurrency }) {
+export async function ensureQuotedPurchase(draft: ChargeDraft & { currency?: ChargeCurrency }, touch?: PurchaseTouch | null) {
   const existing = await database.purchase.findUnique({ where: { idempotencyKey: draft.idempotencyKey } });
   if (existing) {
     if (!samePurchase(existing, draft)) throw apiError(409, "IDEMPOTENCY_KEY_ALREADY_USED", "Idempotency key already used.");
@@ -276,6 +277,8 @@ export async function ensureQuotedPurchase(draft: ChargeDraft & { currency?: Cha
     });
     if (current) {
       subscriptionId = current.id;
+      const columns = current.utmSource || current.utmMedium || current.utmCampaign || current.utmContent || current.utmTerm ? {} : utmColumns(touch);
+      if (Object.keys(columns).length) await database.subscription.update({ where: { id: current.id }, data: columns });
     } else {
       const created = await database.subscription.create({
         data: {
@@ -283,6 +286,7 @@ export async function ensureQuotedPurchase(draft: ChargeDraft & { currency?: Cha
           creatorId: draft.creatorId,
           planId: draft.subjectId,
           status: "PENDING",
+          ...utmColumns(touch),
         },
       });
       subscriptionId = created.id;
@@ -299,6 +303,7 @@ export async function ensureQuotedPurchase(draft: ChargeDraft & { currency?: Cha
         currency: draft.currency ?? "BRL",
         status: "PENDING",
         idempotencyKey: draft.idempotencyKey,
+        ...purchaseColumns(touch),
         ...(draft.purpose === "post" ? { postId: draft.subjectId } : {}),
         ...(draft.purpose === "message" ? { messageId: draft.subjectId } : {}),
         ...(draft.purpose === "pack" ? { contentPackId: draft.subjectId } : {}),

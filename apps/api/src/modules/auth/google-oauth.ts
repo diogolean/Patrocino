@@ -4,6 +4,7 @@ import { legalConfig } from "@mimelux/core/legal";
 import { safeReturnPath } from "@mimelux/core/return-path";
 import { database } from "@mimelux/db/runtime";
 import { rememberReferral } from "../affiliates/tracking";
+import { utmColumns, type TouchAttribution } from "@mimelux/core/attribution";
 
 export const GOOGLE_CALLBACK_URL = "https://patrocino.com/v1/auth/google/callback";
 export const GOOGLE_SCOPES = "openid email profile";
@@ -120,7 +121,7 @@ export async function fetchGoogleProfile(input: {
   return profileFromGoogle(await profileResponse.json().catch(() => null));
 }
 
-export async function accountForGoogleProfile(profile: GoogleProfile, state: GoogleState) {
+export async function accountForGoogleProfile(profile: GoogleProfile, state: GoogleState, touch?: TouchAttribution | null) {
   if (!profile.emailVerified) return { error: "unverified_email" as const };
   const bySub = await database.user.findUnique({ where: { googleSub: profile.sub } });
   if (bySub && !bySub.deletedAt && !bySub.suspendedAt) {
@@ -148,6 +149,7 @@ export async function accountForGoogleProfile(profile: GoogleProfile, state: Goo
       googleSub: profile.sub,
       acceptedTermsAt: new Date(),
       termsVersion: legalConfig.termsVersion,
+      ...utmColumns(touch),
       profile: {
         create: {
           name: profile.name,

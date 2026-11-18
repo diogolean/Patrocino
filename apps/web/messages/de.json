@@ -1216,7 +1216,17 @@
       "apply": "Anwenden"
     },
     "newDelta": "neu",
-    "before": "vorher: {value}"
+    "before": "vorher: {value}",
+    "utmTitle": "Verkaufsquelle",
+    "utmHint": "First-Touch-UTM am Zahlungssatz.",
+    "utmEmpty": "Noch keine bezahlten Verkäufe.",
+    "utmDownload": "CSV herunterladen",
+    "utmWhen": "Wann",
+    "utmType": "Art",
+    "utmCreator": "Creatorin",
+    "utmValue": "Betrag",
+    "utmSource": "Quelle",
+    "utmCampaign": "Kampagne"
   },
   "setPassword": {
     "title": "Passwort festlegen",

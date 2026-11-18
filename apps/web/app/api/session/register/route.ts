@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { AccountRole } from "@mimelux/core";
+import { SIGNUP_EVENT_COOKIE, touchFromCookieHeader } from "@mimelux/core/attribution";
 import { readAffiliateCookieHeader } from "@mimelux/core/currency";
 import { safeReturnPath } from "@/lib/auth-return";
 import { apiAuth, authErrorMessage, toApiRole, toSessionUser } from "@/lib/api-auth";
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   } | null;
   const returnPath = safeReturnPath(body?.next);
   const referral = readAffiliateCookieHeader(request.headers.get("cookie"));
+  const touch = touchFromCookieHeader(request.headers.get("cookie"));
   const { response, data } = await apiAuth("/auth/register", {
     name: body?.name ?? "",
     email: body?.email ?? "",
@@ -28,6 +30,7 @@ export async function POST(request: Request) {
     locale: body?.locale,
     ...(returnPath ? { next: returnPath } : {}),
     ...(referral?.clickId ? { clickId: referral.clickId } : {}),
+    ...(touch ? { attribution: { source: touch.source, medium: touch.medium, campaign: touch.campaign, content: touch.content, term: touch.term } } : {}),
   }, request);
   if (!response.ok || !data.user || !data.accessToken || !data.refreshToken) {
     return NextResponse.json(
@@ -40,5 +43,12 @@ export async function POST(request: Request) {
   }
   const next = NextResponse.json({ user: toSessionUser(data.user) });
   applyAuthCookies(next, { accessToken: data.accessToken, refreshToken: data.refreshToken });
+  next.cookies.set(SIGNUP_EVENT_COOKIE, "1", {
+    path: "/",
+    maxAge: 86400,
+    sameSite: "lax",
+    httpOnly: false,
+    secure: process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production",
+  });
   return next;
 }

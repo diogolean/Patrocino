@@ -31,6 +31,7 @@ import { createEmailSender } from "./email-sender";
 import { localeFromAcceptLanguage, normalizeUserLocale } from "./user-locale";
 import { apiError } from "../../http/api-error";
 import { rememberReferral } from "../affiliates/tracking";
+import { SIGNUP_EVENT_COOKIE, sanitizeUtm, touchFromCookieHeader, utmColumns } from "@mimelux/core/attribution";
 import {
   accountForGoogleProfile,
   fetchGoogleProfile,
@@ -78,6 +79,15 @@ const registerSchema = credentialsSchema.extend({
   locale: z.string().max(12).optional(),
   next: z.string().max(2048).optional(),
   clickId: z.string().max(80).optional(),
+  attribution: z
+    .object({
+      source: z.string().max(200).optional(),
+      medium: z.string().max(200).optional(),
+      campaign: z.string().max(200).optional(),
+      content: z.string().max(200).optional(),
+      term: z.string().max(200).optional(),
+    })
+    .optional(),
 });
 const refreshSchema = z.object({ refreshToken: z.string().min(20) });
 const verifySchema = z.object({ token: z.string().min(20) });
@@ -276,6 +286,13 @@ class AuthController {
           termsVersion: legalConfig.termsVersion,
           acceptedTermsIp: resolveClientIp(request),
           locale: normalizeUserLocale(input.locale) ?? localeFromAcceptLanguage(acceptLanguage) ?? "pt-BR",
+          ...utmColumns(input.attribution ? {
+            source: sanitizeUtm(input.attribution.source),
+            medium: sanitizeUtm(input.attribution.medium),
+            campaign: sanitizeUtm(input.attribution.campaign),
+            content: sanitizeUtm(input.attribution.content),
+            term: sanitizeUtm(input.attribution.term),
+          } : null),
           profile: {
             create: {
               name: input.name,
@@ -489,6 +506,7 @@ class AuthController {
   async googleCallback(
     @Query("code") code: string | undefined,
     @Query("state") state: string | undefined,
+    @Req() request: Request,
     @Res() response: Response,
   ) {
     const origin = (process.env.WEB_ORIGIN ?? "http://127.0.0.1:3333").replace(/\/$/, "");
@@ -500,13 +518,16 @@ class AuthController {
     if (!parsed) return fail("state");
     const profile = await fetchGoogleProfile({ code });
     if (!profile) return fail("profile");
-    const account = await accountForGoogleProfile(profile, parsed);
+    const account = await accountForGoogleProfile(profile, parsed, touchFromCookieHeader(request.headers.cookie));
     if (account.error || !account.user) return fail(account.error ?? "profile");
     const session = await persistSession(account.user);
     const secure = process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production";
     const common = `HttpOnly; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`;
     response.append("Set-Cookie", `patrocino_access=${session.accessToken}; Max-Age=900; ${common}`);
     response.append("Set-Cookie", `patrocino_refresh=${session.refreshToken}; Max-Age=2592000; ${common}`);
+    if (account.created) {
+      response.append("Set-Cookie", `${SIGNUP_EVENT_COOKIE}=1; Max-Age=86400; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`);
+    }
     const next = parsed.next ?? (account.user.role === "CREATOR" ? "/painel" : account.user.role === "AFFILIATE" ? "/afiliados" : "/topcreators");
     response.redirect(`${origin}${next}`);
   }

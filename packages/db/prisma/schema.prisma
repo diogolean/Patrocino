@@ -125,6 +125,11 @@ model User {
   acceptedTermsIp  String?
   locale           String?
   referredClickId  String?
+  utmSource        String?
+  utmMedium        String?
+  utmCampaign      String?
+  utmContent       String?
+  utmTerm          String?
   isDemo           Boolean          @default(false)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -243,6 +248,11 @@ model Subscription {
   currentPeriodEnd    DateTime?
   cancelAtPeriodEnd   Boolean            @default(false)
   currency            String             @default("BRL")
+  utmSource           String?
+  utmMedium           String?
+  utmCampaign         String?
+  utmContent          String?
+  utmTerm             String?
   stripeSubscriptionId String?           @unique
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -347,6 +357,16 @@ model Purchase {
   status         PurchaseStatus  @default(PENDING)
   amountCents    Int
   currency       String          @default("BRL")
+  utmSource      String?
+  utmMedium      String?
+  utmCampaign    String?
+  utmContent     String?
+  utmTerm        String?
+  fbp            String?
+  fbc            String?
+  clientIp       String?
+  clientUserAgent String?
+  metaCapiSentAt DateTime?
   idempotencyKey String          @unique
   subscriptionId String?
   subscription   Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)

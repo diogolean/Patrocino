@@ -40,13 +40,14 @@ export function StripeCheckoutModal({
   idempotencyKey: string;
   publishableKey: string;
   onClose: () => void;
-  onPaid: () => void;
+  onPaid: (detail?: { eventId?: string; amountCents?: number; currency?: "BRL" | "USD" }) => void;
   onAmount?: (amountCents: number) => void;
 }) {
   const t = useTranslations("checkout");
   const errors = useTranslations("errors");
   const closeLabel = useTranslations("dialog")("close");
   const [clientSecret, setClientSecret] = useState("");
+  const metaRef = useRef({ eventId: "", amountCents: 0, currency: "BRL" as "BRL" | "USD" });
   const [chargedCents, setChargedCents] = useState<number | null>(null);
   const [chargedCurrency, setChargedCurrency] = useState<"BRL" | "USD">("USD");
   const money = useMoney();
@@ -57,7 +58,7 @@ export function StripeCheckoutModal({
   const stripe = useMemo(() => (publishableKey ? stripePromise(publishableKey) : null), [publishableKey]);
 
   function requestClose() {
-    if (confirmedRef.current) onPaidRef.current();
+    if (confirmedRef.current) onPaidRef.current({ eventId: metaRef.current.eventId, amountCents: metaRef.current.amountCents, currency: metaRef.current.currency });
     onClose();
   }
   const requestCloseRef = useRef(requestClose);
@@ -82,14 +83,20 @@ export function StripeCheckoutModal({
             idempotencyKey,
           }),
         });
-        const payload = (await response.json().catch(() => ({}))) as { clientSecret?: string | null; amountCents?: number; currency?: unknown; code?: unknown; message?: unknown };
+        const payload = (await response.json().catch(() => ({}))) as { clientSecret?: string | null; amountCents?: number; currency?: unknown; eventId?: unknown; code?: unknown; message?: unknown };
         if (!response.ok || !payload.clientSecret || typeof payload.amountCents !== "number") {
           if (!stop) setError(apiErrorText(payload, errors, t("cardStartFailed")));
           return;
         }
         if (!stop) {
+          const currency = payload.currency === "BRL" ? "BRL" : "USD";
+          metaRef.current = {
+            eventId: typeof payload.eventId === "string" ? payload.eventId : "",
+            amountCents: payload.amountCents,
+            currency,
+          };
           setChargedCents(payload.amountCents);
-          setChargedCurrency(payload.currency === "BRL" ? "BRL" : "USD");
+          setChargedCurrency(currency);
           onAmount?.(payload.amountCents);
           setClientSecret(payload.clientSecret);
         }
@@ -148,7 +155,7 @@ export function StripeCheckoutModal({
           <Elements stripe={stripe} options={{ clientSecret, appearance: { theme: "stripe", variables: { borderRadius: "16px" } } }}>
             <CardPaymentForm
               clientSecret={clientSecret}
-              onPaid={() => onPaidRef.current()}
+              onPaid={() => onPaidRef.current({ eventId: metaRef.current.eventId, amountCents: metaRef.current.amountCents, currency: metaRef.current.currency })}
               onConfirmed={() => {
                 confirmedRef.current = true;
                 publishPaymentConfirmed("stripe");

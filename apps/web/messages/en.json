@@ -1216,7 +1216,17 @@
       "apply": "Apply"
     },
     "newDelta": "new",
-    "before": "before: {value}"
+    "before": "before: {value}",
+    "utmTitle": "Sale source",
+    "utmHint": "First-touch UTM stored on the payment.",
+    "utmEmpty": "No paid sales yet.",
+    "utmDownload": "Download CSV",
+    "utmWhen": "When",
+    "utmType": "Type",
+    "utmCreator": "Creator",
+    "utmValue": "Amount",
+    "utmSource": "Source",
+    "utmCampaign": "Campaign"
   },
   "setPassword": {
     "title": "Set password",

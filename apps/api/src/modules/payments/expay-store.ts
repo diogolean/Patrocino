@@ -3,6 +3,7 @@ import { cancelPendingChatSequence, enqueueChatSequence } from "../chat/sequence
 import { notifyBuyerOfPaidCharge } from "./buyer-notice";
 import { logPayment } from "./payment-log";
 import { reversePurchase, settlePurchase } from "./billing";
+import { withMetaSettlement } from "./meta-settle";
 import { laterInstant } from "./subscription-status";
 import {
   billingModes,
@@ -93,7 +94,7 @@ async function syncPurchase(row: {
   const purchase = await database.purchase.findUnique({ where: { idempotencyKey: row.idempotencyKey } });
   if (!purchase) return;
   if (row.accessActive && purchase.status === "PENDING") {
-    await database.$transaction((tx) => settlePurchase(tx, purchase.id, row.providerChargeId));
+    await withMetaSettlement(() => database.$transaction((tx) => settlePurchase(tx, purchase.id, row.providerChargeId)));
     return;
   }
   if ((row.status === "refunded" || row.status === "canceled") && purchase.status === "PAID") {

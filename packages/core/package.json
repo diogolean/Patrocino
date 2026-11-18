@@ -36,6 +36,14 @@
       "types": "./dist/currency.d.ts",
       "default": "./dist/currency.js"
     },
+    "./attribution": {
+      "types": "./dist/attribution.d.ts",
+      "default": "./dist/attribution.js"
+    },
+    "./meta-capi": {
+      "types": "./dist/meta-capi.d.ts",
+      "default": "./dist/meta-capi.js"
+    },
     "./profile-gallery": {
       "types": "./dist/profile-gallery.d.ts",
       "default": "./dist/profile-gallery.js"

@@ -14,6 +14,7 @@ import { ExpayPaymentsController } from "./expay.controller";
 import { currencyForVisitor } from "@mimelux/core/currency";
 import { rememberReferral } from "../affiliates/tracking";
 import { chargeDraftForUser, ensureQuotedPurchase } from "./quote-charge";
+import { touchFromRequest } from "./request-touch";
 
 const demoPurchaseSchema = z.object({ mode: z.literal("demo") });
 const checkoutSchema = z.strictObject({
@@ -51,16 +52,18 @@ export class PaymentsController {
     @Headers("x-patrocino-locale") locale: string | undefined,
     @Headers("accept-language") acceptLanguage: string | undefined,
     @Headers("x-patrocino-click") clickId: string | undefined,
+    @Req() request: Request,
     @Body() body: unknown,
   ) {
     const user = await requireUser(authorization);
     const currency = currencyForVisitor({ country, locale, acceptLanguage });
+    const touch = touchFromRequest(request);
     if (clickId) await rememberReferral(user.id, clickId);
     const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     if (record.provider === "stripe" && typeof record.purpose === "string") {
       if (!paymentMethodsEnabled().stripe) throw apiError(409, "STRIPE_IS_NOT_ENABLED", "Stripe is not enabled.");
       const draft = await chargeDraftForUser(user, body, currency, clickId);
-      const purchase = await ensureQuotedPurchase(draft);
+      const purchase = await ensureQuotedPurchase(draft, touch);
       try {
         const checkout = await paymentProvider("stripe").createCheckout({
           purchaseId: purchase.id,
@@ -88,6 +91,7 @@ export class PaymentsController {
           amountCents: draft.amountCents,
           currency: draft.currency,
           ...checkout,
+          eventId: purchase.id,
         };
       } catch (error) {
         if (error instanceof HttpException) throw error;
@@ -99,7 +103,7 @@ export class PaymentsController {
       }
     }
     const input = parseCheckout(body);
-    return startPlanCheckout(user, input, currency);
+    return startPlanCheckout(user, input, currency, touch);
   }
 
   @Post("purchases/:contentId/checkout")

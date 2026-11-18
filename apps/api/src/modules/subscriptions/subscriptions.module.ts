@@ -1,9 +1,11 @@
 import { apiError } from "../../http/api-error";
-import { BadRequestException, Body, Controller, Get, Headers, Module, Param, Post, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Headers, Module, Param, Post, Query, Req } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import { requireUser } from "../auth/require-user";
 import { cancelSubscription, listMySubscriptions, resolvePlan, startSubscriptionCheckout, viewerHasAccess } from "../payments/billing";
+import { touchFromRequest } from "../payments/request-touch";
+import type { Request } from "express";
 
 const checkoutSchema = z.strictObject({
   creatorId: z.string().min(1),
@@ -32,11 +34,11 @@ class SubscriptionsController {
 
   @Post("checkout")
   @ApiOperation({ summary: "Start a Stripe subscription or a local simulation when Stripe is off" })
-  async checkout(@Headers("authorization") authorization: string | undefined, @Body() body: unknown) {
+  async checkout(@Headers("authorization") authorization: string | undefined, @Req() request: Request, @Body() body: unknown) {
     const user = await requireUser(authorization);
     const parsed = checkoutSchema.safeParse(body);
     if (!parsed.success) throw apiError(400, "INVALID_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request");
-    return startSubscriptionCheckout(user, parsed.data.creatorId, parsed.data.planId);
+    return startSubscriptionCheckout(user, parsed.data.creatorId, parsed.data.planId, undefined, touchFromRequest(request));
   }
 
   @Post(":id/cancel")

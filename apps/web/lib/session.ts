@@ -1,5 +1,6 @@
 "use client";
 import { trackEvent } from "@/lib/analytics";
+import { flushSignupEvent } from "@/lib/meta";
 
 import type { AccountRole } from "@mimelux/core";
 import type { SessionUser } from "./api-auth";
@@ -118,6 +119,7 @@ export async function registerAccount(input: {
   const user = await readUser(response);
   if (!user) throw new SessionRequestError();
   trackEvent("sign_up", { method: "email", role: input.role.toLowerCase() });
+  flushSignupEvent();
   return user;
 }
 
@@ -133,6 +135,7 @@ export async function socialAccount(
   });
   const user = await readUser(response);
   if (!user) throw new SessionRequestError();
+  flushSignupEvent();
   return user;
 }
 

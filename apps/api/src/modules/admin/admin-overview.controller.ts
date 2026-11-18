@@ -3,7 +3,7 @@ import { Controller, Get, Headers, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { requireUser } from "../auth/require-user";
 import { resolveRange } from "./overview-range";
-import { loadAffiliates, loadFunnel, loadHealth, loadSales, loadSubscriptions, loadTopCreators } from "./overview.service";
+import { loadAffiliates, loadFunnel, loadHealth, loadRecentAttribution, loadSales, loadSubscriptions, loadTopCreators } from "./overview.service";
 
 @ApiTags("admin")
 @ApiBearerAuth()
@@ -36,5 +36,13 @@ export class AdminOverviewController {
       affiliates,
       health,
     };
+  }
+
+  /** Recent paid purchases with first-touch UTM. No email or other personal data. */
+  @Get("attribution")
+  async attribution(@Headers("authorization") authorization: string | undefined) {
+    const user = await requireUser(authorization);
+    if (user.role !== "ADMIN") throw apiError(403, "ADMIN_ONLY", "Admin only");
+    return { items: await loadRecentAttribution() };
   }
 }

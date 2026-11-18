@@ -32,6 +32,7 @@ import { authHref } from "@/lib/auth-return";
 import { trackEvent } from "@/lib/analytics";
 import { checkoutSurface } from "@/lib/payment-surface";
 import { GuestCheckout } from "@/components/guest-checkout";
+import { trackMeta, trackPurchaseEvent, type MetaPurchase } from "@/lib/meta";
 
 function DemoPaymentGraphic({ seed, label }: { seed: string; label: string }) {
   const cells = useMemo(() => {
@@ -250,7 +251,7 @@ function CheckoutContent() {
     };
   }, [quoteKey, quoteCreatorId, purpose, subjectId, t, errors, authNonce]);
 
-  function grantLocalAccess(via: "demo" | "pix" | "card" = "demo") {
+  function grantLocalAccess(via: "demo" | "pix" | "card" = "demo", detail?: Partial<MetaPurchase> & { amountCents?: number }) {
     const state = readDemo();
     const transactionKind =
       kind === "subscription"
@@ -285,11 +286,21 @@ function CheckoutContent() {
         ...commissionPatch,
       });
     }
+    const cents = detail?.amountCents ?? shownCents ?? amount;
+    const currency = detail?.currency ?? (shownCurrency === "USD" ? "USD" : "BRL");
+    const purchase: MetaPurchase = {
+      eventId: detail?.eventId || `${via}-${creator.username}-${id}`,
+      value: cents / 100,
+      currency,
+      contentId: creator.username,
+      subscribe: kind === "subscription",
+    };
+    trackPurchaseEvent(purchase);
     if (via !== "demo") {
       trackEvent("purchase", {
         transaction_id: via === "pix" ? pixKey : cardKey,
-        value: (shownCents ?? amount) / 100,
-        currency: shownCurrency,
+        value: purchase.value,
+        currency,
         kind: transactionKind,
         payment_type: via,
         creator: creator.id,
@@ -301,12 +312,20 @@ function CheckoutContent() {
   }
 
   function beginCheckout(paymentType: "pix" | "card") {
+    const value = shownCents != null ? shownCents / 100 : undefined;
+    const currency = shownCurrency === "USD" ? "USD" : "BRL";
     trackEvent("begin_checkout", {
-      value: shownCents != null ? shownCents / 100 : undefined,
-      currency: shownCurrency,
+      value,
+      currency,
       kind: kind === "subscription" ? "subscription" : kind === "pack" ? "pack" : kind === "special_request" ? "special_request" : "ppv",
       payment_type: paymentType,
       creator: creator.id,
+    });
+    trackMeta("InitiateCheckout", {
+      ...(value != null ? { value } : {}),
+      currency,
+      content_ids: [creator.username],
+      content_type: "product",
     });
   }
 
@@ -444,9 +463,9 @@ function CheckoutContent() {
         idempotencyKey={pixKey}
         onAmount={rememberAmount}
         onClose={() => setPixOpen(false)}
-        onPaid={() => {
+        onPaid={(detail) => {
           setPixOpen(false);
-          if (!paid) grantLocalAccess("pix");
+          if (!paid) grantLocalAccess("pix", detail);
         }}
       />}
       {cardOpen && <StripeCheckoutModal
@@ -458,9 +477,9 @@ function CheckoutContent() {
         publishableKey={methods?.stripePublishableKey ?? ""}
         onAmount={rememberAmount}
         onClose={() => setCardOpen(false)}
-        onPaid={() => {
+        onPaid={(detail) => {
           setCardOpen(false);
-          if (!paid) grantLocalAccess("card");
+          if (!paid) grantLocalAccess("card", detail);
         }}
       />}
     </div>

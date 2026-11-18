@@ -177,6 +177,40 @@ export async function loadAffiliates(range: OverviewRange) {
     .slice(0, 20);
 }
 
+export async function loadRecentAttribution() {
+  const rows = await database.purchase.findMany({
+    where: { ...real, status: "PAID" },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    select: {
+      id: true,
+      createdAt: true,
+      kind: true,
+      amountCents: true,
+      currency: true,
+      utmSource: true,
+      utmMedium: true,
+      utmCampaign: true,
+      utmContent: true,
+      utmTerm: true,
+      creator: { select: { user: { select: { profile: { select: { username: true } } } } } },
+    },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    createdAt: row.createdAt.toISOString(),
+    kind: row.kind,
+    amountCents: row.amountCents,
+    currency: row.currency,
+    username: row.creator.user.profile?.username ?? "",
+    utmSource: row.utmSource ?? "",
+    utmMedium: row.utmMedium ?? "",
+    utmCampaign: row.utmCampaign ?? "",
+    utmContent: row.utmContent ?? "",
+    utmTerm: row.utmTerm ?? "",
+  }));
+}
+
 export async function loadHealth(range: OverviewRange, now: Date) {
   const window = { gte: range.from, lt: range.to };
   const [pixPending, pixFailed, failed, stuck, refunded] = await Promise.all([

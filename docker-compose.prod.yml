@@ -22,6 +22,7 @@ services:
       dockerfile: Dockerfile.prod
       args:
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}"
+        NEXT_PUBLIC_META_PIXEL_ID: "${NEXT_PUBLIC_META_PIXEL_ID:-}"
     env_file: .env
     working_dir: /app/packages/db
     command: ["sh","-c","npx prisma migrate deploy && (npx tsx prisma/seed.ts || echo SEED_FAILED)"]

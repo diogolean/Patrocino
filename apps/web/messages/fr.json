@@ -1216,7 +1216,17 @@
       "apply": "Appliquer"
     },
     "newDelta": "nouveau",
-    "before": "avant : {value}"
+    "before": "avant : {value}",
+    "utmTitle": "Origine des ventes",
+    "utmHint": "Premier contact (UTM) enregistré sur le paiement.",
+    "utmEmpty": "Aucune vente payée pour l'instant.",
+    "utmDownload": "Télécharger le CSV",
+    "utmWhen": "Quand",
+    "utmType": "Type",
+    "utmCreator": "Créatrice",
+    "utmValue": "Montant",
+    "utmSource": "Source",
+    "utmCampaign": "Campagne"
   },
   "setPassword": {
     "title": "Définir le mot de passe",

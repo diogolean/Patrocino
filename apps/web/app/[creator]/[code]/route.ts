@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { landingAttribution } from "@mimelux/core/attribution";
 import { AFFILIATE_EVENT_COOKIE } from "@/lib/analytics";
 import { LINK_CODE_PATTERN } from "@mimelux/core/currency";
 import { publicOrigin, resolveAffiliateRedirect, withReferralQuery, type RecordedClick } from "@/lib/affiliate-redirect";
@@ -73,8 +74,15 @@ export async function GET(request: Request, context: Context) {
         { ref: recorded.code, sub: subId, lang: locale, searchParams: url.searchParams },
       )
     : result.location;
-  const response = NextResponse.redirect(new URL(location, publicOrigin(request)));
+  const landing = landingAttribution({
+    location,
+    search: url.searchParams,
+    cookieHeader: request.headers.get("cookie"),
+    secure: url.protocol === "https:",
+  });
+  const response = NextResponse.redirect(new URL(landing.location, publicOrigin(request)));
   if (result.cookie) response.cookies.set(result.cookie.name, result.cookie.value, result.cookie.options);
+  if (landing.cookie) response.cookies.set(landing.cookie.name, landing.cookie.value, landing.cookie.options);
   // One-shot marker read by the GA client to send affiliate_click (creator + link code only, never the affiliate).
   response.cookies.set(AFFILIATE_EVENT_COOKIE, `${creator}|${recorded.code}|${recorded.packId ? 1 : 0}`, { path: "/", maxAge: 600, sameSite: "lax", secure: url.protocol === "https:", httpOnly: false });
   return response;

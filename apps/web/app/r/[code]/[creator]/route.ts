@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { landingAttribution } from "@mimelux/core/attribution";
 import { demoAffiliate } from "@/lib/affiliates";
 import { affiliateCookie, publicOrigin, resolveAffiliateRedirect, type RecordedClick } from "@/lib/affiliate-redirect";
 import { apiBase } from "@/lib/api-auth";
@@ -47,7 +48,14 @@ export async function GET(request: Request, context: Context) {
       secure: url.protocol === "https:",
     });
   }
-  const response = NextResponse.redirect(new URL(result.location, publicOrigin(request)));
+  const landing = landingAttribution({
+    location: result.location,
+    search: url.searchParams,
+    cookieHeader: request.headers.get("cookie"),
+    secure: url.protocol === "https:",
+  });
+  const response = NextResponse.redirect(new URL(landing.location, publicOrigin(request)));
   if (result.cookie) response.cookies.set(result.cookie.name, result.cookie.value, result.cookie.options);
+  if (landing.cookie) response.cookies.set(landing.cookie.name, landing.cookie.value, landing.cookie.options);
   return response;
 }

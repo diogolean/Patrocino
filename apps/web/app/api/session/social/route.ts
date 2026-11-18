@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { AccountRole } from "@mimelux/core";
+import { SIGNUP_EVENT_COOKIE, touchFromCookieHeader } from "@mimelux/core/attribution";
 import { safeReturnPath } from "@/lib/auth-return";
 import { apiAuth, authErrorMessage, toApiRole, toSessionUser } from "@/lib/api-auth";
 import { applyAuthCookies } from "@/lib/session-cookies";
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
   const returnPath = safeReturnPath(body?.next);
   const provider = (body?.provider ?? "social").toLowerCase().replace(/[^a-z0-9]+/g, "") || "social";
   const email = `${provider}.${randomBytes(6).toString("hex")}@mimelux.test`;
+  const touch = touchFromCookieHeader(request.headers.get("cookie"));
   const { response, data } = await apiAuth("/auth/register", {
     name: `Conta ${provider}`,
     email,
@@ -24,6 +26,7 @@ export async function POST(request: Request) {
     acceptTerms: body?.acceptTerms === true,
     acceptCreatorTerms: body?.acceptCreatorTerms === true,
     ...(returnPath ? { next: returnPath } : {}),
+    ...(touch ? { attribution: { source: touch.source, medium: touch.medium, campaign: touch.campaign, content: touch.content, term: touch.term } } : {}),
   }, request);
   if (!response.ok || !data.user || !data.accessToken || !data.refreshToken) {
     return NextResponse.json(
@@ -36,5 +39,12 @@ export async function POST(request: Request) {
   }
   const next = NextResponse.json({ user: toSessionUser(data.user) });
   applyAuthCookies(next, { accessToken: data.accessToken, refreshToken: data.refreshToken });
+  next.cookies.set(SIGNUP_EVENT_COOKIE, "1", {
+    path: "/",
+    maxAge: 86400,
+    sameSite: "lax",
+    httpOnly: false,
+    secure: process.env.COOKIE_SECURE === "true" || process.env.NODE_ENV === "production",
+  });
   return next;
 }

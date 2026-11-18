@@ -36,7 +36,9 @@ import { PAYMENT_CONFIRMED_EVENT } from "@/components/pending-expay-toast";
 import { demoAffiliate, recordClick } from "@/lib/affiliates";
 import { authHref } from "@/lib/auth-return";
 import { shownCaption } from "@/lib/public-caption";
+import { readConsent, subscribeConsent } from "@/lib/consent";
 import { getServerSessionSnapshot, getSessionSnapshot, subscribeSession } from "@/lib/session";
+import { rememberMetaReturn, trackMeta, trackPurchaseEvent, type MetaPurchase } from "@/lib/meta";
 
 const requestStatusKey = {
   requested: "statusRequested",
@@ -68,6 +70,11 @@ export function CreatorProfile({
   const router = useRouter();
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot);
   const signedIn = session.status === "ready" && Boolean(session.user);
+  const consent = useSyncExternalStore(subscribeConsent, readConsent, () => null);
+  useEffect(() => {
+    if (!consent?.marketing) return;
+    trackMeta("ViewContent", { content_ids: [creator.username], content_type: "product" });
+  }, [creator.username, consent?.marketing]);
   const locale = useLocale();
   const visitorCurrency = useVisitorCurrency();
   const money = (cents: number, currency?: "BRL" | "USD") => formatMoney(cents, currency ?? offers?.currency ?? visitorCurrency, locale);
@@ -407,6 +414,15 @@ export function CreatorProfile({
   }
 
   function subscribeWithCard() {
+    const monthly = offers?.plans.find((plan) => plan.months === 1) ?? offers?.plans[0];
+    const cents = monthly?.chargeCents ?? creator.price;
+    const currency: "BRL" | "USD" = offers?.currency === "USD" ? "USD" : "BRL";
+    trackMeta("InitiateCheckout", {
+      value: cents / 100,
+      currency,
+      content_ids: [creator.username],
+      content_type: "product",
+    });
     setSubscribing(true);
     void fetch("/api/subscriptions/checkout", {
       method: "POST",
@@ -414,12 +430,28 @@ export function CreatorProfile({
       body: JSON.stringify({ creatorId: creator.username, planId: "monthly" }),
     })
       .then(async (response) => {
-        const data = (await response.json().catch(() => ({}))) as { url?: string; code?: unknown; message?: unknown };
+        const data = (await response.json().catch(() => ({}))) as { url?: string; purchaseId?: string; eventId?: string; amountCents?: number; currency?: string; code?: unknown; message?: unknown };
         if (response.status === 401) {
           router.push("/auth?route=sign-in");
           return;
         }
         if (!response.ok) throw new Error(apiErrorText(data, errors, t("subscribeFailed")));
+        const eventId = data.eventId || data.purchaseId;
+        if (eventId) {
+          const detail: MetaPurchase = {
+            eventId,
+            value: (typeof data.amountCents === "number" ? data.amountCents : cents) / 100,
+            currency: data.currency === "USD" ? "USD" : data.currency === "BRL" ? "BRL" : currency,
+            contentId: creator.username,
+            subscribe: true,
+          };
+          if (data.url) {
+            rememberMetaReturn(detail);
+            window.location.href = data.url;
+            return;
+          }
+          trackPurchaseEvent(detail);
+        }
         if (data.url) {
           window.location.href = data.url;
           return;

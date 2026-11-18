@@ -3,12 +3,14 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Prisma, database } from "@mimelux/db/runtime";
 import { planChargeCents, resolveAffiliateRateBps, reverseLedger, splitRevenue, subscriptionGrantsAccess } from "@mimelux/core/monetization";
 import { centsForCurrency, type ChargeCurrency } from "@mimelux/core/currency";
+import { purchaseColumns, utmColumns, type PurchaseTouch } from "@mimelux/core/attribution";
 import { randomBytes } from "node:crypto";
 import Stripe from "stripe";
 import { paymentProvider, readStripeSecret } from "./payment-gateways";
 import { cancelPendingChatSequence, enqueueChatSequence } from "../chat/sequence";
 import { logPayment, stripeEventChargeId } from "./payment-log";
 import { quoteCharge } from "./quote-charge";
+import { noteMetaPurchase, withMetaSettlement } from "./meta-settle";
 import { resistsPending } from "./subscription-status";
 
 type Tx = Prisma.TransactionClient;
@@ -142,6 +144,7 @@ export async function settlePurchase(tx: Tx, purchaseId: string, reference: stri
   });
   const affiliateCents = entries.find((entry) => entry.account === "affiliate_payable")?.amountCents ?? 0;
   await tx.purchase.update({ where: { id: purchase.id }, data: { status: "PAID" } });
+  noteMetaPurchase(purchase.id);
   await tx.ledgerEntry.createMany({
     data: entries.map((entry) => ({
       purchaseId: purchase.id,
@@ -298,6 +301,15 @@ export async function cancelSubscription(userId: string, subscriptionId: string)
   return { subscription: presentSubscription(updated) };
 }
 
+function utmIfEmpty(
+  row: { utmSource: string | null; utmMedium: string | null; utmCampaign: string | null; utmContent: string | null; utmTerm: string | null } | null | undefined,
+  touch?: PurchaseTouch | null,
+) {
+  if (!touch) return {};
+  if (row && (row.utmSource || row.utmMedium || row.utmCampaign || row.utmContent || row.utmTerm)) return {};
+  return utmColumns(touch);
+}
+
 async function openPurchase(
   userId: string,
   creatorId: string,
@@ -305,6 +317,7 @@ async function openPurchase(
   subscriptionId: string | undefined,
   isDemo: boolean,
   currency: ChargeCurrency = "BRL",
+  touch?: PurchaseTouch | null,
 ) {
   return database.purchase.create({
     data: {
@@ -317,6 +330,7 @@ async function openPurchase(
       subscriptionId,
       isDemo,
       idempotencyKey: `sub-${userId}-${randomBytes(8).toString("hex")}`,
+      ...purchaseColumns(touch),
     },
   });
 }
@@ -326,6 +340,7 @@ async function simulateSubscription(
   resolved: NonNullable<Awaited<ReturnType<typeof resolvePlan>>>,
   amountCents: number,
   currency: ChargeCurrency = "BRL",
+  touch?: PurchaseTouch | null,
 ) {
   const { creator, plan } = resolved;
   const current = await database.subscription.findUnique({
@@ -333,13 +348,15 @@ async function simulateSubscription(
     include: { plan: true, creator: { include: { user: { include: { profile: true } } } } },
   });
   if (current && resistsPending(current)) {
+    const columns = utmIfEmpty(current, touch);
+    if (Object.keys(columns).length) await database.subscription.update({ where: { id: current.id }, data: columns });
     return { simulation: true, alreadyActive: true, subscription: presentSubscription(current) };
   }
   const periodEnd = addMonths(new Date(), plan.durationMonths);
   const subscription = current
     ? await database.subscription.update({
         where: { id: current.id },
-        data: { planId: plan.id, status: "PENDING" },
+        data: { planId: plan.id, status: "PENDING", ...utmIfEmpty(current, touch) },
       })
     : await database.subscription.create({
         data: {
@@ -348,10 +365,11 @@ async function simulateSubscription(
           planId: plan.id,
           status: "PENDING",
           isDemo: true,
+          ...utmColumns(touch),
         },
       });
-  const purchase = await openPurchase(user.id, creator.id, amountCents, subscription.id, true, currency);
-  await database.$transaction(async (tx) => {
+  const purchase = await openPurchase(user.id, creator.id, amountCents, subscription.id, true, currency, touch);
+  await withMetaSettlement(() => database.$transaction(async (tx) => {
     await settlePurchase(tx, purchase.id, `demo:${purchase.id}`);
     await tx.subscription.update({
       where: { id: subscription.id },
@@ -365,12 +383,20 @@ async function simulateSubscription(
         currency,
       },
     });
-  });
+  }));
   const fresh = await database.subscription.findUniqueOrThrow({
     where: { id: subscription.id },
     include: { plan: true, creator: { include: { user: { include: { profile: true } } } } },
   });
-  return { simulation: true, alreadyActive: false, subscription: presentSubscription(fresh), purchaseId: purchase.id, amountCents };
+  return {
+    simulation: true,
+    alreadyActive: false,
+    subscription: presentSubscription(fresh),
+    purchaseId: purchase.id,
+    eventId: purchase.id,
+    amountCents,
+    currency,
+  };
 }
 
 async function ensureCustomer(stripe: Stripe, user: AccountUser) {
@@ -460,6 +486,7 @@ export async function startSubscriptionCheckout(
   creatorKey: string,
   planKey: string,
   currency: ChargeCurrency = "BRL",
+  touch?: PurchaseTouch | null,
 ) {
   const priced = await pricedPlan(user, creatorKey, planKey, currency);
   const { resolved, amountCents } = priced;
@@ -467,7 +494,7 @@ export async function startSubscriptionCheckout(
   const secret = readStripeSecret();
   if (!secret.ok) {
     if (secret.reason === "live_disabled") throw apiError(400, "LIVE_STRIPE_KEYS_ARE_DISABLED", "Live Stripe keys are disabled");
-    return simulateSubscription(user, resolved, amountCents, chargeCurrency);
+    return simulateSubscription(user, resolved, amountCents, chargeCurrency, touch);
   }
   const stripe = new Stripe(secret.key);
   const customerId = await ensureCustomer(stripe, user);
@@ -484,7 +511,7 @@ export async function startSubscriptionCheckout(
       : existing
         ? await database.subscription.update({
             where: { id: existing.id },
-            data: { planId: resolved.plan.id, status: "PENDING", currency: chargeCurrency },
+            data: { planId: resolved.plan.id, status: "PENDING", currency: chargeCurrency, ...utmIfEmpty(existing, touch) },
           })
         : await database.subscription.create({
             data: {
@@ -494,9 +521,14 @@ export async function startSubscriptionCheckout(
               status: "PENDING",
               currentPeriodEnd: periodEnd,
               currency: chargeCurrency,
+              ...utmColumns(touch),
             },
           });
-  const purchase = await openPurchase(user.id, resolved.creator.id, amountCents, subscription.id, false, chargeCurrency);
+  if (existing && resistsPending(existing)) {
+    const columns = utmIfEmpty(existing, touch);
+    if (Object.keys(columns).length) await database.subscription.update({ where: { id: existing.id }, data: columns });
+  }
+  const purchase = await openPurchase(user.id, resolved.creator.id, amountCents, subscription.id, false, chargeCurrency, touch);
   const origin = webOrigin();
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
@@ -525,7 +557,9 @@ export async function startSubscriptionCheckout(
     simulation: false,
     url: session.url,
     purchaseId: purchase.id,
+    eventId: purchase.id,
     amountCents,
+    currency: chargeCurrency,
     subscriptionId: subscription.id,
   };
 }
@@ -534,6 +568,7 @@ export async function startPlanCheckout(
   user: AccountUser,
   input: { provider: "stripe" | "pix" | "crypto"; creatorId: string; planId: string },
   currency: ChargeCurrency = "BRL",
+  touch?: PurchaseTouch | null,
 ) {
   const { resolved, amountCents, currency: chargeCurrency } = await pricedPlan(user, input.creatorId, input.planId, currency);
   if (input.provider === "pix" && chargeCurrency !== "BRL") {
@@ -547,7 +582,7 @@ export async function startPlanCheckout(
       secret.reason === "live_disabled" ? "Live Stripe keys are disabled" : "Stripe is not configured",
     );
   }
-  const purchase = await openPurchase(user.id, resolved.creator.id, amountCents, undefined, !secret.ok, chargeCurrency);
+  const purchase = await openPurchase(user.id, resolved.creator.id, amountCents, undefined, !secret.ok, chargeCurrency, touch);
   if (input.provider === "stripe") {
     const checkout = await paymentProvider("stripe").createCheckout({
       purchaseId: purchase.id,
@@ -561,6 +596,7 @@ export async function startPlanCheckout(
     return {
       purchase: { id: purchase.id, buyerId: user.id, creatorId: resolved.creator.id, planId: resolved.plan.id, amountCents, status: "PENDING" },
       ...checkout,
+      eventId: purchase.id,
     };
   }
   const checkout = await paymentProvider(input.provider).createCheckout({
@@ -572,6 +608,7 @@ export async function startPlanCheckout(
   return {
     purchase: { id: purchase.id, buyerId: user.id, creatorId: resolved.creator.id, planId: resolved.plan.id, amountCents, status: "PENDING" },
     ...checkout,
+    eventId: purchase.id,
   };
 }
 
@@ -692,7 +729,7 @@ async function applyStripeEvent(
   work: (tx: Tx) => Promise<void>,
 ) {
   const before = await purchaseSnapshot(purchaseId);
-  const result = await withEvent(event.id, event.type, event, purchaseId, work);
+  const result = await withMetaSettlement(() => withEvent(event.id, event.type, event, purchaseId, work));
   if (result.duplicate || !purchaseId) return result;
   const after = await purchaseSnapshot(purchaseId);
   const purchaseChanged = (before?.status ?? null) !== (after?.status ?? null);
@@ -784,6 +821,11 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
           const idempotencyKey = `invoice:${text(object.id) ?? event.id}`;
           const existing = await tx.purchase.findUnique({ where: { idempotencyKey } });
           if (!existing) {
+            const prior = await tx.purchase.findFirst({
+              where: { subscriptionId: subscription.id },
+              orderBy: { createdAt: "asc" },
+              select: { fbp: true, fbc: true, clientIp: true, clientUserAgent: true },
+            });
             const created = await tx.purchase.create({
               data: {
                 buyerId: subscription.fanId,
@@ -795,6 +837,15 @@ export async function handleStripeEvent(event: { id: string; type: string; data:
                 subscriptionId: subscription.id,
                 providerRef: paymentIntent,
                 idempotencyKey,
+                utmSource: subscription.utmSource,
+                utmMedium: subscription.utmMedium,
+                utmCampaign: subscription.utmCampaign,
+                utmContent: subscription.utmContent,
+                utmTerm: subscription.utmTerm,
+                fbp: prior?.fbp,
+                fbc: prior?.fbc,
+                clientIp: prior?.clientIp,
+                clientUserAgent: prior?.clientUserAgent,
               },
             });
             await settlePurchase(tx, created.id, event.id);

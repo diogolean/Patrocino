@@ -25,6 +25,7 @@ type ChargeView = {
   copiaECola: string | null;
   qrCode: string | null;
   amountCents: number;
+  eventId?: string;
 };
 
 export function ExpayCheckoutModal({
@@ -43,7 +44,7 @@ export function ExpayCheckoutModal({
   subjectId: string;
   idempotencyKey: string;
   onClose: () => void;
-  onPaid: () => void;
+  onPaid: (detail?: { eventId?: string; amountCents?: number; currency?: "BRL" | "USD" }) => void;
   onAmount?: (amountCents: number) => void;
 }) {
   const money = useMoney();
@@ -58,8 +59,12 @@ export function ExpayCheckoutModal({
   const [copied, setCopied] = useState(false);
   const onPaidRef = useRef(onPaid);
   const onAmountRef = useRef(onAmount);
+  const metaRef = useRef({ eventId: "", amountCents: 0 });
   onPaidRef.current = onPaid;
   onAmountRef.current = onAmount;
+  function emitPaid() {
+    onPaidRef.current({ eventId: metaRef.current.eventId, amountCents: metaRef.current.amountCents, currency: "BRL" });
+  }
 
   useEffect(() => {
     if (payerDocument === null) return;
@@ -80,14 +85,15 @@ export function ExpayCheckoutModal({
             customer: payerDocument ? { document: payerDocument } : undefined,
           }),
         });
-        const payload = (await response.json().catch(() => ({}))) as Partial<ChargeView> & { code?: unknown; message?: unknown };
+        const payload = (await response.json().catch(() => ({}))) as Partial<ChargeView> & { code?: unknown; message?: unknown; eventId?: unknown };
         if (!response.ok || !payload.chargeId || typeof payload.amountCents !== "number") {
           if (!stop) setError(apiErrorText(payload, errors, t("pixFailed")));
           return;
         }
         if (!stop) {
           const next = payload as ChargeView;
-          setCharge(next);
+          metaRef.current = { eventId: typeof payload.eventId === "string" ? payload.eventId : "", amountCents: next.amountCents };
+          setCharge({ ...next, eventId: metaRef.current.eventId });
           onAmount?.(next.amountCents);
           if (next.accessActive || isExpayTerminalStatus(next.status)) clearPendingExpayCharge(window.localStorage, next.chargeId);
           else rememberPendingExpayCharge(window.localStorage, next.chargeId);
@@ -120,7 +126,9 @@ export function ExpayCheckoutModal({
         const response = await fetch(`/api/payments/expay/charges/${encodeURIComponent(chargeId)}`, { cache: "no-store" });
         if (response.ok && !stop) {
           const next = (await response.json()) as ChargeView;
-          setCharge(next);
+          if (typeof next.eventId === "string" && next.eventId) metaRef.current.eventId = next.eventId;
+          if (typeof next.amountCents === "number") metaRef.current.amountCents = next.amountCents;
+          setCharge({ ...next, eventId: next.eventId || metaRef.current.eventId });
           if (typeof next.amountCents === "number") onAmountRef.current?.(next.amountCents);
           if (next.accessActive) {
             clearPendingExpayCharge(window.localStorage, chargeId);
@@ -165,7 +173,7 @@ export function ExpayCheckoutModal({
   }, [charge?.chargeId, charge?.status, charge?.accessActive]);
 
   function requestClose() {
-    if (charge?.accessActive) onPaidRef.current();
+    if (charge?.accessActive) emitPaid();
     onClose();
   }
   const requestCloseRef = useRef(requestClose);
@@ -251,7 +259,7 @@ export function ExpayCheckoutModal({
           </div>
         )}
 
-        {charge && paid && <PixPaidState onContinue={() => onPaidRef.current()} />}
+        {charge && paid && <PixPaidState onContinue={emitPaid} />}
 
         {charge && !paid && (
           <div className="mt-5">

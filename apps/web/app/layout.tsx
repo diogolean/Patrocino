@@ -12,7 +12,9 @@ import { SiteFooter } from "@/components/site-footer";
 import Script from "next/script";
 import { Suspense } from "react";
 import { GoogleAnalytics } from "@/components/google-analytics";
+import { MetaPixel } from "@/components/meta-pixel";
 import { GA_ID, gaBootstrap } from "@/lib/analytics";
+import { META_PIXEL_ID } from "@/lib/meta";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -94,6 +96,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {GA_ID ? (
           <Suspense fallback={null}>
             <GoogleAnalytics />
+          </Suspense>
+        ) : null}
+        {META_PIXEL_ID ? (
+          <Suspense fallback={null}>
+            <MetaPixel />
           </Suspense>
         ) : null}
       </body>

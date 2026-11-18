@@ -8,6 +8,7 @@ import { DeltaBadge, EmptyState, MiniStat, Panel, Skeleton } from "@/components/
 import { RangePicker } from "@/components/admin-overview/range-picker";
 import { RevenueChart } from "@/components/admin-overview/revenue-chart";
 import type { Money, Overview, RangeQuery } from "@/components/admin-overview/types";
+import { AttributionTable } from "@/components/admin-overview/attribution-table";
 import { useOverview } from "@/components/admin-overview/use-overview";
 
 const TYPES = ["SUBSCRIPTION", "POST", "MESSAGE", "PACK", "SPECIAL_REQUEST"];
@@ -198,6 +199,8 @@ function Body({ data }: { data: Overview }) {
           </div>
         )}
       </Panel>
+
+      <AttributionTable />
 
       <Panel title={t("health")} testId="payment-health">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
