@@ -32,6 +32,7 @@ import { authHref } from "@/lib/auth-return";
 import { trackEvent } from "@/lib/analytics";
 import { checkoutSurface } from "@/lib/payment-surface";
 import { GuestCheckout } from "@/components/guest-checkout";
+import type { PublicPostQuote } from "@/lib/load-public-catalog";
 import { trackMeta, trackPurchaseEvent, type MetaPurchase } from "@/lib/meta";
 
 function DemoPaymentGraphic({ seed, label }: { seed: string; label: string }) {
@@ -63,9 +64,11 @@ function DemoPaymentGraphic({ seed, label }: { seed: string; label: string }) {
 export function CheckoutView({
   initialIdentity = null,
   initialOffers = null,
+  initialPostQuote = null,
 }: {
   initialIdentity?: Creator | null;
   initialOffers?: ProfileOffers | null;
+  initialPostQuote?: PublicPostQuote | null;
 }) {
   const visitorCurrency = useVisitorCurrency();
   const t = useTranslations("checkout");
@@ -179,15 +182,23 @@ export function CheckoutView({
     subscribed: boolean | null;
   }>({
     key: "",
-    cents: null,
-    currency: visitorCurrency,
+    cents: initialPostQuote?.amountCents ?? null,
+    currency: initialPostQuote?.currency ?? visitorCurrency,
     error: "",
-    needsAuth: false,
-    subscriberCents: null,
-    subscribed: null,
+    needsAuth: initialPostQuote?.authenticated === false,
+    subscriberCents: initialPostQuote?.subscriberCents ?? null,
+    subscribed: initialPostQuote?.subscribed ?? null,
   });
   if (quote.key !== quoteKey) {
-    setQuote({ key: quoteKey, cents: null, currency: catalog?.currency ?? visitorCurrency, error: "", needsAuth: false, subscriberCents: null, subscribed: null });
+    setQuote({
+      key: quoteKey,
+      cents: initialPostQuote?.amountCents ?? null,
+      currency: initialPostQuote?.currency ?? catalog?.currency ?? visitorCurrency,
+      error: "",
+      needsAuth: initialPostQuote?.authenticated === false,
+      subscriberCents: initialPostQuote?.subscriberCents ?? null,
+      subscribed: initialPostQuote?.subscribed ?? null,
+    });
   }
   const quotedCents = quote.cents;
   const quoteError = quote.error;
@@ -225,6 +236,7 @@ export function CheckoutView({
           message?: string;
           subscriberCents?: number | null;
           subscribed?: boolean | null;
+          authenticated?: boolean;
         };
         if (cancel) return;
         if (!response.ok || typeof payload.amountCents !== "number") {
@@ -244,7 +256,7 @@ export function CheckoutView({
           cents: payload.amountCents,
           currency: payload.currency === "USD" ? "USD" : "BRL",
           error: "",
-          needsAuth: false,
+          needsAuth: payload.authenticated === false,
           subscriberCents: typeof payload.subscriberCents === "number" ? payload.subscriberCents : null,
           subscribed: payload.subscribed === true,
         });

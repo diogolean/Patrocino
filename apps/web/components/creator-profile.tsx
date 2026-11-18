@@ -696,11 +696,17 @@ export function CreatorProfile({
               {locked && (
                 <Link
                   href={post.visibility === "subscriber" ? planHref(1) : `/checkout?kind=post&id=${post.id}&creator=${creator.id}&return=/creator/${creator.username}`}
-                  className="absolute inset-0 z-[3] grid place-items-center bg-black/10 p-2 text-center text-white"
+                  className="absolute inset-0 z-[3] grid place-items-center bg-black/30 p-2 text-center text-white"
                 >
                   <span>
-                    <span className="mx-auto grid size-8 place-items-center rounded-full bg-black/40"><LockKeyhole className="size-3.5" /></span>
-                    <span className="mt-2 block text-[10px] font-semibold">{post.visibility === "subscriber" ? t("subscribeUnlock") : t("unlockContent")}</span>
+                    <span className="mx-auto grid size-8 place-items-center rounded-full bg-black/55"><LockKeyhole className="size-3.5" /></span>
+                    <span className="mt-2 inline-flex min-h-7 items-center justify-center rounded-full bg-white px-3 text-[11px] font-bold text-ink">
+                      {post.visibility === "subscriber"
+                        ? t("subscribeUnlock")
+                        : typeof post.price === "number" && post.price > 0
+                          ? t("unlock", { price: money(post.price) })
+                          : t("unlockContent")}
+                    </span>
                   </span>
                 </Link>
               )}

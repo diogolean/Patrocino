@@ -35,7 +35,7 @@ import {
   syncChargeFromExpay,
 } from "@mimelux/core/expay";
 import { paymentMethodsEnabled } from "@mimelux/core/stripe";
-import { requireUser } from "../auth/require-user";
+import { optionalUser, requireUser } from "../auth/require-user";
 import { createPrismaPaymentStore } from "./expay-store";
 import { listBuyerPaymentAlerts, markPaymentAlertSeen } from "./payment-alerts";
 import { logPayment } from "./payment-log";
@@ -93,15 +93,16 @@ function present(charge: {
 @Controller()
 export class ExpayPaymentsController {
   @Post("payments/quote")
-  @ApiOperation({ summary: "Price a purchase from the database for the signed-in fan" })
+  @ApiOperation({ summary: "Price a purchase. A video can be quoted for a guest at the guest price." })
   async quote(
     @Headers("authorization") authorization: string | undefined,
     @Req() request: Request,
     @Body() body: unknown,
   ) {
-    const user = await requireUser(authorization);
     const parsed = quoteRequestSchema.safeParse(body);
     if (!parsed.success) throw apiError(400, "INVALID_PAYMENT_REQUEST", "Invalid payment request.");
+    const user = await optionalUser(authorization);
+    if (!user && parsed.data.purpose !== "post") throw apiError(401, "MISSING_ACCESS_TOKEN", "Missing access token");
     const quoted = await quoteCharge(user, parsed.data, currencyFromHeaderMap(request.headers));
     return {
       amountCents: quoted.amountCents,
@@ -113,6 +114,7 @@ export class ExpayPaymentsController {
       subscriberCents: quoted.subscriberCents ?? null,
       guestCents: quoted.guestCents ?? null,
       subscribed: quoted.subscribed ?? null,
+      authenticated: Boolean(user),
     };
   }
 

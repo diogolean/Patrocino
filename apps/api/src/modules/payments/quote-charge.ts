@@ -85,7 +85,7 @@ function billable(amountCents: number) {
 }
 
 export async function quoteCharge(
-  user: { id: string },
+  user: { id: string } | null,
   input: { creatorId: string; purpose: PaymentPurpose; subjectId: string },
   currency: ChargeCurrency = "BRL",
 ): Promise<QuotedCharge> {
@@ -109,7 +109,7 @@ export async function quoteCharge(
     const sticker = amountInCurrency(currency, plan.priceCents, plan.priceCentsUsd);
     const priced = chargeForPlan({ ...plan, priceCents: sticker.amountCents }, promotions);
     return {
-      buyerId: user.id,
+      buyerId: user?.id ?? "",
       creatorId: creator.id,
       purpose: "subscription",
       subjectId: plan.id,
@@ -130,7 +130,7 @@ export async function quoteCharge(
       },
     });
     if (!post) throw unavailable();
-    const subscribed = await fanSubscribed(user.id, creator.id);
+    const subscribed = user ? await fanSubscribed(user.id, creator.id) : false;
     const priced = ppvQuote({
       currency,
       subscribed,
@@ -145,7 +145,7 @@ export async function quoteCharge(
     });
     if (priced.amountCents <= 0) throw unavailable();
     return {
-      buyerId: user.id,
+      buyerId: user?.id ?? "",
       creatorId: creator.id,
       purpose: "post",
       subjectId: post.id,
@@ -165,7 +165,7 @@ export async function quoteCharge(
     const messagePrice = message ? amountInCurrency(currency, message.ppvPriceCents, message.ppvPriceCentsUsd) : null;
     if (!message || !messagePrice || messagePrice.amountCents <= 0) throw unavailable();
     return {
-      buyerId: user.id,
+      buyerId: user?.id ?? "",
       creatorId: creator.id,
       purpose: "message",
       subjectId: message.id,
@@ -182,7 +182,7 @@ export async function quoteCharge(
     const packPrice = pack ? amountInCurrency(currency, pack.priceCents, pack.priceCentsUsd) : null;
     if (!pack || !packPrice || packPrice.amountCents <= 0) throw unavailable();
     return {
-      buyerId: user.id,
+      buyerId: user?.id ?? "",
       creatorId: creator.id,
       purpose: "pack",
       subjectId: pack.id,
@@ -192,6 +192,7 @@ export async function quoteCharge(
     };
   }
 
+  if (!user) throw apiError(401, "MISSING_ACCESS_TOKEN", "Missing access token");
   const request = await database.specialRequest.findFirst({
     where: {
       id: input.subjectId,

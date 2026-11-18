@@ -59,8 +59,11 @@ export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; o
           autoPlay
           loop
           playsInline
-          className="absolute inset-0 h-full w-full object-cover"
+          className={`absolute inset-0 h-full w-full object-cover ${locked ? "blur-md" : ""}`}
         />
+      ) : locked && cover ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={cover} alt="" draggable={false} className="absolute inset-0 h-full w-full scale-[1.02] object-cover blur-md" />
       ) : (
         <span
           aria-hidden
@@ -68,12 +71,12 @@ export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; o
           style={cover ? { backgroundImage: `url("${cover.replace(/"/g, "")}")` } : undefined}
         />
       )}
-      <span className={`absolute inset-0 ${locked ? "bg-black/10" : "bg-black/15"}`} />
+      <span className={`absolute inset-0 ${locked ? "bg-black/30" : "bg-black/15"}`} />
       <span className="relative grid h-full place-items-center p-2 text-center">
         <span>
           <span className="mx-auto flex items-center justify-center gap-1">
             {locked && (
-              <span className="grid size-7 place-items-center rounded-full bg-black/40">
+              <span className="grid size-7 place-items-center rounded-full bg-black/55">
                 <LockKeyhole className="size-3" />
               </span>
             )}
@@ -82,7 +85,9 @@ export function SubscriberPpvCard({ video, onOpen }: { video: SubscriberVideo; o
             </span>
           </span>
           {duration ? <span className="mt-2 block text-[10px] font-semibold">{duration}</span> : null}
-          {locked ? <span className="mt-1 block text-[10px] font-semibold">{price}</span> : null}
+          {locked ? (
+            <span className="mt-2 inline-flex min-h-7 items-center justify-center rounded-full bg-white px-3 text-[11px] font-bold text-ink">{price}</span>
+          ) : null}
         </span>
       </span>
     </button>

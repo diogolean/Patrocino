@@ -121,7 +121,7 @@ export async function loadCreatorGallery(input: {
   const open = videos.filter((row) => bought.has(row.id));
   const orderedVideos = [...locked, ...open];
   const featured = hasFeaturedRank(rows);
-  const featuredRows = featured ? orderFeaturedGallery(rows) : [];
+  const featuredRows = featured ? orderFeaturedGallery(rows, creator.id) : [];
   const sequence = featured
     ? input.tab === "videos"
       ? featuredRows.filter((row) => row.media.some((item) => item.kind === "VIDEO"))
