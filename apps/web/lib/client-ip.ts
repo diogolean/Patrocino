@@ -35,7 +35,10 @@ export function clientIpFrom(headers: { get(name: string): string | null }): str
 /** Cloudflare country, then an explicit x-country, then the local GeoIP database. */
 export function resolvedVisitorCountry(source?: { get(name: string): string | null } | null): string | null {
   if (!source) return null;
-  const fromHeader = normalizeCountry(source.get("cf-ipcountry")) ?? normalizeCountry(source.get("x-country"));
+  const fromHeader =
+    normalizeCountry(source.get("x-patrocino-country")) ??
+    normalizeCountry(source.get("cf-ipcountry")) ??
+    normalizeCountry(source.get("x-country"));
   if (fromHeader) return fromHeader;
   return countryFromIp(clientIpFrom(source) ?? null);
 }
@@ -44,10 +47,21 @@ export function visitorForwardHeaders(source?: { get(name: string): string | nul
   const headers: Record<string, string> = {};
   if (!source) return headers;
   const country = resolvedVisitorCountry(source);
-  if (country) headers["cf-ipcountry"] = country;
+  if (country) {
+    headers["cf-ipcountry"] = country;
+    headers["x-patrocino-country"] = country;
+  }
   const accept = source.get("accept-language");
   if (accept) headers["accept-language"] = accept;
   const cookie = source.get("cookie") ?? "";
+  const choice = decodeURIComponent(
+    cookie
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("mimelux-currency="))
+      ?.slice("mimelux-currency=".length) ?? "",
+  ).toUpperCase();
+  if (choice === "USD" || choice === "BRL") headers["x-patrocino-currency"] = choice;
   const locale = cookie
     .split(";")
     .map((part) => part.trim())

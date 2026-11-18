@@ -12,6 +12,16 @@ test("client ip trusts only the proxy hop in X-Forwarded-For", () => {
   expect(clientIpFrom(headers({ "x-forwarded-for": "not an ip" }))).toBeUndefined();
 });
 
+test("a US Cloudflare country is forwarded to the API as USD country headers", () => {
+  const forwarded = upstreamAuthHeaders({
+    headers: headers({ "cf-ipcountry": "US", "accept-language": "en", cookie: "mimelux-currency=USD" }),
+  });
+  expect(forwarded["cf-ipcountry"]).toBe("US");
+  expect(forwarded["x-patrocino-country"]).toBe("US");
+  expect(forwarded["accept-language"]).toBe("en");
+  expect(forwarded["x-patrocino-currency"]).toBe("USD");
+});
+
 test("upstream headers include the proxy secret only when it is configured", () => {
   const previous = process.env.INTERNAL_PROXY_SECRET;
   process.env.INTERNAL_PROXY_SECRET = "local-secret";

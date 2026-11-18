@@ -70,10 +70,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const locale = await getLocale();
   const messages = await getMessages();
   const header = await headers();
+  const jar = await cookies();
   const currency = currencyForVisitor({
     country: resolvedVisitorCountry(header),
-    locale: (await cookies()).get("mimelux-locale")?.value,
+    locale: jar.get("mimelux-locale")?.value,
     acceptLanguage: header.get("accept-language"),
+    choice: jar.get("mimelux-currency")?.value,
   });
   return (
     <html lang={locale} suppressHydrationWarning>
