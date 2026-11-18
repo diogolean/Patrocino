@@ -16,23 +16,25 @@ import {
 } from "../../packages/core/src/currency";
 
 describe("visitor currency", () => {
-  it("uses BRL for Brazil and for a pt-BR locale when the country is unknown", () => {
-    expect(currencyForVisitor({ country: "BR", locale: "en" })).toBe("BRL");
+  it("follows cookie, then country, then Accept-Language, then BRL", () => {
+    expect(currencyForVisitor({ country: "US", acceptLanguage: "pt-BR", choice: "BRL" })).toBe("BRL");
+    expect(currencyForVisitor({ country: "BR", acceptLanguage: "en-US", choice: "USD" })).toBe("USD");
+    expect(currencyForVisitor({ choice: "usd" })).toBe("USD");
+    expect(currencyForVisitor({ country: "BR", acceptLanguage: "en-US" })).toBe("BRL");
     expect(currencyForVisitor({ country: "br" })).toBe("BRL");
-    expect(currencyForVisitor({ locale: "pt-BR" })).toBe("BRL");
-    expect(currencyForVisitor({ acceptLanguage: "pt-BR,en;q=0.8" })).toBe("BRL");
-    expect(currencyForVisitor({})).toBe("USD");
-    expect(currencyForVisitor({ acceptLanguage: "pt-PT" })).toBe("USD");
-    expect(currencyForVisitor({ country: "PT", locale: "pt" })).toBe("USD");
-  });
-
-  it("uses USD for every other country and hides the Brazil fallback", () => {
-    expect(currencyForVisitor({ country: "US", locale: "pt-BR" })).toBe("USD");
+    expect(currencyForVisitor({ country: "US", acceptLanguage: "pt-BR,en;q=0.8" })).toBe("USD");
+    expect(currencyForVisitor({ country: "PT", acceptLanguage: "pt-PT" })).toBe("USD");
     expect(currencyForVisitor({ country: "DE" })).toBe("USD");
-    expect(currencyForVisitor({ locale: "en" })).toBe("USD");
-    expect(currencyForVisitor({ locale: "en", acceptLanguage: "pt-BR,en;q=0.8" })).toBe("USD");
-    expect(currencyForVisitor({ locale: "de", acceptLanguage: "pt-BR" })).toBe("USD");
+    expect(currencyForVisitor({ country: "XX", acceptLanguage: "en-US" })).toBe("USD");
+    expect(currencyForVisitor({ acceptLanguage: "en-US,en;q=0.9" })).toBe("USD");
+    expect(currencyForVisitor({ acceptLanguage: "pt-BR,en;q=0.8" })).toBe("BRL");
+    expect(currencyForVisitor({ acceptLanguage: "pt-PT" })).toBe("BRL");
+    expect(currencyForVisitor({ acceptLanguage: "pt" })).toBe("BRL");
+    expect(currencyForVisitor({ acceptLanguage: "en;q=0.2,pt-BR;q=0.8" })).toBe("BRL");
+    expect(currencyForVisitor({ acceptLanguage: "pt;q=0.2,en;q=0.9" })).toBe("USD");
     expect(currencyForVisitor({ acceptLanguage: "es-MX,pt-BR;q=0.2" })).toBe("USD");
+    expect(currencyForVisitor({})).toBe("BRL");
+    expect(currencyForVisitor({ acceptLanguage: "*" })).toBe("BRL");
   });
 
   it("formats money with Intl for the visitor locale", () => {

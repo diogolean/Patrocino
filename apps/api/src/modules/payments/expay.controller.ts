@@ -39,7 +39,7 @@ import { requireUser } from "../auth/require-user";
 import { createPrismaPaymentStore } from "./expay-store";
 import { listBuyerPaymentAlerts, markPaymentAlertSeen } from "./payment-alerts";
 import { logPayment } from "./payment-log";
-import { currencyForVisitor } from "@mimelux/core/currency";
+import { currencyFromHeaderMap } from "../../http/visitor-currency";
 import { chargeDraftForUser, ensureQuotedPurchase, quoteCharge, quoteRequestSchema } from "./quote-charge";
 import { touchFromRequest } from "./request-touch";
 import { database } from "@mimelux/db/runtime";
@@ -96,15 +96,13 @@ export class ExpayPaymentsController {
   @ApiOperation({ summary: "Price a purchase from the database for the signed-in fan" })
   async quote(
     @Headers("authorization") authorization: string | undefined,
-    @Headers("cf-ipcountry") country: string | undefined,
-    @Headers("x-patrocino-locale") locale: string | undefined,
-    @Headers("accept-language") acceptLanguage: string | undefined,
+    @Req() request: Request,
     @Body() body: unknown,
   ) {
     const user = await requireUser(authorization);
     const parsed = quoteRequestSchema.safeParse(body);
     if (!parsed.success) throw apiError(400, "INVALID_PAYMENT_REQUEST", "Invalid payment request.");
-    const quoted = await quoteCharge(user, parsed.data, currencyForVisitor({ country, locale, acceptLanguage }));
+    const quoted = await quoteCharge(user, parsed.data, currencyFromHeaderMap(request.headers));
     return {
       amountCents: quoted.amountCents,
       currency: quoted.currency,
@@ -122,16 +120,13 @@ export class ExpayPaymentsController {
   @ApiOperation({ summary: "Create an ExPay Pix charge priced from the database for the signed-in fan" })
   async create(
     @Headers("authorization") authorization: string | undefined,
-    @Headers("cf-ipcountry") country: string | undefined,
-    @Headers("x-patrocino-locale") locale: string | undefined,
-    @Headers("accept-language") acceptLanguage: string | undefined,
     @Headers("x-patrocino-click") clickId: string | undefined,
     @Req() request: Request,
     @Body() body: unknown,
   ) {
     const user = await requireUser(authorization);
     if (!expayEnabled()) throw apiError(409, "EXPAY_IS_NOT_THE_ACTIVE_PAYMENTS_PROVIDER", "ExPay is not the active payments provider.");
-    const currency = currencyForVisitor({ country, locale, acceptLanguage });
+    const currency = currencyFromHeaderMap(request.headers);
     const draft = await chargeDraftForUser(user, body, currency, clickId);
     if (draft.currency !== "BRL") throw apiError(409, "PIX_IS_ONLY_AVAILABLE_IN_BRL", "Pix is only available in BRL.");
     const purchase = await ensureQuotedPurchase(draft, touchFromRequest(request));

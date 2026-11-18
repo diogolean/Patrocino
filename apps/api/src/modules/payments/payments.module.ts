@@ -11,7 +11,7 @@ import { paymentProvider, readStripePublishable, readStripeSecret, readStripeWeb
 import { handleStripeEvent, startPlanCheckout } from "./billing";
 import { logPayment, stripeEventChargeId } from "./payment-log";
 import { ExpayPaymentsController } from "./expay.controller";
-import { currencyForVisitor } from "@mimelux/core/currency";
+import { currencyFromHeaderMap } from "../../http/visitor-currency";
 import { rememberReferral } from "../affiliates/tracking";
 import { chargeDraftForUser, ensureQuotedPurchase } from "./quote-charge";
 import { touchFromRequest } from "./request-touch";
@@ -48,15 +48,12 @@ export class PaymentsController {
   @ApiOperation({ summary: "Create a purchase from a database plan and start checkout" })
   async createCheckout(
     @Headers("authorization") authorization: string | undefined,
-    @Headers("cf-ipcountry") country: string | undefined,
-    @Headers("x-patrocino-locale") locale: string | undefined,
-    @Headers("accept-language") acceptLanguage: string | undefined,
     @Headers("x-patrocino-click") clickId: string | undefined,
     @Req() request: Request,
     @Body() body: unknown,
   ) {
     const user = await requireUser(authorization);
-    const currency = currencyForVisitor({ country, locale, acceptLanguage });
+    const currency = currencyFromHeaderMap(request.headers);
     const touch = touchFromRequest(request);
     if (clickId) await rememberReferral(user.id, clickId);
     const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};

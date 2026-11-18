@@ -25,6 +25,8 @@ export const AFFILIATE_COOKIE = "mimelux_attr";
 export const AFFILIATE_WINDOW_DAYS = 30;
 export const AFFILIATE_WINDOW_SECONDS = AFFILIATE_WINDOW_DAYS * 24 * 60 * 60;
 
+export const CURRENCY_COOKIE = "mimelux-currency";
+
 export function normalizeCountry(value: string | null | undefined): string | null {
   if (!value) return null;
   const code = value.trim().toUpperCase();
@@ -32,24 +34,109 @@ export function normalizeCountry(value: string | null | undefined): string | nul
   return code;
 }
 
+/** Highest-quality language tag in an Accept-Language header. The first tag wins a tie. */
+export function primaryLanguageTag(header: string | null | undefined): string {
+  if (!header) return "";
+  let best = "";
+  let bestQuality = -1;
+  for (const part of header.split(",")) {
+    const [rawTag, ...params] = part.trim().split(";");
+    const tag = rawTag?.trim().toLowerCase() ?? "";
+    if (!tag || tag === "*") continue;
+    const qualityParam = params.find((param) => param.trim().toLowerCase().startsWith("q="));
+    const parsed = qualityParam ? Number(qualityParam.split("=")[1]) : 1;
+    const quality = Number.isFinite(parsed) ? parsed : 0;
+    if (quality > bestQuality) {
+      bestQuality = quality;
+      best = tag;
+    }
+  }
+  return best;
+}
+
+export function currencyChoiceFromCookie(cookieHeader: string | null | undefined): ChargeCurrency | null {
+  if (!cookieHeader) return null;
+  const part = cookieHeader
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${CURRENCY_COOKIE}=`));
+  if (!part) return null;
+  const raw = part.slice(CURRENCY_COOKIE.length + 1);
+  let value = raw;
+  try {
+    value = decodeURIComponent(raw);
+  } catch {
+    value = raw;
+  }
+  const choice = value.trim().toUpperCase();
+  return choice === "USD" || choice === "BRL" ? choice : null;
+}
+
+type HeaderSource = { get(name: string): string | null | undefined } | Record<string, unknown>;
+
+export function readHeader(headers: HeaderSource | null | undefined, name: string): string | undefined {
+  if (!headers) return undefined;
+  const fromGetter = typeof (headers as { get?: unknown }).get === "function"
+    ? (headers as { get(name: string): string | null | undefined }).get(name) ??
+      (headers as { get(name: string): string | null | undefined }).get(name.toLowerCase())
+    : undefined;
+  const record = headers as Record<string, unknown>;
+  const raw = fromGetter ?? record[name] ?? record[name.toLowerCase()];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+/** cf-ipcountry, then x-vercel-ip-country, then x-patrocino-country. A bare x-country is last. */
+export function countryFromHeaders(headers: HeaderSource | null | undefined): string | null {
+  return (
+    normalizeCountry(readHeader(headers, "cf-ipcountry")) ??
+    normalizeCountry(readHeader(headers, "x-vercel-ip-country")) ??
+    normalizeCountry(readHeader(headers, "x-patrocino-country")) ??
+    normalizeCountry(readHeader(headers, "x-country"))
+  );
+}
+
 /**
- * USD is the default. Only Brazil (edge country BR) pays in BRL. With no country header at all,
- * the site's pt locale or a pt-BR browser still gets BRL; anything else, or nothing, gets USD.
+ * Visitor currency, in order:
+ * 1. mimelux-currency choice (USD or BRL)
+ * 2. country header: BR is BRL, any other country is USD
+ * 3. Accept-Language when no country header is present: a primary language
+ *    starting with pt is BRL, any other language is USD
+ * 4. BRL when none of those signals exist
  */
 export function currencyForVisitor(input: {
   country?: string | null;
-  locale?: string | null;
   acceptLanguage?: string | null;
+  /** Explicit USD or BRL chosen by the visitor. Wins over country and language. */
+  choice?: string | null;
 }): ChargeCurrency {
+  const choice = (input.choice ?? "").trim().toUpperCase();
+  if (choice === "USD" || choice === "BRL") return choice;
   const country = normalizeCountry(input.country);
   if (country) return country === "BR" ? "BRL" : "USD";
-  const explicit = (input.locale ?? "").trim().toLowerCase();
-  if (explicit === "pt" || explicit === "pt-br") return "BRL";
-  // A chosen site locale other than Portuguese is the visitor's currency signal.
-  // Do not let a pt-BR browser language override an English (or other) locale.
-  if (explicit) return "USD";
-  const header = (input.acceptLanguage ?? "").split(",")[0]?.split(";")[0]?.trim().toLowerCase() ?? "";
-  return header === "pt-br" ? "BRL" : "USD";
+  const language = primaryLanguageTag(input.acceptLanguage);
+  if (!language) return "BRL";
+  return language.startsWith("pt") ? "BRL" : "USD";
+}
+
+export function currencyFromHeaders(headers: HeaderSource | null | undefined): ChargeCurrency {
+  const choice = readHeader(headers, "x-patrocino-currency") ?? currencyChoiceFromCookie(readHeader(headers, "cookie"));
+  return currencyForVisitor({
+    country: countryFromHeaders(headers),
+    acceptLanguage: readHeader(headers, "accept-language"),
+    choice,
+  });
+}
+
+export const VISITOR_CACHE_CONTROL = "private, no-store";
+export const VISITOR_VARY = "Accept-Language, Cookie";
+
+export function visitorCacheHeaders(): Record<string, string> {
+  return {
+    "Cache-Control": VISITOR_CACHE_CONTROL,
+    "CDN-Cache-Control": "no-store",
+    Vary: VISITOR_VARY,
+  };
 }
 
 export function formatMoney(cents: number, currency: ChargeCurrency, locale: string) {

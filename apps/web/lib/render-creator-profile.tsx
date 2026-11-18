@@ -8,8 +8,8 @@ import { creators, posts, postsForCreator } from "@/lib/gateway";
 import { loadCreatorGalleryPage, loadDatabaseProfile } from "@/lib/load-public-catalog";
 
 async function loadOffers(username: string): Promise<ProfileOffers | null> {
+  const headerList = await headers();
   try {
-    const headerList = await headers();
     const response = await fetch(`${apiBase()}/creators/${encodeURIComponent(username)}`, {
       headers: visitorForwardHeaders(headerList),
       cache: "no-store",
